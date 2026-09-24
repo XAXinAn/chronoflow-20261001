@@ -20,6 +20,7 @@
 
     <modules>
         <module>xa-common</module>
+        <module>xa-auth</module>
         <module>xa-bootstrap</module>
     </modules>
 
@@ -29,6 +30,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <springdoc.version>2.9.1</springdoc.version>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <jjwt.version>0.13.0</jjwt.version>
+        <embedded-redis.version>1.4.4</embedded-redis.version>
         <zonky.embedded-postgres.version>2.2.2</zonky.embedded-postgres.version>
         <zonky.postgres-binaries.version>16.15.0</zonky.postgres-binaries.version>
     </properties>
@@ -39,6 +43,39 @@
                 <groupId>com.xatodo</groupId>
                 <artifactId>xa-common</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.xatodo</groupId>
+                <artifactId>xa-auth</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+                <scope>runtime</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
+                <scope>runtime</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.github.codemonstur</groupId>
+                <artifactId>embedded-redis</artifactId>
+                <version>${embedded-redis.version}</version>
+                <scope>test</scope>
             </dependency>
             <dependency>
                 <groupId>org.springdoc</groupId>

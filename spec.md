@@ -110,14 +110,24 @@ XaTodo（心安待办）是一款智能日程与待办管理应用。产品围�
 输入手机号 → 获取短信验证码 → 校验通过
    ↓
 查询该手机号下所有可用身份
-   +- 无身份            → 引导创建个人身份（填写昵称/头像）
-   +- 仅 1 个身份        → 直接选中（仍需展示确认页）
-   +- 多个身份           → 展示身份选择页：个人身份 + 各组织身份（组织名 / 部门 / 工号）
+   +- 无身份            → 下发 registerToken（10 分钟），引导创建个人身份（填写昵称/头像）
+   +- 仅 1 个身份        → 下发 selectToken（10 分钟），直接选中（仍需展示确认页）
+   +- 多个身份           → 下发 selectToken，展示身份选择页：个人身份 + 各组织身份（组织名 / 部门 / 工号）
    ↓
-选定身份 → 签发绑定该身份的 Token（access + refresh）
+POST /auth/identity/select（凭 selectToken）→ 签发绑定该身份的 Token（access + refresh）
 ```
 
-**身份切换**：不重新走验证码，凭 refresh token 调 `POST /auth/identity/switch` 换取绑定新身份的 access token。切换后前端需清空上一身份的数据缓存。
+**三种令牌的职责边界**（作用域 `scope` 写在 JWT 载荷中，互相不可混用）：
+
+| 令牌 | 作用域 | 有效期 | 用途 |
+| --- | --- | --- | --- |
+| 访问令牌 | `ACCESS` | 30 分钟 | 访问全部业务接口 |
+| 注册令牌 | `REGISTER` | 10 分钟 | 仅用于 `POST /identities/personal` 创建个人身份 |
+| 选择身份令牌 | `IDENTITY_SELECT` | 10 分钟 | 仅用于 `POST /auth/identity/select` 选定身份 |
+
+注册令牌与选择身份令牌**不能**访问业务接口，由鉴权过滤器按作用域拒绝（返回 `20001`）。
+
+**身份切换**：不重新走验证码，凭 refresh token 调 `POST /auth/identity/switch` 换取绑定新身份的令牌对。切换后前端需清空上一身份的数据缓存。
 
 ### 3.3 登录方式
 
@@ -399,7 +409,7 @@ erDiagram
 | --- | --- | --- |
 | `0` | 成功 | `0` |
 | `1xxxx` | 通用 / 参数校验 | `10001` 参数缺失，`10002` 参数格式错误 |
-| `2xxxx` | 认证与鉴权 | `20001` 未登录，`20002` Token 过期，`20003` 无权限，`20004` 身份不可用 |
+| `2xxxx` | 认证与鉴权 | `20001` 未登录，`20002` Token 过期，`20003` 无权限，`20004` 身份不可用，`20005` 验证码发送过于频繁，`20006` 验证码错误或已失效，`20007` 刷新令牌无效，`20008` 账号已停用，`20009` 身份不属于当前账号 |
 | `3xxxx` | 个人日历 / 日程 / 待办 | `30001` 日程时间非法，`30002` 重复规则非法 |
 | `4xxxx` | 组织 / 部门 / 成员 | `40001` 部门层级超限，`40002` 成员已存在 |
 | `5xxxx` | 组织日历与下发 | `50001` 下发目标为空，`50002` 已回执不可撤回 |
@@ -413,14 +423,15 @@ erDiagram
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/auth/sms/code` | 发送短信验证码 |
-| POST | `/auth/login/sms` | 手机号 + 验证码登录（返回身份列表或 Token） |
+| POST | `/auth/login/sms` | 手机号 + 验证码登录；返回身份列表 + `selectToken`，首次登录返回 `registerToken` |
 | POST | `/auth/login/password` | 手机号 + 密码登录 |
 | POST | `/auth/login/wechat` | 微信授权登录 |
+| POST | `/auth/identity/select` | 凭 `selectToken` 选定身份，签发 access + refresh |
 | POST | `/auth/token/refresh` | 刷新访问令牌 |
-| POST | `/auth/identity/switch` | 切换身份，换发 Token |
+| POST | `/auth/identity/switch` | 凭 refreshToken 切换到本账号下的其他身份 |
 | POST | `/auth/logout` | 登出并吊销刷新令牌 |
-| GET | `/auth/identities` | 当前账号下的身份列表 |
-| POST | `/identities/personal` | 创建个人身份 |
+| GET | `/auth/identities` | 当前账号下的身份列表（需 ACCESS 令牌） |
+| POST | `/identities/personal` | 创建个人身份（Bearer `registerToken`） |
 
 **账号设置**
 

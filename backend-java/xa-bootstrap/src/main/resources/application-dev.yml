@@ -5,6 +5,11 @@ spring:
     username: ${DB_USERNAME:xatodo}
     password: ${DB_PASSWORD:xatodo}
 
+xatodo:
+  auth:
+    # 开发环境无短信通道，回显验证码便于联调
+    expose-sms-code: true
+
 logging:
   level:
     com.xatodo: DEBUG

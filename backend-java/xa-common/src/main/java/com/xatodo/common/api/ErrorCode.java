@@ -16,6 +16,11 @@ public enum ErrorCode {
     TOKEN_EXPIRED(20002, "登录已过期"),
     FORBIDDEN(20003, "无权限"),
     IDENTITY_UNAVAILABLE(20004, "身份不可用"),
+    SMS_SEND_TOO_FREQUENT(20005, "验证码发送过于频繁"),
+    SMS_CODE_INVALID(20006, "验证码错误或已失效"),
+    REFRESH_TOKEN_INVALID(20007, "刷新令牌无效或已过期"),
+    ACCOUNT_DISABLED(20008, "账号已停用"),
+    IDENTITY_NOT_OWNED(20009, "身份不属于当前账号"),
 
     // 3xxxx 个人日历 / 日程 / 待办
     EVENT_TIME_INVALID(30001, "日程时间非法"),
