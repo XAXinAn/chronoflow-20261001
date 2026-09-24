@@ -1,0 +1,47 @@
+# Node / 前端
+node_modules/
+dist/
+build/
+.expo/
+.expo-shared/
+web-build/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Java / Maven（阶段一后端）
+target/
+*.class
+*.jar
+!**/maven-wrapper.jar
+
+# Python（阶段二后端）
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 日志与本地运行数据
+logs/
+*.log
+
+# 构建缓存与临时产物
+tmp/
+.cache/
+
+# IDE / 编辑器 / 操作系统
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
