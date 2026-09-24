@@ -66,10 +66,12 @@ xatodo:
   version: ${XATODO_VERSION:0.1.0-SNAPSHOT}
   auth:
     jwt-secret: ${JWT_SECRET:xa-todo-development-secret-key-change-me-in-production}
-    access-token-ttl: 30m
-    refresh-token-ttl: 30d
-    register-token-ttl: 10m
-    select-token-ttl: 10m
+    # 会话保持策略见 spec §3.7：刷新令牌滑动续期，正常使用不会被打断
+    access-token-ttl: 2h
+    refresh-token-ttl: 90d
+    refresh-rotation-grace: 60s
+    register-token-ttl: 30m
+    select-token-ttl: 30m
     sms-code-ttl: 5m
     sms-send-interval: 60s
     sms-daily-limit-per-phone: 10

@@ -21,6 +21,7 @@ import org.springframework.util.StringUtils;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 认证编排：短信登录 → 身份列表 → 选择身份 → 签发令牌，以及令牌刷新、身份切换与登出。
@@ -103,7 +104,8 @@ public class AuthService {
         identity.setStatus(STATUS_ACTIVE);
         identityMapper.insert(identity);
 
-        return issueTokens(accountId, identity.getId(), Identity.TYPE_PERSONAL, null, deviceId);
+        String refreshToken = tokenService.issueRefreshToken(accountId, identity.getId(), deviceId);
+        return buildTokenResponse(accountId, identity, refreshToken);
     }
 
     /**
@@ -112,19 +114,31 @@ public class AuthService {
     @Transactional
     public TokenResponse selectIdentity(Long accountId, Long identityId, String deviceId) {
         Identity identity = requireOwnedIdentity(accountId, identityId);
-        return issueTokens(accountId, identity.getId(), identity.getIdentityType(), identity.getOrgId(), deviceId);
+        String refreshToken = tokenService.issueRefreshToken(accountId, identity.getId(), deviceId);
+        return buildTokenResponse(accountId, identity, refreshToken);
     }
 
     /**
-     * 刷新访问令牌：旧刷新令牌立即失效（轮换），避免长期复用。
+     * 刷新访问令牌。刷新令牌采用滑动过期 + 轮换：只要用户在刷新令牌有效期内使用过 App，
+     * 有效期就自动延长，因此正常使用过程中不会被打断（spec §3.7）。
+     *
+     * <p>并发刷新（App 同时发起多个请求）通过轮换宽限期兜底：旧令牌在宽限期内被再次提交时，
+     * 返回同一个新令牌，而不是判定为失效并强制用户重新登录。
      */
     @Transactional
     public TokenResponse refresh(String refreshToken, String deviceId) {
-        RefreshTokenRecord record = tokenService.requireRefreshToken(refreshToken);
+        Optional<RefreshTokenRecord> current = tokenService.findRefreshToken(refreshToken);
+        if (current.isEmpty()) {
+            return reuseRotatedSuccessor(refreshToken);
+        }
+
+        RefreshTokenRecord record = current.get();
+        requireActiveAccount(record.accountId());
         Identity identity = requireActiveIdentity(record.identityId());
-        tokenService.revokeRefreshToken(refreshToken);
-        return issueTokens(record.accountId(), identity.getId(), identity.getIdentityType(),
-                identity.getOrgId(), deviceId);
+
+        String newRefreshToken = tokenService.issueRefreshToken(record.accountId(), identity.getId(), deviceId);
+        tokenService.linkRotation(refreshToken, newRefreshToken);
+        return buildTokenResponse(record.accountId(), identity, newRefreshToken);
     }
 
     /**
@@ -133,10 +147,26 @@ public class AuthService {
     @Transactional
     public TokenResponse switchIdentity(String refreshToken, Long targetIdentityId, String deviceId) {
         RefreshTokenRecord record = tokenService.requireRefreshToken(refreshToken);
+        requireActiveAccount(record.accountId());
+        // 目标身份非法时直接失败，且不消耗原刷新令牌，避免误踢用户
         Identity identity = requireOwnedIdentity(record.accountId(), targetIdentityId);
-        tokenService.revokeRefreshToken(refreshToken);
-        return issueTokens(record.accountId(), identity.getId(), identity.getIdentityType(),
-                identity.getOrgId(), deviceId);
+
+        String newRefreshToken = tokenService.issueRefreshToken(record.accountId(), identity.getId(), deviceId);
+        tokenService.linkRotation(refreshToken, newRefreshToken);
+        return buildTokenResponse(record.accountId(), identity, newRefreshToken);
+    }
+
+    /**
+     * 宽限期内的并发刷新兜底：旧令牌已被轮换掉，但轮换关系仍在，取回同一个新令牌。
+     */
+    private TokenResponse reuseRotatedSuccessor(String previousRefreshToken) {
+        String successorToken = tokenService.findRotatedSuccessor(previousRefreshToken)
+                .orElseThrow(() -> BizException.of(ErrorCode.REFRESH_TOKEN_INVALID));
+        RefreshTokenRecord successor = tokenService.findRefreshToken(successorToken)
+                .orElseThrow(() -> BizException.of(ErrorCode.REFRESH_TOKEN_INVALID));
+        requireActiveAccount(successor.accountId());
+        Identity identity = requireActiveIdentity(successor.identityId());
+        return buildTokenResponse(successor.accountId(), identity, successor.tokenId());
     }
 
     public void logout(String refreshToken) {
@@ -181,19 +211,31 @@ public class AuthService {
         return identity;
     }
 
-    private TokenResponse issueTokens(Long accountId, Long identityId, String identityType,
-                                      Long orgId, String deviceId) {
-        IdentityPrincipal principal = new IdentityPrincipal(accountId, identityId, identityType, orgId);
+    private TokenResponse buildTokenResponse(Long accountId, Identity identity, String refreshToken) {
+        IdentityPrincipal principal = new IdentityPrincipal(
+                accountId, identity.getId(), identity.getIdentityType(), identity.getOrgId());
         String accessToken = tokenService.issueAccessToken(principal);
-        String refreshToken = tokenService.issueRefreshToken(accountId, identityId, deviceId);
 
-        Identity identity = identityMapper.selectById(identityId);
         IdentitySummary summary = new IdentitySummary(
-                accountId, identityId, identityType, orgId,
-                identity == null ? null : identity.getNickname(),
-                identity == null ? null : identity.getAvatarUrl());
+                accountId, identity.getId(), identity.getIdentityType(), identity.getOrgId(),
+                identity.getNickname(), identity.getAvatarUrl());
 
         return new TokenResponse(accessToken, refreshToken, tokenService.accessTokenTtlSeconds(), summary);
+    }
+
+    /**
+     * 账号被停用时立即吊销其全部刷新令牌，下一次刷新即要求重新登录（spec §10.1 必测场景 9）。
+     */
+    private Account requireActiveAccount(Long accountId) {
+        Account account = accountMapper.selectById(accountId);
+        if (account == null) {
+            throw BizException.of(ErrorCode.UNAUTHENTICATED);
+        }
+        if (STATUS_DISABLED.equals(account.getStatus())) {
+            tokenService.revokeAllForAccount(accountId);
+            throw BizException.of(ErrorCode.ACCOUNT_DISABLED);
+        }
+        return account;
     }
 
     private String defaultNickname(String phone) {

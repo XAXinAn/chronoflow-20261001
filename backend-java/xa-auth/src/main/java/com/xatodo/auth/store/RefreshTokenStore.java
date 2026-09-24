@@ -16,6 +16,15 @@ public interface RefreshTokenStore {
 
     void deleteAllForIdentity(Long identityId);
 
+    void deleteAllForAccount(Long accountId);
+
+    /**
+     * 记录「旧令牌 → 新令牌」的轮换关系，在宽限期内允许复用旧令牌取回同一新令牌。
+     */
+    void saveSuccessor(String previousTokenId, String newTokenId, Duration grace);
+
+    Optional<String> findSuccessor(String previousTokenId);
+
     /**
      * 保证同一身份的活跃设备数不超过上限，超出时踢除最早签发的令牌。
      */

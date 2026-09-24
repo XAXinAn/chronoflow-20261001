@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -119,6 +120,29 @@ public class TokenService {
         }
         return refreshTokenStore.find(refreshToken)
                 .orElseThrow(() -> BizException.of(ErrorCode.REFRESH_TOKEN_INVALID));
+    }
+
+    public Optional<RefreshTokenRecord> findRefreshToken(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return Optional.empty();
+        }
+        return refreshTokenStore.find(refreshToken);
+    }
+
+    /**
+     * 轮换：登记「旧 → 新」关系后再作废旧令牌，使并发刷新在宽限期内可以拿回同一个新令牌。
+     */
+    public void linkRotation(String previousTokenId, String newTokenId) {
+        refreshTokenStore.saveSuccessor(previousTokenId, newTokenId, properties.getRefreshRotationGrace());
+        refreshTokenStore.delete(previousTokenId);
+    }
+
+    public Optional<String> findRotatedSuccessor(String previousTokenId) {
+        return refreshTokenStore.findSuccessor(previousTokenId);
+    }
+
+    public void revokeAllForAccount(Long accountId) {
+        refreshTokenStore.deleteAllForAccount(accountId);
     }
 
     public void revokeRefreshToken(String refreshToken) {

@@ -24,7 +24,9 @@ import java.util.Set;
 public class RedisRefreshTokenStore implements RefreshTokenStore {
 
     private static final String TOKEN_KEY = "rt:";
-    private static final String INDEX_KEY = "rt:idx:";
+    private static final String INDEX_IDENTITY = "rt:idx:i:";
+    private static final String INDEX_ACCOUNT = "rt:idx:a:";
+    private static final String SUCCESSOR_KEY = "rt:succ:";
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
@@ -37,9 +39,11 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
     @Override
     public void save(RefreshTokenRecord record, Duration ttl) {
         redis.opsForValue().set(TOKEN_KEY + record.tokenId(), serialize(record), ttl);
-        redis.opsForZSet().add(INDEX_KEY + record.identityId(),
-                record.tokenId(), record.issuedAt().toEpochMilli());
-        redis.expire(INDEX_KEY + record.identityId(), ttl);
+        long score = record.issuedAt().toEpochMilli();
+        redis.opsForZSet().add(INDEX_IDENTITY + record.identityId(), record.tokenId(), score);
+        redis.expire(INDEX_IDENTITY + record.identityId(), ttl);
+        redis.opsForZSet().add(INDEX_ACCOUNT + record.accountId(), record.tokenId(), score);
+        redis.expire(INDEX_ACCOUNT + record.accountId(), ttl);
     }
 
     @Override
@@ -59,21 +63,44 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
     public void delete(String tokenId) {
         Optional<RefreshTokenRecord> record = find(tokenId);
         redis.delete(TOKEN_KEY + tokenId);
-        record.ifPresent(value -> redis.opsForZSet().remove(INDEX_KEY + value.identityId(), tokenId));
+        record.ifPresent(value -> {
+            redis.opsForZSet().remove(INDEX_IDENTITY + value.identityId(), tokenId);
+            redis.opsForZSet().remove(INDEX_ACCOUNT + value.accountId(), tokenId);
+        });
     }
 
     @Override
     public void deleteAllForIdentity(Long identityId) {
-        Set<String> tokenIds = redis.opsForZSet().range(INDEX_KEY + identityId, 0, -1);
-        if (tokenIds != null && !tokenIds.isEmpty()) {
-            redis.delete(tokenIds.stream().map(id -> TOKEN_KEY + id).toList());
+        String indexKey = INDEX_IDENTITY + identityId;
+        forEachIndexedToken(indexKey, (tokenId, record) ->
+                redis.opsForZSet().remove(INDEX_ACCOUNT + record.accountId(), tokenId));
+        redis.delete(indexKey);
+    }
+
+    @Override
+    public void deleteAllForAccount(Long accountId) {
+        String indexKey = INDEX_ACCOUNT + accountId;
+        forEachIndexedToken(indexKey, (tokenId, record) ->
+                redis.opsForZSet().remove(INDEX_IDENTITY + record.identityId(), tokenId));
+        redis.delete(indexKey);
+    }
+
+    @Override
+    public void saveSuccessor(String previousTokenId, String newTokenId, Duration grace) {
+        if (grace == null || grace.isZero() || grace.isNegative()) {
+            return;
         }
-        redis.delete(INDEX_KEY + identityId);
+        redis.opsForValue().set(SUCCESSOR_KEY + previousTokenId, newTokenId, grace);
+    }
+
+    @Override
+    public Optional<String> findSuccessor(String previousTokenId) {
+        return Optional.ofNullable(redis.opsForValue().get(SUCCESSOR_KEY + previousTokenId));
     }
 
     @Override
     public void enforceDeviceLimit(Long identityId, int maxDevices) {
-        String indexKey = INDEX_KEY + identityId;
+        String indexKey = INDEX_IDENTITY + identityId;
         Long size = redis.opsForZSet().zCard(indexKey);
         while (size != null && size > maxDevices) {
             Set<ZSetOperations.TypedTuple<String>> oldest =
@@ -82,9 +109,26 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
                 break;
             }
             String tokenId = oldest.iterator().next().getValue();
+            Optional<RefreshTokenRecord> evicted = find(tokenId);
             redis.delete(TOKEN_KEY + tokenId);
+            evicted.ifPresent(record ->
+                    redis.opsForZSet().remove(INDEX_ACCOUNT + record.accountId(), tokenId));
             redis.opsForZSet().remove(indexKey, tokenId);
             size = redis.opsForZSet().zCard(indexKey);
+        }
+    }
+
+    /**
+     * 遍历索引中的令牌：先读取记录再删除，避免删除后无法得知其归属索引。
+     */
+    private void forEachIndexedToken(String indexKey, java.util.function.BiConsumer<String, RefreshTokenRecord> onRecord) {
+        Set<String> tokenIds = redis.opsForZSet().range(indexKey, 0, -1);
+        if (tokenIds == null || tokenIds.isEmpty()) {
+            return;
+        }
+        for (String tokenId : tokenIds) {
+            find(tokenId).ifPresent(record -> onRecord.accept(tokenId, record));
+            redis.delete(TOKEN_KEY + tokenId);
         }
     }
 

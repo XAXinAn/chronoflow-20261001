@@ -17,13 +17,19 @@ public class AuthProperties {
 
     private String issuer = "xa-todo";
 
-    private Duration accessTokenTtl = Duration.ofMinutes(30);
+    private Duration accessTokenTtl = Duration.ofHours(2);
 
-    private Duration refreshTokenTtl = Duration.ofDays(30);
+    private Duration refreshTokenTtl = Duration.ofDays(90);
 
-    private Duration registerTokenTtl = Duration.ofMinutes(10);
+    /**
+     * 刷新令牌轮换宽限期。旧令牌被轮换后仍在其内可复用（返回同一个新令牌），
+     * 用于消除 App 并发刷新导致的「被登出」体验（spec §3.7）。
+     */
+    private Duration refreshRotationGrace = Duration.ofSeconds(60);
 
-    private Duration selectTokenTtl = Duration.ofMinutes(10);
+    private Duration registerTokenTtl = Duration.ofMinutes(30);
+
+    private Duration selectTokenTtl = Duration.ofMinutes(30);
 
     private Duration smsCodeTtl = Duration.ofMinutes(5);
 
@@ -73,6 +79,14 @@ public class AuthProperties {
 
     public void setRefreshTokenTtl(Duration refreshTokenTtl) {
         this.refreshTokenTtl = refreshTokenTtl;
+    }
+
+    public Duration getRefreshRotationGrace() {
+        return refreshRotationGrace;
+    }
+
+    public void setRefreshRotationGrace(Duration refreshRotationGrace) {
+        this.refreshRotationGrace = refreshRotationGrace;
     }
 
     public Duration getRegisterTokenTtl() {

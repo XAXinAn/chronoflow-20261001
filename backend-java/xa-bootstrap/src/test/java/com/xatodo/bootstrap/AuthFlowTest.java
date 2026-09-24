@@ -65,6 +65,8 @@ class AuthFlowTest {
         registry.add("spring.datasource.password", () -> "postgres");
         registry.add("spring.data.redis.port", () -> redisPort);
         registry.add("xatodo.auth.expose-sms-code", () -> true);
+        // 缩短轮换宽限期，便于验证宽限期过期后的行为
+        registry.add("xatodo.auth.refresh-rotation-grace", () -> "1s");
     }
 
     private static int findFreePort() throws IOException {
@@ -212,37 +214,84 @@ class AuthFlowTest {
     }
 
     @Test
-    @DisplayName("刷新令牌轮换：旧刷新令牌立即失效，登出后同样失效")
-    void refreshTokenRotationAndLogout() throws Exception {
+    @DisplayName("并发刷新不踢人：宽限期内重复提交旧令牌，取回同一个新令牌")
+    void concurrentRefreshWithinGraceIsIdempotent() throws Exception {
         String phone = "13800000105";
-        String code = requestSmsCode(phone);
-        String registerToken = postJson("/api/v1/auth/login/sms",
-                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\"}")
-                .path("data").path("registerToken").asText();
-        String refreshToken = postJsonWithBearer("/api/v1/identities/personal", registerToken,
-                "{\"nickname\":\"轮换用户\",\"deviceId\":\"device-1\"}")
+        String refreshToken = registerAccountWithPersonalIdentity(phone, "轮换用户")
                 .path("data").path("refreshToken").asText();
 
-        JsonNode refreshed = postJson("/api/v1/auth/token/refresh",
+        JsonNode first = postJson("/api/v1/auth/token/refresh",
                 "{\"refreshToken\":\"" + refreshToken + "\",\"deviceId\":\"device-1\"}");
-        String newRefreshToken = refreshed.path("data").path("refreshToken").asText();
-        assertThat(newRefreshToken).isNotBlank().isNotEqualTo(refreshToken);
+        String rotated = first.path("data").path("refreshToken").asText();
+        assertThat(rotated).isNotBlank().isNotEqualTo(refreshToken);
+
+        // App 并发提交同一个旧令牌：应当成功并拿回同一个新令牌，而不是被判定失效
+        JsonNode second = postJson("/api/v1/auth/token/refresh",
+                "{\"refreshToken\":\"" + refreshToken + "\",\"deviceId\":\"device-1\"}");
+        assertThat(second.path("code").asInt()).isZero();
+        assertThat(second.path("data").path("refreshToken").asText()).isEqualTo(rotated);
+        assertThat(second.path("data").path("accessToken").asText()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("登出后刷新令牌立即失效")
+    void logoutRevokesRefreshToken() throws Exception {
+        String phone = "13800000109";
+        String refreshToken = registerAccountWithPersonalIdentity(phone, "登出用户")
+                .path("data").path("refreshToken").asText();
+
+        postJson("/api/v1/auth/logout", "{\"refreshToken\":\"" + refreshToken + "\"}");
 
         mockMvc.perform(post("/api/v1/auth/token/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\"" + refreshToken + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(20007));
+    }
 
-        mockMvc.perform(post("/api/v1/auth/logout")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"refreshToken\":\"" + newRefreshToken + "\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0));
+    @Test
+    @DisplayName("轮换宽限期过期后，被替换的旧刷新令牌不再可用")
+    void rotatedTokenRejectedAfterGraceWindow() throws Exception {
+        String phone = "13800000110";
+        String refreshToken = registerAccountWithPersonalIdentity(phone, "宽限用户")
+                .path("data").path("refreshToken").asText();
+
+        postJson("/api/v1/auth/token/refresh",
+                "{\"refreshToken\":\"" + refreshToken + "\",\"deviceId\":\"device-1\"}");
+
+        Thread.sleep(1300L);
 
         mockMvc.perform(post("/api/v1/auth/token/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"refreshToken\":\"" + newRefreshToken + "\"}"))
+                        .content("{\"refreshToken\":\"" + refreshToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(20007));
+    }
+
+    @Test
+    @DisplayName("账号被停用后刷新要求重新登录，且全部刷新令牌被吊销")
+    void disabledAccountForcesReLogin() throws Exception {
+        String phone = "13800000108";
+        String refreshToken = registerAccountWithPersonalIdentity(phone, "停用用户")
+                .path("data").path("refreshToken").asText();
+
+        jdbcTemplate.update("UPDATE account SET status = 'DISABLED' WHERE phone = ?", phone);
+
+        mockMvc.perform(post("/api/v1/auth/token/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + refreshToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(20008));
+
+        Integer identities = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM identity WHERE account_id = "
+                        + "(SELECT id FROM account WHERE phone = ?)", Integer.class, phone);
+        assertThat(identities).isPositive();
+
+        // 账号停用同时吊销全部刷新令牌
+        mockMvc.perform(post("/api/v1/auth/token/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + refreshToken + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(20007));
     }
@@ -259,6 +308,15 @@ class AuthFlowTest {
 
     private void injectCode(String phone, String code) {
         redisTemplate.opsForValue().set("sms:code:" + phone, code, Duration.ofMinutes(5));
+    }
+
+    private JsonNode registerAccountWithPersonalIdentity(String phone, String nickname) throws Exception {
+        String code = requestSmsCode(phone);
+        String registerToken = postJson("/api/v1/auth/login/sms",
+                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\"}")
+                .path("data").path("registerToken").asText();
+        return postJsonWithBearer("/api/v1/identities/personal", registerToken,
+                "{\"nickname\":\"" + nickname + "\",\"deviceId\":\"device-1\"}");
     }
 
     private JsonNode postJson(String path, String body) throws Exception {
