@@ -1,0 +1,55 @@
+package com.xatodo.common.api;
+
+/**
+ * 全局错误码，分段规则见 spec §6.1。
+ */
+public enum ErrorCode {
+
+    SUCCESS(0, "ok"),
+
+    // 1xxxx 通用 / 参数校验
+    PARAM_MISSING(10001, "参数缺失"),
+    PARAM_INVALID(10002, "参数格式错误"),
+
+    // 2xxxx 认证与鉴权
+    UNAUTHENTICATED(20001, "未登录"),
+    TOKEN_EXPIRED(20002, "登录已过期"),
+    FORBIDDEN(20003, "无权限"),
+    IDENTITY_UNAVAILABLE(20004, "身份不可用"),
+
+    // 3xxxx 个人日历 / 日程 / 待办
+    EVENT_TIME_INVALID(30001, "日程时间非法"),
+    RRULE_INVALID(30002, "重复规则非法"),
+
+    // 4xxxx 组织 / 部门 / 成员
+    DEPARTMENT_LEVEL_EXCEEDED(40001, "部门层级超限"),
+    MEMBER_ALREADY_EXISTS(40002, "成员已存在"),
+
+    // 5xxxx 组织日历与下发
+    DISPATCH_TARGET_EMPTY(50001, "下发目标为空"),
+    DISPATCH_ALREADY_RECEIPTED(50002, "已回执不可撤回"),
+
+    // 6xxxx 后台管理
+    ADMIN_LOGIN_FAILED(60001, "管理员登录失败"),
+    MFA_REQUIRED(60002, "需要双因素校验"),
+
+    // 9xxxx 系统
+    INTERNAL_ERROR(90001, "服务内部错误"),
+    THIRD_PARTY_UNAVAILABLE(90002, "第三方服务不可用");
+
+    private final int code;
+    private final String message;
+
+    ErrorCode(int code, String message) {
+        this.code = code;
+        this.message = message;
+    }
+
+    public int getCode() {
+        return code;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+}
