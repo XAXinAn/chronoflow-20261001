@@ -65,3 +65,32 @@ jobs:
       # 令牌、Web 后台、App 逻辑层的全部单测
       - name: 运行测试
         run: npm test
+
+  backend-python:
+    name: 后端（Python）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # CI 上有 root，直接装 PostgreSQL 与 Redis；本地环境没有 root，
+      # 因此本地走 scripts/setup-test-deps.sh 从 Maven 仓库里的嵌入式 jar 提取二进制。
+      - name: 安装 PostgreSQL 与 Redis
+        run: sudo apt-get update && sudo apt-get install -y postgresql redis-server
+
+      - name: 定位 PostgreSQL 二进制
+        run: echo "XA_TODO_PG_BIN=$(dirname "$(find /usr/lib/postgresql -name pg_ctl | head -1)")" >> "$GITHUB_ENV"
+
+      - name: 安装依赖
+        run: pip install -e ".[dev]"
+        working-directory: backend-python
+
+      # 测试会启动真实 PostgreSQL 与 Redis，并直接应用 Flyway 迁移文件建表，
+      # 因此 Python 版与 Java 版跑在完全相同的 schema 上。
+      # test_contract.py 读取与 Java 版同一份 contract/api-contract.json。
+      - name: 运行测试
+        run: python -m pytest
+        working-directory: backend-python

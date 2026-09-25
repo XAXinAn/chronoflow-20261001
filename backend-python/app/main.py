@@ -1,0 +1,66 @@
+"""FastAPI 应用入口。
+
+与 Java 版共享：同一份 PostgreSQL schema（由 Flyway 管理）、同一 Redis 键规范、
+同一 JWT 密钥与 claim 结构、同一响应体与错误码。
+"""
+
+from __future__ import annotations
+
+import uuid
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from .errors import ApiError, ErrorCode, envelope, set_trace_id
+from .routers import auth, me, system
+
+app = FastAPI(
+    title="XaTodo API（Python 版）",
+    description="心安待办后端。对外契约与 Java 版一致，见 contract/api-contract.json。",
+    version="0.1.0",
+    # 与 Java 版 springdoc 的路径保持一致，便于互换部署与统一文档入口
+    openapi_url="/v3/api-docs",
+    docs_url="/swagger-ui.html",
+    redoc_url=None,
+)
+
+
+@app.middleware("http")
+async def trace_id_middleware(request: Request, call_next):
+    trace_id = request.headers.get("X-Trace-Id") or str(uuid.uuid4())
+    set_trace_id(trace_id)
+    response = await call_next(request)
+    response.headers["X-Trace-Id"] = trace_id
+    return response
+
+
+@app.exception_handler(ApiError)
+async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.http_status, content=envelope(None, int(exc.code), exc.message)
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    detail = "; ".join(
+        f"{'.'.join(str(part) for part in error.get('loc', []))}: {error.get('msg')}"
+        for error in exc.errors()
+    )
+    return JSONResponse(
+        status_code=400,
+        content=envelope(None, int(ErrorCode.PARAM_INVALID), detail or "参数格式错误"),
+    )
+
+
+@app.exception_handler(Exception)
+async def handle_unexpected(_: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=500, content=envelope(None, int(ErrorCode.INTERNAL_ERROR), "服务内部错误")
+    )
+
+
+app.include_router(system.router)
+app.include_router(auth.router)
+app.include_router(me.router)

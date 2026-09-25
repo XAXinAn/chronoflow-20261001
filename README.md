@@ -12,7 +12,7 @@ xa-todo/
 ├── contract/           跨语言 API 契约（Java 与 Python 两版共同校验）
 ├── docs/               补充设计文档、接口样例
 ├── backend-java/       阶段一后端：Java 21 + Spring Boot 3
-├── backend-python/     阶段二后端：FastAPI 平行重写（尚未开始）
+├── backend-python/     阶段二后端：FastAPI 平行重写（认证模块已完成）
 ├── app/                App 端：React Native + Expo
 ├── web-admin/          Web 后台：React + Vite + Ant Design
 ├── packages/           共享包（design-tokens：设计令牌唯一来源）
@@ -29,7 +29,7 @@ xa-todo/
 | 设计令牌 packages/design-tokens | 完成（7 项测试） |
 | Web 后台 web-admin | 完成（15 项测试） |
 | App 端 app | 完成（22 项测试，模拟器联调待进行） |
-| 阶段二 backend-python | 未开始 |
+| 阶段二 backend-python | 进行中（认证与账号设置已完成，契约覆盖率 20%） |
 | CI 与 API 契约测试 | 完成（GitHub Actions） |
 | 生产部署编排（Dockerfile / Nginx） | 未开始 |
 
