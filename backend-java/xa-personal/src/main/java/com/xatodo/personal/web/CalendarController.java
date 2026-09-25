@@ -8,6 +8,7 @@ import com.xatodo.personal.dto.PersonalDtos.CalendarUpdateRequest;
 import com.xatodo.personal.entity.Calendar;
 import com.xatodo.personal.service.CalendarService;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -24,6 +25,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/calendars")
+@SecurityRequirement(name = "bearerAuth")
 public class CalendarController {
 
     private final CalendarService calendarService;

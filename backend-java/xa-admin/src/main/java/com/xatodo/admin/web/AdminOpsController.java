@@ -11,6 +11,7 @@ import com.xatodo.admin.service.AuditLogService;
 import com.xatodo.admin.service.DashboardService;
 import com.xatodo.common.api.ApiResponse;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -31,6 +32,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/admin")
+@SecurityRequirement(name = "bearerAuth")
 public class AdminOpsController {
 
     private final AdminConfigService configService;

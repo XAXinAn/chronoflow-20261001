@@ -9,6 +9,7 @@
 ```
 xa-todo/
 ├── spec.md             产品与技术规格说明书（唯一事实来源）
+├── contract/           跨语言 API 契约（Java 与 Python 两版共同校验）
 ├── docs/               补充设计文档、接口样例
 ├── backend-java/       阶段一后端：Java 21 + Spring Boot 3
 ├── backend-python/     阶段二后端：FastAPI 平行重写（尚未开始）
@@ -29,7 +30,22 @@ xa-todo/
 | Web 后台 web-admin | 完成（15 项测试） |
 | App 端 app | 完成（22 项测试，模拟器联调待进行） |
 | 阶段二 backend-python | 未开始 |
-| CI、OpenAPI 契约测试、生产部署编排 | 未开始 |
+| CI 与 API 契约测试 | 完成（GitHub Actions） |
+| 生产部署编排（Dockerfile / Nginx） | 未开始 |
+
+## API 契约
+
+[`contract/api-contract.json`](./contract/api-contract.json) 是**跨语言共享**的接口清单。
+Java 版与阶段二的 Python 版都必须满足它——改动这个文件等于改动契约，
+必须同时更新两版实现与 `spec.md`。
+
+契约测试（`OpenApiContractTest`）做两件事：
+
+1. 生成的 OpenAPI 文档必须覆盖契约里的每个方法 + 路径，且安全声明与实际鉴权一致；
+2. **实际发一次未携带令牌的请求**，验证受保护接口确实返回 401、公开接口确实不返回 401。
+
+第 2 点是行为验证而非文档验证——注解写错了同样会导致失败。
+构建产物中的 `target/openapi/xatodo-api.json` 可在 CI 里作为 artifact 下载。
 
 详见 [backend-java/README.md](./backend-java/README.md) 与 [web-admin/README.md](./web-admin/README.md)。
 
@@ -76,3 +92,19 @@ npm run dev:app
 - Maven 依赖走阿里云镜像（配置在 `~/.m2/settings.xml`），直连 Maven Central 约 20KB/s 不可用。
 - npm 依赖走 npmmirror（配置在 `~/.npmrc`），直连约 1MB/s、镜像约 7MB/s。
 - Android 模拟器调试需在 Windows 侧启动 AVD，详见 spec §8.3；iOS 模拟器在当前环境不可用。
+
+## CI
+
+`.github/workflows/ci.yml` 两个 job：
+
+| Job | 内容 |
+| --- | --- |
+| 后端 | `mvn clean verify`；测试自带嵌入式 PostgreSQL 与 Redis，**无需 service 容器**；契约测试作为门禁 |
+| 前端 | `npm ci` → 构建设计令牌 → 构建 Web 后台 → App 类型检查 → 全部单测 |
+
+本地等价命令：
+
+```bash
+cd backend-java && mvn clean verify && cd ..
+npm ci && npm run build && npm test
+```

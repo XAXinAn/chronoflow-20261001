@@ -101,6 +101,15 @@
     </dependencies>
 
     <build>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+            </testResource>
+            <!-- 跨语言共享的 API 契约，Java 版与阶段二的 Python 版都对着它校验 -->
+            <testResource>
+                <directory>${project.basedir}/../../contract</directory>
+            </testResource>
+        </testResources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

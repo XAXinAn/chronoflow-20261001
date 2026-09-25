@@ -10,6 +10,7 @@ import com.xatodo.auth.security.IdentityPrincipal;
 import com.xatodo.auth.service.AccountService;
 import com.xatodo.auth.service.AuthService;
 import com.xatodo.common.api.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/v1/me")
+@SecurityRequirement(name = "bearerAuth")
 public class MeController {
 
     private final AuthService authService;

@@ -16,6 +16,7 @@ import com.xatodo.org.service.OrgEventService;
 import com.xatodo.org.service.OrgMemberService;
 import com.xatodo.org.service.OrgPermissionService;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,6 +34,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/org")
+@SecurityRequirement(name = "bearerAuth")
 public class OrgController {
 
     private final OrgPermissionService permission;

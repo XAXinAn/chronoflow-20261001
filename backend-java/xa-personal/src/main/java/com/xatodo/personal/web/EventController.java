@@ -12,6 +12,7 @@ import com.xatodo.personal.service.EventService;
 import com.xatodo.personal.service.ConversionService;
 import com.xatodo.personal.dto.PersonalDtos.TaskResponse;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,6 +33,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/events")
+@SecurityRequirement(name = "bearerAuth")
 public class EventController {
 
     private final EventService eventService;

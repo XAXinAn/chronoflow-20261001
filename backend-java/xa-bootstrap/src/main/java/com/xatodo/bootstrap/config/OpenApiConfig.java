@@ -27,7 +27,8 @@ public class OpenApiConfig {
                         .title("XaTodo API")
                         .description("心安待办（XaTodo）后端接口。统一前缀 /api/v1，统一响应体 {code, message, data, traceId}。")
                         .version(version))
-                .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME))
+                // 刻意不设全局安全声明：否则公开接口（发验证码、登录）也会被标注为需要鉴权，
+                // 这份文档要给阶段二的 Python 版照着实现，不能有误导。
                 .components(new Components().addSecuritySchemes(BEARER_SCHEME,
                         new SecurityScheme()
                                 .name(BEARER_SCHEME)

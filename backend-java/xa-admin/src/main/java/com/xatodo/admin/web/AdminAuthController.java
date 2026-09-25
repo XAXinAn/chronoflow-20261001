@@ -9,6 +9,7 @@ import com.xatodo.admin.service.AdminAuthService;
 import com.xatodo.common.api.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -37,11 +38,13 @@ public class AdminAuthController {
     }
 
     @GetMapping("/me")
+    @SecurityRequirement(name = "bearerAuth")
     public ApiResponse<AdminInfo> me() {
         return ApiResponse.ok(adminAuthService.me(CurrentAdmin.require()));
     }
 
     @PutMapping("/me/password")
+    @SecurityRequirement(name = "bearerAuth")
     public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
         adminAuthService.changePassword(CurrentAdmin.require(), request);
         return ApiResponse.ok();

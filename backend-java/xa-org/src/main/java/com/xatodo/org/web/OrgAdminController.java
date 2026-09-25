@@ -22,6 +22,7 @@ import com.xatodo.org.service.OrgEventService;
 import com.xatodo.org.service.OrgMemberService;
 import com.xatodo.org.service.OrgPermissionService;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -49,6 +50,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/org-admin")
+@SecurityRequirement(name = "bearerAuth")
 public class OrgAdminController {
 
     private final OrgPermissionService permission;

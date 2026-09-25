@@ -8,6 +8,7 @@ import com.xatodo.admin.security.CurrentAdmin;
 import com.xatodo.admin.service.AdminAuthService;
 import com.xatodo.common.api.ApiResponse;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,6 +24,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/admin/admins")
+@SecurityRequirement(name = "bearerAuth")
 public class AdminManagerController {
 
     private final AdminAuthService adminAuthService;

@@ -6,6 +6,7 @@ import com.xatodo.personal.dto.ReminderDtos.ReminderResponse;
 import com.xatodo.personal.dto.ReminderDtos.SetRemindersRequest;
 import com.xatodo.personal.service.ReminderService;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,6 +21,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/reminders")
+@SecurityRequirement(name = "bearerAuth")
 public class ReminderController {
 
     private final ReminderService reminderService;

@@ -18,6 +18,7 @@ import com.xatodo.auth.service.AuthService;
 import com.xatodo.auth.service.TokenService;
 import com.xatodo.auth.service.VerificationCodeService;
 import com.xatodo.common.api.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -95,6 +96,7 @@ public class AuthController {
      * 当前账号下的全部身份（需要已选定身份的访问令牌）。
      */
     @GetMapping("/identities")
+    @SecurityRequirement(name = "bearerAuth")
     public ApiResponse<List<IdentityView>> identities() {
         IdentityPrincipal principal = CurrentIdentity.require();
         return ApiResponse.ok(authService.listIdentities(principal.accountId()));
