@@ -10,7 +10,9 @@
   ],
   "scripts": {
     "build": "npm run build -w @xa-todo/design-tokens && npm run build -w @xa-todo/web-admin",
-    "test": "npm run test -w @xa-todo/design-tokens && npm run test -w @xa-todo/web-admin",
-    "dev:web": "npm run dev -w @xa-todo/web-admin"
+    "test": "npm run test -w @xa-todo/design-tokens && npm run test -w @xa-todo/web-admin && npm run test -w @xa-todo/app",
+    "typecheck": "npm run typecheck -w @xa-todo/app",
+    "dev:web": "npm run dev -w @xa-todo/web-admin",
+    "dev:app": "npm run start -w @xa-todo/app"
   }
 }

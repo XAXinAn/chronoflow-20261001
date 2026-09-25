@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "XaTodo",
+    "slug": "xa-todo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#FFFFFF",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "bundleIdentifier": "com.xatodo.app",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.xatodo.app",
+      "edgeToEdgeEnabled": true
+    },
+    "extra": {
+      "apiBaseUrl": "http://10.0.2.2:8080"
+    }
+  }
+}

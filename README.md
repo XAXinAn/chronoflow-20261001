@@ -12,7 +12,7 @@ xa-todo/
 ├── docs/               补充设计文档、接口样例
 ├── backend-java/       阶段一后端：Java 21 + Spring Boot 3
 ├── backend-python/     阶段二后端：FastAPI 平行重写（尚未开始）
-├── app/                App 端：React Native + Expo（尚未开始）
+├── app/                App 端：React Native + Expo
 ├── web-admin/          Web 后台：React + Vite + Ant Design
 ├── packages/           共享包（design-tokens：设计令牌唯一来源）
 └── deploy/             Docker Compose 与 Nginx 配置
@@ -27,7 +27,7 @@ xa-todo/
 | 后端（common / auth / personal / org / admin） | 完成（43 项集成测试） |
 | 设计令牌 packages/design-tokens | 完成（7 项测试） |
 | Web 后台 web-admin | 完成（15 项测试） |
-| App 端 | 未开始 |
+| App 端 app | 完成（22 项测试，模拟器联调待进行） |
 | 阶段二 backend-python | 未开始 |
 | CI、OpenAPI 契约测试、生产部署编排 | 未开始 |
 
@@ -52,6 +52,13 @@ npm run test  -w @xa-todo/web-admin
 
 # 5) 启动 Web 后台（默认 http://127.0.0.1:5173）
 npm run dev:web
+
+# 6) App 端：类型检查与逻辑测试
+npm run typecheck
+npm run test -w @xa-todo/app
+
+# 7) 启动 App（模拟器调试步骤见 app/README.md）
+npm run dev:app
 ```
 
 后端默认监听 `8080`，探活接口 `GET /api/v1/system/ping`。
