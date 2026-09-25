@@ -9,13 +9,40 @@ Java 21 + Spring Boot 3 实现，对应 [spec.md](../spec.md) 阶段一。阶段
 | `xa-common` | 统一响应体 `ApiResponse`、错误码 `ErrorCode`、分页 `PageResult`、`BizException`、`TraceIdFilter` | 已完成 |
 | `xa-auth` | 短信验证码登录、身份列表 / 选择 / 切换、JWT 与刷新令牌、个人身份创建 | 已完成 |
 | `xa-personal` | 个人日历、日程（RRULE 重复 + 例外 + THIS/FUTURE/ALL 范围）、待办与子任务 | 已完成 |
+| `xa-org` | 组织、部门树、成员管理、组织日历下发与回执 | 已完成 |
 | `xa-bootstrap` | 启动入口、安全配置、全局异常、OpenAPI、系统探活接口、Flyway 全量建表脚本 | 已完成 |
-| `org` / `admin` 模块 | 组织与部门、成员管理、组织日历下发与回执、Web 后台（spec §8.5） | 待开发 |
+| `admin` 模块 | 平台超管 Web 后台（组织创建、账号封禁、全局配置、看板、审计） | 待开发 |
 
-数据库结构已按 spec §5 全量落地（19 张表，V1–V6 六个迁移脚本）；认证链路与个人日程 / 待办端到端可用。
+数据库结构已按 spec §5 全量落地（19 张表，V1–V6 六个迁移脚本）；
+认证、个人日程 / 待办、组织下发与回执端到端可用。
 
 未实现部分：密码登录、微信登录、绑定第三方、账号设置（`PATCH /me`）、真实短信通道、推送、
-日程提醒（`/reminders`）、日程↔待办互转、节假日与调休数据。
+日程提醒（`/reminders`）、日程↔待办互转、节假日与调休数据、平台超管后台、
+**成员批量导入**、组织日程的编辑与删除（当前仅支持创建与撤回）。
+
+### 组织权限模型（spec §2.2）
+
+部门树使用**物化路径**（`path` 形如 `/5/12/`），因此「本部门 + 所有下级」是一次
+`path LIKE '/5/%'` 查询。路径结尾的斜杠很关键：它避免了 `/5` 误匹配 `/51` 的经典前缀问题。
+
+| 角色 | 可管理部门 | 可下发范围 |
+| --- | --- | --- |
+| 拥有者 / 组织管理员 | 全组织 | 全员 / 任意部门 / 任意成员 |
+| 部门管理员 | 被授权部门 + 其所有下级 | 本单位范围 / 范围内成员 |
+| 普通成员 | 无 | 无（只读 + 回执） |
+
+权限在 Service 层强制校验，不依赖前端隐藏入口：成员调用下发接口返回 `20003`，
+部门管理员向兄弟部门下发同样返回 `20003`。
+
+**下发是快照**：下发时按范围展开为成员级 `event_recipient` 记录，
+因此后续新入组的成员**不会补收**历史日程（有测试锁定该行为）。
+
+### 组织模块的当前限制
+
+- 组织日程暂不支持 RRULE 重复规则（接口会拒绝；个人日程支持）。
+- 回执为**序列级**，不区分重复日程的某一次出现。
+- 成员只能改自己那条回执记录，组织日程内容对成员始终只读。
+- 已有成员回执后不允许撤回下发（返回 `50002`）。
 
 ### 重复日程（spec §4.1.2）
 
@@ -110,6 +137,19 @@ mvn -pl xa-bootstrap spring-boot:run
 | GET / POST | `/api/v1/tasks` | 待办列表 / 新建 |
 | GET / PATCH / DELETE | `/api/v1/tasks/{id}` | 详情 / 编辑 / 删除 |
 | POST | `/api/v1/tasks/{id}/complete` | 完成 / 取消完成 |
+| GET | `/api/v1/org/current` | 组织上下文：组织信息 + 我的成员信息与可管理部门 |
+| GET | `/api/v1/org/departments/tree` | 组织部门树 |
+| GET | `/api/v1/org/members` | 成员列表（按调用者可管理范围自动限定） |
+| GET | `/api/v1/org/events` | 成员视角的组织日程（含回执状态），参数 `start`、`end` |
+| POST | `/api/v1/org/events/{id}/receipt` | 提交回执 `ACCEPTED`/`DECLINED`/`COMPLETED` |
+| POST | `/api/v1/org/events/{id}/read` | 标记已读 |
+| GET | `/api/v1/org/events/{id}/recipients` | 回执统计与明细 |
+| POST/PATCH/DELETE | `/api/v1/org-admin/departments[/{id}]` | 部门维护 |
+| POST | `/api/v1/org-admin/departments/{id}/managers` | 设置部门管理员 |
+| GET/POST/PATCH | `/api/v1/org-admin/members[/{id}]` | 成员新增 / 编辑 / 停用 |
+| POST | `/api/v1/org-admin/events` | 创建组织日程并下发 |
+| POST | `/api/v1/org-admin/events/{id}/revoke` | 撤回下发 |
+| GET | `/api/v1/org-admin/events/{id}/receipts` | 回执统计与明细 |
 | GET | `/actuator/health` | 健康检查 |
 | GET | `/swagger-ui.html` | OpenAPI 文档 |
 
