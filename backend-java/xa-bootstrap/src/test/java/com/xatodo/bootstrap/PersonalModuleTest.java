@@ -212,7 +212,8 @@ class PersonalModuleTest {
     @Test
     @DisplayName("待办可带图片附件：读回来还在，外链地址被拒绝")
     void taskImagesAreStoredAndValidated() throws Exception {
-        String token = registerAccount("13800000209");
+        // 手机号必须全类唯一：同一个号两次发验证码会撞 60 秒频控（踩过一次）
+        String token = registerAccount("13800000299");
 
         long taskId = postJson("/api/v1/tasks", token,
                 "{\"title\":\"拍的通知\",\"images\":[\"/uploads/notice.png\"]}")
@@ -232,8 +233,9 @@ class PersonalModuleTest {
 
         // 传空数组 = 删光图片（null 才是「不修改」）
         patchJson("/api/v1/tasks/" + taskId, token, "{\"images\":[]}");
-        assertThat(getJson("/api/v1/tasks/" + taskId, token).path("data").path("images").isMissingNode())
-                .as("清空后不再返回 images 字段（non_null 序列化）").isTrue();
+        JsonNode afterClear = getJson("/api/v1/tasks/" + taskId, token).path("data").path("images");
+        assertThat(afterClear.isArray()).as("清空后应返回空数组，而不是残留旧图片").isTrue();
+        assertThat(afterClear).isEmpty();
     }
 
     @Test

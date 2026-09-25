@@ -124,6 +124,10 @@
                          application.yml，一处生效，将来新增测试类也不会漏。 -->
                     <systemPropertyVariables>
                         <HOLIDAY_SYNC_ENABLED>false</HOLIDAY_SYNC_ENABLED>
+                        <!-- 按 IP 的验证码日限额在测试里没有意义：整套用例都从同一个「IP」发验证码，
+                             用例一多就会随机变红（表现为无关用例报「验证码发送过于频繁」）。
+                             手机号维度的限额保持原样，它才是测试真正会碰到的那个。 -->
+                        <xatodo.auth.sms-daily-limit-per-ip>100000</xatodo.auth.sms-daily-limit-per-ip>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
