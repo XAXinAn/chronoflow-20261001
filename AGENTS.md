@@ -45,15 +45,16 @@ XaTodo（心安待办），智能日程与待办 App。项目代号 `xa-todo`。
 | 部分 | 状态 | 测试 |
 | --- | --- | --- |
 | spec.md | 完成（v1.1） | — |
-| backend-java（6 模块） | 完成 | **69 项集成测试全绿** |
-| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **34 项全绿** |
+| backend-java（7 模块，新增 `xa-support`） | 完成 | **76 项集成测试全绿** |
+| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **41 项全绿** |
 | packages/design-tokens | 完成 | 7 项 |
 | web-admin（React + Vite + AntD） | 完成 | 15 项 |
-| app（React Native + Expo） | **核心流程可用**（日程/待办增删改、地图选点、组织日程与回执、日历页检索/跳转/节假日标记） | **56 项**（**仅纯逻辑层，组件未做渲染测试**） |
+| app（React Native + Expo） | **核心流程可用**（日程/待办增删改、地图选点、组织日程与回执、日历页检索/跳转/节假日标记、头像上传、意见反馈） | **63 项**（**仅纯逻辑层，组件未做渲染测试**） |
 
 最近几次提交：
 
 ```
+8c51d22 feat: 图片上传通道 + 头像换图 + 意见反馈；节假日改为后端每天自动同步
 abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，并修掉月历多画一整周邻月
 54ebe85 feat(app): 待办的关联日程独立成行并带图标；修待办页时区跟随设备导致与日历自相矛盾
 aac7f75 feat: 待办可关联日程（一个日程对多个待办），入口在待办编辑页
@@ -130,26 +131,33 @@ App 的 adb 点击不太可靠（见 §5）。两条路：
 顺带修掉一个实机发现的问题：**月历固定画 6 行**会把整周属于邻月的日子也画进来（9 月视图里出现一整周 10 月）。
 现在按实际需要的行数渲染（5 或 6 行），`buildMonthGrid` 有专门的回归测试（`app/test/calendar.test.ts`）。
 
+| 4 | **图片上传通道**（头像与反馈的前置，spec §5.10） | 契约新增 `POST /uploads/images`；新增 `xa-support` 模块里的 `ImageStorage`（按文件头判格式、内容哈希命名、目录可配）+ `/uploads/**` 静态映射（免鉴权） | Java `SupportModuleTest` + Python 同名用例：伪装成 jpg 的文本被 `90003` 拒、超 5 MB 被 `90004` 拒、同图重复上传得同一 URL、静态目录能取图 |
+| 5 | **头像上传/更新**（spec §4.1.8） | App「我的」页头像可点：选图 → 上传 → `PATCH /me` 回填；`avatarUrl` 存相对 URL，展示时拼 API 地址（`domain/media.ts`） | 模拟器实机换头像成功；`GET /me` 返回 `/uploads/610f05….png`，该地址免鉴权取回 `image/png` |
+| 6 | **意见反馈**（spec §4.1.9 / §5.10 / §6.3） | 契约新增 `POST /feedback`、`GET /feedback`、`GET /admin/feedback`、`POST /admin/feedback/{id}/handle`；迁移 V12 建 `feedback` 表；App 新增整页表单（分类 + 描述 + 多图 + 历史） | 模拟器提交成功且历史可见；超管列表能看到并标记 `HANDLED`，处理后再查待处理列表为 0 |
+
 **节假日数据（新的约定，别搞混）**：
 
-- 数据**不在迁移里、不在代码里**。`V11__holiday_calendar.sql` 只建表；数据放 `scripts/data/holidays/*.json`
-  （**原样拷贝自 [holiday-cn](https://github.com/NateScarlet/holiday-cn)**，含国务院办公厅通知链接）。
-- 灌数据：`backend-python/.venv/bin/python scripts/load_holidays.py`（幂等）。新增年份：
-  `--url https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/2027.json`；上游撤掉调休日时加 `--prune`。
-- 服务端有 5 分钟进程内缓存，所以热更新最迟 5 分钟生效，不用重启。
+- 数据**不在迁移里、不在代码里**。`V11__holiday_calendar.sql` 只建表；上游是
+  [holiday-cn](https://github.com/NateScarlet/holiday-cn)（含国务院办公厅通知链接）。
+- **两版后端每天自动同步**（默认 03:10 东八区，启动后 30 秒再补跑一次）：拉当年与次年、幂等 upsert、
+  清缓存，所以更新完立刻可见。配置项 `HOLIDAY_SYNC_ENABLED / HOLIDAY_SYNC_CRON / HOLIDAY_SYNC_BASE_URL`；
+  测试里被 surefire 系统属性与 conftest 关掉——单元测试不该依赖外网。
+- 离线 / CI / 想立刻生效时手动灌：`backend-python/.venv/bin/python scripts/load_holidays.py`
+  （`--url` 拉指定年份、`--prune` 清理上游撤掉的日子）。
+- 同步状态在 `GET /system/info` 的 `holidaySync` 里（`lastSuccessAt` / `lastError` / `years`）——
+  后台任务静默失败是最难查的故障。
 - 库里没有那一年就是空数组、界面不显示任何标记——**不猜、不硬编码兜底**。
 
 **其余未做完的（按建议顺序）**：
 
-| # | 需求 | spec 位置 | 涉及范围 | 备注 |
-| --- | --- | --- | --- | --- |
-| 1 | **意见反馈**：我的页入口，分类 + 文字 + 多图，提交给超管 | §4.1.9、§5.10、§6.2 `POST /feedback` | 上传通道 + `feedback` 表 + 两版 + App 表单 + 超管查阅 | 依赖 #2 |
-| 2 | **图片上传通道**（不是独立需求，是 #1 与 #3 的前置） | §5.10 | 存储实现 + `/uploads/**` 静态映射 + 两版 | 对象存储是 §8 明确推迟的外部依赖，首版用**可替换存储**：本地目录 + 静态映射，接口不绑具体存储 |
-| 3 | **头像上传/更新**：点「我的」页头像换图 | §4.1.8 | **只缺上传通道** | `PATCH /me` 的 `avatarUrl` 两版都已支持，契约里也有 |
+| # | 事项 | 说明 |
+| --- | --- | --- |
+| 1 | **组织首位成员无法通过 API 创建**（产品断点，见上文本轮以外的问题） | 需要补超管侧入口，例如 `POST /admin/organizations/{id}/members`；现在只能直接写库 |
+| 2 | **深色模式偏好没有持久化** | `AppContext.toggleScheme` 只改 React state，App 重启即丢（实测确认） |
+| 3 | **web-admin 还缺两块页面** | ①组织管理端（src 里搜不到 `/org-admin`、`/org/current`）；②意见反馈查阅——**后端接口已就绪**（`GET /admin/feedback`、`POST /admin/feedback/{id}/handle`），只差后台页面 |
 
-建议做法：#1 与 #3 都要动 DB 与契约，**合并成一次迁移 + 一次契约变更**做完，避免反复跑两版同步；
-#2 是纯前端；#6 只要 #5 做出来就能落地，是最快的「见效」路径。
-App 侧选图用 `expo-image-picker`（Expo Go 内置，不必切 Dev Client）。
+App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File`（原因见 §5 陷阱里的
+「Expo SDK 57 的 fetch 不支持 `{uri,name,type}`」）。
 
 **这批改动里 App 界面未走查的部分**（代码完成、测试绿，但没在模拟器里逐屏点过）：
 
@@ -257,7 +265,8 @@ adb shell pm clear host.exp.exponent
 # 然后按 4.4 重启后端（Flyway 会重建表结构并重新创建初始超管）
 ```
 
-**重建库后要重灌节假日数据**（它不在迁移里，见 §3「节假日数据」）：
+**重建库后节假日数据会自动回来**（两版后端每天同步 + 启动后 30 秒补跑一次，见 §3「节假日数据」）。
+要立刻生效、或环境没有外网时，手动灌：
 
 ```bash
 backend-python/.venv/bin/python scripts/load_holidays.py
@@ -311,12 +320,17 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 | Python 测试夹具按**字典序**排迁移文件 | `V10__` 排在 `V4__` 前面 → task 表还不存在就 `ALTER TABLE`；只在版本号进两位数后暴露 | 按版本号**数值**排序（与 Flyway 一致），见 `tests/conftest.py::_migration_version` |
 | 后端 `default-property-inclusion: non_null` | 空字段**整个消失**，前端拿到的是 `undefined` 而不是 `null`，`!== null` 判断全部走偏 | 在前端边界归一到 `null`（`?? null`） |
 | 时间用 `toLocaleString` 不带 `timeZone` | 跟**设备时区**走。设备不是东八区时，同一时刻日历页显示 14:00、待办页显示 06:00，两页自相矛盾 | 统一显式传 `timeZone: APP_TIMEZONE` 再格式化 |
+| 上传的文件名用用户给的名字 | 路径穿越 + 同名覆盖 + 无法去重 | 文件名取**内容哈希**（`ImageStorage`），原始文件名只出现在 multipart 的 filename 提示里；格式按**文件头**判定，不信客户端声明的 MIME |
+| `/uploads/**` 忘了免鉴权 | `<Image>` 直接按 URL 取图，带不了 Authorization，图全裂 | `SecurityConfig` 放行 `/uploads/**`（Java 静态映射 / Python `StaticFiles`）；代价是这里不能放私有内容 |
+| 节假日「更新了但界面没变」 | 数据入库了，进程内缓存还在，界面仍是旧的 | 同步成功后主动 `clearCache()`；平时 TTL 5 分钟兜底 |
 
 ### 前端
 
 | 陷阱 | 现象 | 解法 |
 | --- | --- | --- |
 | RN 的 fetch 不自动设 Content-Type | 字符串 body 默认发 `application/octet-stream`，后端 415，**所有 POST/PUT/PATCH 全挂** | 显式设 `Content-Type: application/json`。Web 端 fetch 无此问题，所以只在真机/模拟器暴露 |
+| Expo SDK 57 的 fetch 不支持 `FormData.append(name, { uri, name, type })` | 上传图片时报 `Unsupported FormDataPart implementation`，请求根本不出网（后端日志里什么都看不到） | Expo 的 fetch 自己拼 multipart，只接受 **Blob** 或带 `bytes()` 的对象：用 `expo-file-system` 的 `File`（实现 Blob 接口、自带 name/type）append。见 `api/endpoints.ts` 的 `uploadImage` |
+| `ImagePicker` 开 `allowsEditing: true` | 拉起 AOSP 裁剪页，但这台模拟器上**确认按钮不渲染**（只有翻转菜单），用户卡在裁剪页出不来 | 头像这类「界面里本来就圆形裁切」的场景别开；真需要裁剪就自己实现 |
 | 只更新 React state 不写存储 | 登录后一重启就要重新登录 | 走 `SessionManager.setFromTokenResponse()`，别直接用 state setter |
 | 未配 `tabBarIcon` | 导航栏渲染成缺字体占位方块（看起来像乱码） | 用 `@expo/vector-icons` 配上图标 |
 | edge-to-edge 下内容顶到状态栏 | 去掉标题栏后内容与状态栏重叠 | 用 `useSafeAreaInsets()` 补 `paddingTop` |
@@ -389,17 +403,17 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 
 ```bash
 # 后端（测试自带嵌入式 PG/Redis，无需外部依赖）
-cd backend-java && mvn -B clean verify          # 期望 69 项全绿（需提权：沙箱不让绑端口）
+cd backend-java && mvn -B clean verify          # 期望 76 项全绿（需提权：沙箱不让绑端口）
 
 # Python 后端（需要先跑 ./backend-python/scripts/setup-test-deps.sh）
 # 注意：嵌入式 PG 要占 5432，跑之前先停开发库，跑完再启回来
-cd backend-python && .venv/bin/python -m pytest  # 期望 34 项全绿
+cd backend-python && .venv/bin/python -m pytest  # 期望 41 项全绿
 
 # 前端
 npm run build -w @xa-todo/design-tokens
 npm run build -w @xa-todo/web-admin
 npm run typecheck -w @xa-todo/app
-npm test                                        # 期望 7 + 15 + 56 项全绿
+npm test                                        # 期望 7 + 15 + 63 项全绿
 ```
 
 CI 在 `.github/workflows/ci.yml`，三个 job：Java / Python / 前端。
