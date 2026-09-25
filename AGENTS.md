@@ -1,14 +1,38 @@
 # AGENTS.md —— XaTodo 会话交接文档
 
-> 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「待验证清单」和「环境陷阱」两节。
+> 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-09-25
+> 最后更新：2026-09-25（第二轮收尾）
+
+---
+
+## 0.0 本次交接摘要（2026-09-25，第二轮）
+
+**这一轮做了什么**（每条都有测试与实机证据，详见 §3）：
+
+1. 日历页：检索（跨**个人 + 我绑定的所有组织**）、滚轮式「跳到指定日期」、常驻「今天」按钮、
+   三个同尺寸悬浮按钮（拍照 / 跳转 / 新建）、节假日「休/班」标记（后端每天自动同步 holiday-cn）。
+2. 账号模型改版：**登录只走个人账号**；组织账号改成「**认领**」——管理员只导入成员唯一识别 ID
+   （学号/工号），成员用「组织唯一 ID + 唯一识别 ID」认领；组织 tab 常驻 + 账户管理页；
+   每个组织一套独立令牌（互不串数据）。
+3. 图片上传通道 + 头像换图 + 意见反馈（含超管查阅接口）；待办支持图片附件。
+4. 「小安」入口落在**底部导航**（组织之后）。
+5. 拍照/相册识别日程：接口、约束解码、容错解析、修复重试、可编辑结果页、地点高德解析都就绪，
+   **但端侧模型没跑通**（工具链缺失），按产品要求**排到最后**。
+
+**下一个 agent 建议从这里开始**（§3 有完整清单）：
+
+- **【产品断点】新组织建好后没有任何入口导入首位成员**：`/org-admin/members` 要组织身份令牌，
+  而新组织里还没有人认领过成员 → 无人能导入。两条路线任选（详见 §3）。
+- 深色模式偏好没持久化（纯 App，很小）。
+- web-admin 缺两块页面：组织管理端、意见反馈查阅（后端接口已就绪）。
+- 拍照识别（端侧）——排最后，前置条件是 Dev Client 构建环境，见 §4.3 的「Android 构建链现状」。
 
 ---
 
 ## 0. 新会话开工三步（先看这里）
 
-1. **看 §3「未做完的」清单决定做什么**。需求都在 `spec.md` 里（本项目约定：需求先写 spec 再写代码）。
+1. **看 §0.0 摘要与 §3 交接清单决定做什么**。需求都在 `spec.md` 里（本项目约定：需求先写 spec 再写代码）。
 2. **确认环境在不在跑，在跑就别重启**：
 
    ```bash
@@ -25,6 +49,16 @@
 
 当前环境（2026-09-25 收尾时）**全部在跑**：PG 5432 / Redis 6379 / 后端 8080（带高德 Key）/ Metro 8081 / `emulator-5554`。
 高德凭据在 `/home/jiang/develop/xa-todo/.env.local`（已被 gitignore）。
+
+**后端起停脚本**（重启后端时别忘加载本地凭据，漏了会静默降级成内置地点集）：
+
+```bash
+kill "$(ss -ltnp | grep :8080 | sed -E 's/.*pid=([0-9]+).*/\1/')"   # 别用 pkill -f *.jar（会杀掉自己）
+cd /home/jiang/develop/xa-todo/backend-java/xa-bootstrap
+set -a; . /home/jiang/develop/xa-todo/.env.local; set +a
+setsid nohup /home/jiang/tools/jdk-21.0.12.1+1/bin/java -jar target/xa-bootstrap-0.1.0-SNAPSHOT.jar \
+  > /tmp/xa-backend.log 2>&1 < /dev/null & disown
+```
 
 ---
 
@@ -44,100 +78,72 @@ XaTodo（心安待办），智能日程与待办 App。项目代号 `xa-todo`。
 
 | 部分 | 状态 | 测试 |
 | --- | --- | --- |
-| spec.md | 完成（v1.1） | — |
-| backend-java（7 模块，新增 `xa-support`） | 完成 | **78 项集成测试全绿** |
-| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **44 项全绿** |
-| packages/design-tokens | 完成 | 7 项 |
+| spec.md | 完成（v1.2） | — |
+| 跨语言契约 | `contract/api-contract.json`，**98 个端点** | Java 与 Python 各自校验 |
+| backend-java（7 模块，含新增 `xa-support`） | 完成 | **87 项集成测试全绿** |
+| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **48 项全绿** |
+| packages/design-tokens | 完成 | 8 个用例（1 个测试文件；`node --test` 汇总会显示 1） |
 | web-admin（React + Vite + AntD） | 完成 | 15 项 |
-| app（React Native + Expo） | **核心流程可用**（日程/待办增删改、地图选点、组织日程与回执、日历页检索〔跨个人+所有组织〕/滚轮跳转/节假日标记、头像上传、意见反馈、组织账号认领与账户管理、小安入口） | **75 项**（**仅纯逻辑层，组件未做渲染测试**） |
+| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程与回执、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记/拍照入口、头像上传、意见反馈、组织账号认领与账户管理、小安 tab | **81 项**（**仅纯逻辑层，组件未做渲染测试**） |
 
-最近几次提交：
+最近几次提交（倒序）：
 
 ```
+035d072 feat(app): 「小安」入口移到导航栏（组织之后）；拍照识别整条暂缓到最后
+3a63dfc feat: 检索跨「个人 + 我绑定的所有组织」；日历页加拍照与小安入口；取消不再二次确认
+d8bab0b fix(app): 「今天」按钮改成三栏布局，不再压住上一月的箭头
+147ecf2 fix(app): 两个悬浮按钮统一成 56×56
+7e40740 feat(app): 「跳到指定日期」改成滚轮选日期，不再复用月历
+c07b579 feat(app): 登录只走个人账号、组织 tab 常驻、新增「账户管理」
+52fb38f fix(org): 同一账号在同一组织只能绑一个成员账号——复用时先查占用
+59f5f66 feat(org): 组织账号改为「认领」模型——登录只走个人账号，组织账号可绑定多个
+d6745d6 docs(agents): 交接上传/头像/反馈与节假日自动同步，并记下两个真坑
 8c51d22 feat: 图片上传通道 + 头像换图 + 意见反馈；节假日改为后端每天自动同步
 abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，并修掉月历多画一整周邻月
-54ebe85 feat(app): 待办的关联日程独立成行并带图标；修待办页时区跟随设备导致与日历自相矛盾
-aac7f75 feat: 待办可关联日程（一个日程对多个待办），入口在待办编辑页
-e519fad feat: 待办可编辑/删除，并修掉两处「更新时 null 被静默丢弃」的坑
-fd3f6bb feat(app): 日程独立编辑页、地图选点、身份切换页，并按商用形态重做「我的」页
-e5c60bb feat(backend): 日程字段对齐系统日历 + 接入真实高德（Java 与 Python 双语一致）
-71d384c docs(agents): 待验证清单 5 项全部实机通过，并记录本轮发现的 4 个问题
 ```
 
 ---
 
-## 3. ⚠️ 待验证清单（**最重要，先做这个**）
+## 3. 交接清单（已完成 / 未做完 / 已知问题）
 
-上一轮被明确批评「做一件事忘了上一件」。以下是**代码写完但从未真正走通**的功能。**不要开始新功能，先把这些验证完。**
+**这一节怎么读**：3.1 本轮做完的（都有实机证据）→ 3.2 节假日数据约定 →
+3.3 组织账号模型（**本轮最大的改动，动手前必读**）→ **3.4 未做完的（先从这里挑活）** →
+3.5 未走查的界面 → 3.6 实现细节 → 3.7 模拟企业数据集 → 3.8 验证方法 →
+3.9 上一轮的验证记录（历史，已闭环）。
 
-**5 项已全部在模拟器上实机走通**（2026-09-25）。证据都留在后端日志与数据库里，不是"看起来应该行"。
-
-| # | 事项 | 验证结论 | 状态 |
-| --- | --- | --- | --- |
-| 1 | **新建日程全流程** | 点 `+` → 表单弹出 → 填标题 → 保存 → 列表立即出现「Team 09:00–10:00」；数据库 `event id=1` 落库（Asia/Shanghai，CONFIRMED） | ✅ 通过 |
-| 2 | **会话持久化** | `am force-stop` 杀掉 Expo Go 后冷启动，直接进入日历页并加载出个人日程，**未要求重新登录** | ✅ 通过 |
-| 3 | **待办页** | 输入框回车新增 →「待办 1 条」；勾选后条目移入「已完成」分组、标题加删除线 | ✅ 通过 |
-| 4 | **我的页** | 深色模式整屏切换正常；身份切换成功（个人 ↔ 组织），切换后底部导航自动增减「组织」tab | ✅ 通过 |
-| 5 | **组织身份全链路** | 超管建组织 → 组织身份下发日程（部门范围展开 **35** 条成员级记录）→ App 切组织身份看到「季度技术评审会」→ 点「参加」→ `event_recipient.receipt_status=ACCEPTED` 落库 | ✅ 通过 |
-
-### 本轮新发现（都要单独处理，别丢）
-
-1. **组织首位成员无法通过 API 创建（产品断点）**
-   `/org-admin/members` 要求调用方已经携带**组织身份令牌**，而首个组织成员没有任何入口可创建；
-   超管建组织时"同步创建首位 ORG_ADMIN 后台管理员"，但后台管理员令牌对 `/org-admin/**` 无效
-   （该组接口按契约是 `auth: access`，走身份令牌）。于是形成鸡生蛋：**新组织永远加不进第一个成员**。
-   验证第 5 项时只能直接写库绕过（见 `scripts/seed_demo_org.py` 的说明）。
-   需要补一个超管侧入口，例如 `POST /admin/organizations/{id}/members`。
-2. **深色模式偏好没有持久化**：`AppContext.toggleScheme` 只改 React state，App 重启即丢（实测确认）。
-3. ~~**App 端地图能力受 Expo Go 限制**~~ **已解决**：确认不能引入 `react-native-maps`，但
-   `react-native-webview` 是 Expo Go 内置的，加载高德 JS 地图即可，不必切 Dev Client。
-   注意地图页必须由**后端提供**（`/map/amap`），内联 HTML 会让高德 v2 下到脚本却不定义 `AMap`。详见 §5.9。
-4. **web-admin 未实现组织管理端**：`web-admin/src` 里搜不到任何 `/org-admin`、`/org/current` 调用，
-   与 spec §4.3「Web 后台 —— 组织管理端」的描述不符（现状是只有后端接口）。**尚未处理**。
-
-### 模拟企业数据集
-
-`scripts/seed_demo_org.py` 可重复执行（按组织编码 / 部门路径 / 手机号判重），一键造出一家模拟大型企业：
-
-```
-backend-python/.venv/bin/python scripts/seed_demo_org.py
-# 组织 #1 心安科技(XATECH)：43 个部门（中心→部→组 三层）、196 名成员、43 位部门负责人、4 位组织管理员、1 位拥有者
-# App 登录账号 18006569106（王思远）＝ 技术中心 / 应用研发部 负责人（中间层级部门）
-```
-
-账号分布：技术中心 87 人、市场中心 57 人、产品中心 28 人、职能中心 24 人；手机号用 `131` 号段顺序生成。
-
-### 验证方法建议
-
-App 的 adb 点击不太可靠（见 §5）。两条路：
-
-- **让用户手点**：最省事，也最接近真实体验。
-- **用 API 造数据 + App 里看**：先用 curl 建组织/成员/日程，再在 App 里刷新查看。适合验证「读」的路径。
-
-验证完一项就改上面的状态，别攒着。
-
-### 已提但尚未实现的需求（产品口头反馈，已落 spec）
-
-这几条是产品明确提出、且**已经写进 spec** 的需求，代码还没做。别当成"没提过"：
-
-**本轮已完成（2026-09-25，代码 + 测试 + 模拟器实机都走过）**：
+### 3.1 本轮已完成（2026-09-25 第二轮，代码 + 测试 + 模拟器实机都走过）
 
 | # | 需求 | 落地位置 | 证据 |
 | --- | --- | --- | --- |
 | 1 | **日历页置顶搜索框**（同时搜日程与待办） | 契约新增 `GET /search`；Java `SearchService` / Python `SearchService`；App `AgendaScreen` 顶部常驻搜索框 | Java `SearchAndHolidayTest` 7 项 + Python 同名 7 项；模拟器输入 `A` 命中地点「会议室 A」的日程，带「重复」徽标；curl 验证重复日程落在最近一次实例（`occurrenceDate=2026-09-28`） |
 | 2 | **「跳到指定日期」**（新建按钮上方的悬浮按钮） | 纯 App，`AgendaScreen` 里的 `jumpLayer`（复用月历组件，含「回到今天」） | 模拟器点开、翻月、选中均正常 |
-| 3 | **节假日与调休显示**（格子标「休 / 班」） | 契约新增 `GET /holidays`；表 `holiday`（V11 只建表）；数据源 `scripts/data/holidays/*.json` + `scripts/load_holidays.py` 热更新；App `MonthCalendar` 在数字右上角画休（蓝）/班（红） | 2026 年 39 条真实数据（33 放假 + 6 调休）；模拟器 9/25「休」、9/20「班」可见；详见下方「节假日数据」 |
+| 3 | **节假日与调休显示**（格子标「休 / 班」） | 契约新增 `GET /holidays`；表 `holiday`（V11 只建表）；数据源 `scripts/data/holidays/*.json` + `scripts/load_holidays.py` 热更新；App `MonthCalendar` 在数字右上角画休（蓝）/班（红） | 2026 年 39 条真实数据（33 放假 + 6 调休）；模拟器 9/25「休」、9/20「班」可见；详见 §3.2 |
+| 4 | **图片上传通道**（头像与反馈的前置，spec §5.10） | 契约新增 `POST /uploads/images`；新增 `xa-support` 模块里的 `ImageStorage`（按文件头判格式、内容哈希命名、目录可配）+ `/uploads/**` 静态映射（免鉴权） | Java `SupportModuleTest` + Python 同名用例：伪装成 jpg 的文本被 `90003` 拒、超 5 MB 被 `90004` 拒、同图重复上传得同一 URL、静态目录能取图 |
+| 5 | **头像上传/更新**（spec §4.1.8） | App「我的」页头像可点：选图 → 上传 → `PATCH /me` 回填；`avatarUrl` 存相对 URL，展示时拼 API 地址（`domain/media.ts`） | 模拟器实机换头像成功；`GET /me` 返回 `/uploads/610f05….png`，该地址免鉴权取回 `image/png` |
+| 6 | **意见反馈**（spec §4.1.9 / §5.10 / §6.3） | 契约新增 `POST /feedback`、`GET /feedback`、`GET /admin/feedback`、`POST /admin/feedback/{id}/handle`；迁移 V12 建 `feedback` 表；App 新增整页表单（分类 + 描述 + 多图 + 历史） | 模拟器提交成功且历史可见；超管列表能看到并标记 `HANDLED`，处理后再查待处理列表为 0 |
+| 7 | **检索跨「个人 + 我绑定的所有组织」**（spec §4.1.7） | `/search` 增加 `ORG_EVENT` 类型 + `identityId`/`orgId`/`orgName`；App 点组织日程会切到对应组织视图并选中那天 | Java `OrgModuleTest.searchCoversOrgEventsAcrossBoundOrganizations`（同一账号绑两个组织 → 命中两条 → 撤回一条后只剩一条）+ Python 同名用例 |
+| 8 | **组织账号「认领」模型**（spec §3.1 / §3.2 / §4.2.5，这一轮最大的改动） | 登录只走个人账号；`POST /org-accounts/login`（组织唯一 ID + 成员唯一识别 ID）；`GET/DELETE /org-accounts`；组织 tab 常驻 + 账户管理页；每个组织一套独立令牌 | Java 87 项里的 `OrgModuleTest` / `AuthFlowTest` 相关用例；模拟器实机：组织 tab 自动重新认领 → 显示「当前组织 心安科技」+ 组织日程与回执；账户管理页可添加/列表/删除 |
+| 9 | **「小安」入口**（spec §11 阶段三的预留位） | 底部导航常驻 tab，排在「组织」之后，标题就叫「小安」；对话页如实说「还没有接入模型」 | 模拟器截图；`app/test/agent.test.ts` 有用例盯着「未接入」的文案 |
+| 10 | **待办图片附件**（spec §4.1.3） | 迁移 V14 `task.images`；`POST/PATCH /tasks` 接受 `images[]` | Java/Python 都测了「外链被拒」「空数组=删光（不能只看接口返回，要 GET 读回来）」 |
+| 11 | **取消不再二次确认**（spec §4.1.5） | 编辑页「取消」直接返回；删除这类不可恢复操作仍然确认 | — |
 
 顺带修掉一个实机发现的问题：**月历固定画 6 行**会把整周属于邻月的日子也画进来（9 月视图里出现一整周 10 月）。
 现在按实际需要的行数渲染（5 或 6 行），`buildMonthGrid` 有专门的回归测试（`app/test/calendar.test.ts`）。
 
-| 4 | **图片上传通道**（头像与反馈的前置，spec §5.10） | 契约新增 `POST /uploads/images`；新增 `xa-support` 模块里的 `ImageStorage`（按文件头判格式、内容哈希命名、目录可配）+ `/uploads/**` 静态映射（免鉴权） | Java `SupportModuleTest` + Python 同名用例：伪装成 jpg 的文本被 `90003` 拒、超 5 MB 被 `90004` 拒、同图重复上传得同一 URL、静态目录能取图 |
-| 5 | **头像上传/更新**（spec §4.1.8） | App「我的」页头像可点：选图 → 上传 → `PATCH /me` 回填；`avatarUrl` 存相对 URL，展示时拼 API 地址（`domain/media.ts`） | 模拟器实机换头像成功；`GET /me` 返回 `/uploads/610f05….png`，该地址免鉴权取回 `image/png` |
-| 6 | **意见反馈**（spec §4.1.9 / §5.10 / §6.3） | 契约新增 `POST /feedback`、`GET /feedback`、`GET /admin/feedback`、`POST /admin/feedback/{id}/handle`；迁移 V12 建 `feedback` 表；App 新增整页表单（分类 + 描述 + 多图 + 历史） | 模拟器提交成功且历史可见；超管列表能看到并标记 `HANDLED`，处理后再查待处理列表为 0 |
+### 3.2 节假日数据（2026-09-25 的新约定，别搞混）
 
-**节假日数据（新的约定，别搞混）**：
+- 数据**不在迁移里、不在代码里**。`V11__holiday_calendar.sql` 只建表；上游是
+  [holiday-cn](https://github.com/NateScarlet/holiday-cn)（含国务院办公厅通知链接）。
+- **两版后端每天自动同步**（默认 03:10 东八区，启动后 30 秒再补跑一次）：拉当年与次年、幂等 upsert、
+  清缓存，所以更新完立刻可见。配置项 `HOLIDAY_SYNC_ENABLED / HOLIDAY_SYNC_CRON / HOLIDAY_SYNC_BASE_URL`；
+  测试里被 surefire 系统属性与 conftest 关掉——单元测试不该依赖外网。
+- 离线 / CI / 想立刻生效时手动灌：`backend-python/.venv/bin/python scripts/load_holidays.py`
+  （`--url` 拉指定年份、`--prune` 清理上游撤掉的日子）。
+- 同步状态在 `GET /system/info` 的 `holidaySync` 里（`lastSuccessAt` / `lastError` / `years`）——
+  后台任务静默失败是最难查的故障。
+- 库里没有那一年就是空数组、界面不显示任何标记——**不猜、不硬编码兜底**。
 
-**组织账号模型（2026-09-25 改版，动手前务必读 spec §3.1 / §3.2 / §4.2.5）**：
+### 3.3 组织账号模型（2026-09-25 改版，动手前务必读 spec §3.1 / §3.2 / §4.2.5）
 
 - **登录只走个人账号**：`POST /auth/login/sms`（要带 `deviceId`）已有个人身份时直接返回个人会话；
   `selectToken` / 选身份页在 App 里已经删掉（端点还留着，给将来的 Web 端）。
@@ -154,20 +160,7 @@ App 的 adb 点击不太可靠（见 §5）。两条路：
 - 组织 tab **常驻**：没绑任何组织账号时展示空状态 + 添加入口（入口消失用户就找不到地方加了）。
 - 安全取舍：唯一识别 ID 不是秘密，所以这是「认领」而非强认证（spec §3.1 写了加固方向）。
 
-**节假日数据（续）**：
-
-- 数据**不在迁移里、不在代码里**。`V11__holiday_calendar.sql` 只建表；上游是
-  [holiday-cn](https://github.com/NateScarlet/holiday-cn)（含国务院办公厅通知链接）。
-- **两版后端每天自动同步**（默认 03:10 东八区，启动后 30 秒再补跑一次）：拉当年与次年、幂等 upsert、
-  清缓存，所以更新完立刻可见。配置项 `HOLIDAY_SYNC_ENABLED / HOLIDAY_SYNC_CRON / HOLIDAY_SYNC_BASE_URL`；
-  测试里被 surefire 系统属性与 conftest 关掉——单元测试不该依赖外网。
-- 离线 / CI / 想立刻生效时手动灌：`backend-python/.venv/bin/python scripts/load_holidays.py`
-  （`--url` 拉指定年份、`--prune` 清理上游撤掉的日子）。
-- 同步状态在 `GET /system/info` 的 `holidaySync` 里（`lastSuccessAt` / `lastError` / `years`）——
-  后台任务静默失败是最难查的故障。
-- 库里没有那一年就是空数组、界面不显示任何标记——**不猜、不硬编码兜底**。
-
-**其余未做完的（按建议顺序）**：
+### 3.4 未做完的（按建议顺序，前两条见 §0.0 摘要）
 
 | # | 事项 | 说明 |
 | --- | --- | --- |
@@ -179,22 +172,66 @@ App 的 adb 点击不太可靠（见 §5）。两条路：
 App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File`（原因见 §5 陷阱里的
 「Expo SDK 57 的 fetch 不支持 `{uri,name,type}`」）。
 
-**这批改动里 App 界面未走查的部分**（代码完成、测试绿，但没在模拟器里逐屏点过）：
+### 3.5 App 界面未走查的部分（代码完成、测试绿，但没在模拟器里逐屏点过）
 
-- 待办编辑/删除、待办关联日程的**选择页与回显**
-- 「我的」页重做后的整体观感、身份切换页
-- 切回个人身份后「组织」tab 是否彻底消失（`key={identityId}` 重建的修复只做了代码层面）
+- 待办的图片附件（拍照入口 → 结果页）在**未接入模型**时的表现：只验到「如实提示」这一层，
+  真正识别、编辑、批量创建这条链路没跑通过（端侧模型未就绪，见 §3.4 第 4 条）。
+- 意见反馈的历史列表在数据较多时的滚动表现；「我的」页深色模式下的观感。
 
-原因见 §5：Expo Go 的元素检查器会反复出现并吃掉点击，adb 自动化在它开着时不可信。
-下次接手时建议先在 dev 菜单里确认 **Toggle element inspector 是关的**，再开始点。
+原因见 §5：Expo Go 的元素检查器会反复出现并吃掉点击，adb 自动化在它开着时不可信；
+另外**用 adb 点按钮前先 `uiautomator dump` 拿真实 bounds**，别凭截图估算坐标（我因此白点了几轮）。
 
-### 已完成但值得记住的实现细节
+### 3.6 已完成但值得记住的实现细节
 
 - **地图选点页由后端提供**（`/map/amap`），不是 App 内联 HTML：内联走 Android 的 `loadDataWithBaseURL`，高德 JS API v2 能下到脚本却**不定义 `AMap`**；换成真实 HTTP 页面才正常。页面内「拿到位置前不建图」，否则会先闪一个默认城市再跳过去。
 - **GPS 的 WGS-84 必须转 GCJ-02 再落点**（页面里用 `AMap.convertFrom`），直接画会偏几百米。
 - 高德两类 Key 分工：**Web服务** Key 给后端搜地点/逆地理（不出服务端）；**Web端(JS API)** Key + 安全密钥给 WebView 画地图（必然在客户端）。`scripts/check_amap_key.sh` 可一键验证。
 - 日程编辑与新建共用同一个整页组件；重复日程的保存/删除会询问「仅此一次 / 整个系列」。
 - `PATCH /events/{id}` 的 null 语义是「不修改」，**空串才是「清空」**（地点尤为明显：清空时坐标一并清掉）。
+
+### 3.7 模拟企业数据集
+
+`scripts/seed_demo_org.py` 可重复执行（按组织编码 / 部门路径 / 手机号判重），一键造出一家模拟大型企业：
+
+```
+backend-python/.venv/bin/python scripts/seed_demo_org.py
+# 组织 #1 心安科技(XATECH)：43 个部门（中心→部→组 三层）、196 名成员、43 位部门负责人、4 位组织管理员、1 位拥有者
+# App 登录账号 18006569106（王思远）＝ 技术中心 / 应用研发部 负责人（中间层级部门）
+```
+
+账号分布：技术中心 87 人、市场中心 57 人、产品中心 28 人、职能中心 24 人；手机号用 `131` 号段顺序生成。
+**注意**：该脚本直接写库，绕过了「组织成员没有导入入口」这个断点（见 §3.4 第 1 条）。
+
+### 3.8 验证方法建议
+
+App 的 adb 点击不太可靠（见 §5）。两条路：
+
+- **让用户手点**：最省事，也最接近真实体验。
+- **用 API 造数据 + App 里看**：先用 curl 建组织/成员/日程，再在 App 里刷新查看。适合验证「读」的路径。
+
+验证完一项就回来改文档里的状态，别攒着。
+
+### 3.9 上一轮的验证记录（2026-09-25 第一轮，5 项全部实机通过）
+
+那一轮被明确批评「做一件事忘了上一件」，所以清单从「代码写完」改判为「实机走通」才算数。
+证据都在后端日志与数据库里，不是"看起来应该行"。
+
+| # | 事项 | 验证结论 | 状态 |
+| --- | --- | --- | --- |
+| 1 | **新建日程全流程** | 点 `+` → 表单弹出 → 填标题 → 保存 → 列表立即出现「Team 09:00–10:00」；数据库 `event id=1` 落库（Asia/Shanghai，CONFIRMED） | ✅ 通过 |
+| 2 | **会话持久化** | `am force-stop` 杀掉 Expo Go 后冷启动，直接进入日历页并加载出个人日程，**未要求重新登录** | ✅ 通过 |
+| 3 | **待办页** | 输入框回车新增 →「待办 1 条」；勾选后条目移入「已完成」分组、标题加删除线 | ✅ 通过 |
+| 4 | **我的页** | 深色模式整屏切换正常；身份切换成功（个人 ↔ 组织）——**当时的「选身份页」在第二轮已被「常驻组织 tab」取代**，见 §3.3 | ✅ 通过 |
+| 5 | **组织身份全链路** | 超管建组织 → 组织身份下发日程（部门范围展开 **35** 条成员级记录）→ App 切组织身份看到「季度技术评审会」→ 点「参加」→ `event_recipient.receipt_status=ACCEPTED` 落库 | ✅ 通过 |
+
+那一轮还记了 4 条已知问题，现状如下（结论都已并进前面几节，这里只做对照，避免以后当成"没人提过"）：
+
+| 上一轮记的问题 | 现在的状态 |
+| --- | --- |
+| 组织首位成员无法创建（鸡生蛋） | 仍在（换了形态），见 §3.4 第 1 条 |
+| 深色模式偏好没有持久化 | 仍在，见 §3.4 第 2 条 |
+| App 端地图受 Expo Go 限制 | ✅ 已解决：WebView + 后端页 `/map/amap`，见 §3.6 第 1 条 |
+| web-admin 没实现组织管理端 | 仍在，见 §3.4 第 3 条 |
 
 ---
 
@@ -235,6 +272,19 @@ export PATH="$JAVA_HOME/bin:/home/jiang/tools/apache-maven-3.9.16/bin:$PATH"
 # adb 包装（指向 Windows 的 adb.exe，Expo CLI 需要 PATH 里有名为 adb 的命令）
 export PATH="/home/jiang/.local/bin:$PATH"
 ```
+
+**Android 构建链的现状（2026-09-25 实测，做端侧/原生模块前先看这条）**：
+
+| 项 | 状态 |
+| --- | --- |
+| Windows 侧 Android SDK（`/mnt/c/Users/jiang/AppData/Local/Android/Sdk`） | 有 `build-tools/36.0.0`、`platforms/android-37.0`、`platform-tools`、`emulator`、`system-images` |
+| **NDK / CMake / cmdline-tools** | **都没有**（`Sdk/ndk`、`Sdk/cmake`、`Sdk/cmdline-tools` 均不存在）→ 编译原生模块（如 `llama.rn`）目前做不到 |
+| WSL 侧 | 没有 `gcc/g++/make/cmake/ninja`，也没有 `sudo` → 不能在本机编译原生代码 |
+| 网络 | `huggingface.co` / `hf-mirror.com` / `dl.google.com` / `services.gradle.org` 可达；**GitHub 直连不稳**（时通时超时） |
+| 磁盘 | WSL 947G 可用、C: 302G 可用 |
+
+要装 NDK/CMake：Windows 侧用 Android Studio 的 SDK Manager 勾上（最快），
+或从 `dl.google.com` 下 zip 解进 SDK 目录（没有 cmdline-tools，`sdkmanager` 用不了）。
 
 ### 4.4 一键启动
 
@@ -310,6 +360,9 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 | Java 测试报 `SocketException: Operation not permitted` | 沙箱不允许绑监听端口，嵌入式 PG/Redis 起不来（表现为 `ApplicationContext failure`，看 surefire 报告里真正的 `Caused by`） | `mvn -B clean verify` 要提权；开发库不用停（zonky 用随机端口） |
 | 关键词检索里的 `%` / `_` | 不转义就成了通配符：搜「50%」命中所有日程，即「搜什么都灵」 | SQL 写 `ILIKE :pattern ESCAPE '\'`，Java/Python 两边都要把 `\ % _` 转义；行为有测试守着 |
 | Python 套件里无关用例报「验证码发送次数已达上限」 | 按 **IP** 的日限额在测试里没有意义（TestClient 的 client_ip 恒为 `testclient`，**整个套件共用一个计数器**），用例一多就随机变红 | `tests/conftest.py` 已把 `SMS_DAILY_LIMIT_PER_IP` 放开；手机号维度限额保持不变 |
+| **Java 测试类里手机号必须全类唯一** | 同一个号被两个用例注册 → 第二次撞 60 秒发送频控（`20005`），报的却是「发送过于频繁」，看不出是自己重号 | 新增用例前先 `grep -c "1380000xxxx"` 数一遍；Java 侧同时也把按 IP 的日限额在 surefire 里放开了（`xatodo.auth.sms-daily-limit-per-ip=100000`） |
+| Python 测试在**导入期**就 `import` 了 app 模块 | `app.config` 会在 conftest 设 `DATABASE_URL` 之前读进内存 → 整套用例跑去连开发库（报 `role "xatodo" does not exist`） | 测试里**在用例函数内部**导入 `app.services.*`（`tests/test_vision.py` 顶部就是这么注释的） |
+| 断言「空字段会消失」 | `non_null` 序列化只对 **null** 生效；空数组仍会返回 `[]`，我按 `isMissingNode()` 断言就红了 | 清空类断言写「返回空数组」而不是「字段不存在」 |
 
 ### Android / adb
 
@@ -322,6 +375,10 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 | 模拟器里没有 `curl` / `wget` | 手工测连通性时误判为不通 | 用 `adb shell "printf 'GET / HTTP/1.0\r\n\r\n' \| nc <host> <port>"` |
 | `adb shell input text` 打不了中文 | 想验证「搜索框」却输不进关键字 | 用 ASCII 关键字验证（例如地点名里的字母），或用 App 里已有的中文数据反查 |
 | 日历/月视图固定画 6 行 | 9 月视图里出现**一整周 10 月**——那一周一天都不属于 9 月 | `buildMonthGrid` 按实际需要渲染 5/6 行，`app/test/calendar.test.ts` 有回归测试；注意 1 基月份别当 0 基传给 `Date.UTC` |
+| **凭截图估算坐标去 adb 点按钮** | 我点「确定/取消/回到今天」连点三轮都没反应，以为是按钮坏了——实际 y 高了 70px，落在那上面一列滚轮的命中区里，只改了草稿 | 点之前先 `adb shell uiautomator dump` 拿真实 `bounds`，或直接看 `content-desc`；这台机器上滚轮列的可点范围比视觉高度更大 |
+| 绝对定位的按钮压住同类控件 | 「今天」按钮绝对定位在月历头部左侧，正好压在上一月的 `‹` 上，两个可点区域重合 | 宁可改成规整三栏（左/中/右留等宽占位），也别用绝对定位往已有控件上叠 |
+| 横向 `ScrollView` 没定高 | 建议问法那排把整屏高度吃掉（它按内容撑满剩余空间） | 给横向滚轮/胶囊行显式 `style={{ flexGrow: 0, maxHeight: 48 }}` |
+| Expo Go 里引用原生模块 | `require('llama.rn')` 这类静态引用会让 Metro 在打包阶段就失败（不是运行时报错） | 端侧模块用**注册制**：`vision/onDevice.ts` 只放接口 + `registerOnDeviceEngine`，Dev Client 构建里再注册实现；Expo Go 下自动回落到服务端识别 |
 
 ### 后端 / 数据库
 
@@ -370,7 +427,7 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 
 ### 6.2 跨语言契约（`contract/api-contract.json`）
 
-Java 与 Python 两版后端**读同一份契约**做校验，共 83 个端点。改动等于改契约，必须两版同步。
+Java 与 Python 两版后端**读同一份契约**做校验，共 **98 个端点**。改动等于改契约，必须两版同步。
 
 Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，当前 `MIN_COVERAGE_PERCENT = 100`，不允许倒退。
 
@@ -410,10 +467,12 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 | 项 | 原因 |
 | --- | --- |
 | 生产部署编排（Dockerfile / Nginx） | 未开始 |
-| App 的提醒 UI、日程编辑/删除 UI、组织管理 UI | 只有后端接口 |
+| App 的提醒 UI | 只有后端接口 |
+| Web 端组织管理页面 | 后端接口已有，页面没做（见 §3.4 第 3 条） |
 | 微信 / 邮箱绑定 | 需要微信开放平台凭证与邮件通道，属外部依赖 |
 | 真实短信通道、推送（极光）、对象存储（MinIO） | 外部依赖 |
-| 后台 TOTP 双因素、节假日数据 | 未开始 |
+| 后台 TOTP 双因素 | 未开始 |
+| 端侧多模态模型（拍照识别日程里的识别环节） | 需要 Dev Client 构建环境（缺 NDK/CMake，见 §4.3）；产品已把这个功能排到最后 |
 | App 的组件渲染测试 | 目前只覆盖纯逻辑层（`src/api`、`src/auth`、`src/domain`） |
 | 性能验收（P95） | spec §10.5 要求但从未测过 |
 
@@ -423,17 +482,17 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 
 ```bash
 # 后端（测试自带嵌入式 PG/Redis，无需外部依赖）
-cd backend-java && mvn -B clean verify          # 期望 76 项全绿（需提权：沙箱不让绑端口）
+cd backend-java && mvn -B clean verify          # 期望 87 项全绿（需提权：沙箱不让绑端口）
 
 # Python 后端（需要先跑 ./backend-python/scripts/setup-test-deps.sh）
 # 注意：嵌入式 PG 要占 5432，跑之前先停开发库，跑完再启回来
-cd backend-python && .venv/bin/python -m pytest  # 期望 41 项全绿
+cd backend-python && .venv/bin/python -m pytest  # 期望 48 项全绿
 
 # 前端
 npm run build -w @xa-todo/design-tokens
 npm run build -w @xa-todo/web-admin
 npm run typecheck -w @xa-todo/app
-npm test                                        # 期望 7 + 15 + 63 项全绿
+npm test                                        # 期望 design-tokens 8 例 + web-admin 15 项 + app 81 项全绿
 ```
 
 CI 在 `.github/workflows/ci.yml`，三个 job：Java / Python / 前端。
