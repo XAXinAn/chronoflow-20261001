@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { ApiError } from '../api/client';
 import type { Task } from '../api/types';
@@ -9,6 +10,23 @@ import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/
 import { EmptyState, Screen } from '../components/ui';
 import { useAppTheme, useRuntime } from '../context/AppContext';
 import { sortTasks } from '../domain/agenda';
+import { APP_TIMEZONE } from '../domain/calendar';
+
+/**
+ * 截止时间的展示格式。
+ *
+ * 必须显式传 `timeZone`：不传就跟着**设备时区**走，而这台设备一旦不是 Asia/Shanghai
+ * （例如模拟器默认 UTC），同一时刻在日历页显示 10:00、在待办页却显示 02:00——
+ * 两页自相矛盾，用户只会觉得数据错了。
+ */
+const DUE_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: APP_TIMEZONE,
+  month: 'numeric',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
 
 const PRIORITY_LABEL: Record<Task['priority'], string | null> = {
   LOW: '低',
@@ -82,20 +100,7 @@ export function TasksScreen({
               // 点整行进编辑；左侧复选框自己拦截点击，互不干扰
               onPress={() => onOpenTask(task.id)}
               subtitle={
-                [
-                  task.dueAt
-                    ? new Date(task.dueAt).toLocaleString('zh-CN', {
-                        month: 'numeric',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '待安排',
-                  // 关联的日程直接显示在副标题里，一眼看出这条待办是为哪个安排服务的
-                  task.eventTitle ? `关联「${task.eventTitle}」` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')
+                task.dueAt ? DUE_FORMATTER.format(new Date(task.dueAt)) : '待安排'
               }
               leading={
                 <Pressable
@@ -139,6 +144,28 @@ export function TasksScreen({
             {overdue ? (
               <View style={{ paddingHorizontal: 52, paddingBottom: 10, marginTop: -6 }}>
                 <Text style={{ color: theme.color.danger, fontSize: 12 }}>已逾期</Text>
+              </View>
+            ) : null}
+
+            {/* 关联的日程单独占一行并带图标：塞在副标题文字里太容易看漏，
+                而「这条待办是为哪个安排服务的」恰恰是最该一眼看到的信息 */}
+            {task.eventTitle ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: 52,
+                  paddingBottom: 10,
+                  marginTop: -6,
+                }}
+              >
+                <Ionicons name="calendar-outline" size={12} color={theme.color.textTertiary} />
+                <Text
+                  numberOfLines={1}
+                  style={{ color: theme.color.textSecondary, fontSize: 12, marginLeft: 4, flex: 1 }}
+                >
+                  {task.eventTitle}
+                </Text>
               </View>
             ) : null}
           </View>
