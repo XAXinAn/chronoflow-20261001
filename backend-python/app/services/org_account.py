@@ -182,6 +182,19 @@ class OrgAccountService:
                 },
             ).scalar_one()
         else:
+            # 这个身份可能已经被同组织里的**另一个成员**占着（一个账号在同一组织只能绑一个成员账号）：
+            # 直接复用会撞唯一约束，所以要拦下来并说清楚怎么恢复
+            other = self._session.execute(
+                text(
+                    "SELECT * FROM org_member WHERE org_id = :org_id AND identity_id = :identity"
+                ),
+                {"org_id": org_id, "identity": existing["id"]},
+            ).mappings().first()
+            if other is not None and other["id"] != member["id"]:
+                raise ApiError(
+                    ErrorCode.FORBIDDEN,
+                    f"该账号在本组织已绑定成员「{other['real_name']}」，请先在账户管理里解绑",
+                )
             created = existing["id"]
             if existing["status"] != "ACTIVE":
                 self._session.execute(

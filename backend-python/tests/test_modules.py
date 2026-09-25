@@ -947,6 +947,17 @@ def test_org_account_claim_list_and_unlink(client, db) -> None:
     ).json()
     assert denied["code"] == 20003
 
+    # 同一个个人账号在同一组织只能绑一个成员账号：再认领另一个成员要被明确拒绝
+    another_key = seed_org_member(db, org_id, root, "13900002053", role="MEMBER")
+    same_account = client.post(
+        "/api/v1/org-accounts/login",
+        params={"deviceId": "device-1"},
+        json={"org": str(org_id), "memberKey": another_key},
+        headers=auth(tokens),
+    ).json()
+    assert same_account["code"] == 20003
+    assert "已绑定成员" in same_account["message"]
+
     # 但同组织里的另一个成员照样能认领：绑定是按成员隔离的
     # （角色给 MEMBER：一个组织只能有一个 OWNER，那是唯一约束）
     other_key = seed_org_member(db, org_id, root, "13900002052", role="MEMBER")

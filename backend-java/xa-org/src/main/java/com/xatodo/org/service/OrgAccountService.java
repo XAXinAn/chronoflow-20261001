@@ -201,6 +201,16 @@ public class OrgAccountService {
             member.setIdentityId(identity.getId());
             return identity;
         }
+        // 这个身份可能已经被同组织里的**另一个成员**占着（一个账号在同一组织只能绑一个成员账号）：
+        // 直接复用会撞 uk_org_member_identity，所以要拦下来并说清楚怎么恢复
+        OrgMember other = orgMemberMapper.selectOne(new LambdaQueryWrapper<OrgMember>()
+                .eq(OrgMember::getOrgId, orgId)
+                .eq(OrgMember::getIdentityId, identity.getId())
+                .last("LIMIT 1"));
+        if (other != null && !other.getId().equals(member.getId())) {
+            throw BizException.of(ErrorCode.FORBIDDEN,
+                    "该账号在本组织已绑定成员「" + other.getRealName() + "」，请先在账户管理里解绑");
+        }
         if (!"ACTIVE".equals(identity.getStatus())) {
             identity.setStatus("ACTIVE");
             identityMapper.updateById(identity);

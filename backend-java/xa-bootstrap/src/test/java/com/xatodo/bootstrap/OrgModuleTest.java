@@ -85,6 +85,22 @@ class OrgModuleTest {
     }
 
     @Test
+    @DisplayName("同一账号在同一组织只能绑一个成员账号：再认领别的成员会被明确拒绝")
+    void onePersonalAccountBindsOneMemberPerOrg() throws Exception {
+        Fixture fixture = seedOrg("SAME", "13700001301");
+        long deptId = createDepartment(fixture, fixture.rootDepartmentId(), "研发部");
+        createMember(fixture, "13700001302", "另一个成员", deptId);
+
+        // 拥有者那个成员账号已被这个个人账号绑定，现在再认领同组织的另一个成员
+        JsonNode denied = postRaw("/api/v1/org-accounts/login?deviceId=dev",
+                fixture.ownerPersonalToken(),
+                "{\"org\":\"" + fixture.orgCode() + "\",\"memberKey\":\"13700001302\"}");
+
+        assertThat(denied.path("code").asInt()).isEqualTo(20003);
+        assertThat(denied.path("message").asText()).contains("已绑定成员");
+    }
+
+    @Test
     @DisplayName("组织上下文返回成员角色与可管理部门集合")
     void currentReturnsRoleAndManageableDepartments() throws Exception {
         Fixture fixture = seedOrg("CUR", "13700001101");
@@ -419,7 +435,11 @@ class OrgModuleTest {
 
     // ---------------------------------------------------------------- fixtures
 
-    private record Fixture(long orgId, String orgCode, long rootDepartmentId, String ownerToken) {
+    private record Fixture(long orgId, String orgCode, long rootDepartmentId, String ownerToken,
+                           String ownerPersonalToken) {
+    }
+
+    private record Claim(String personalToken, String orgToken) {
     }
 
     /**
@@ -442,7 +462,8 @@ class OrgModuleTest {
                 orgId, rootId, ownerMemberKey);
 
         String orgCode = "ORG" + suffix;
-        return new Fixture(orgId, orgCode, rootId, claimOrgAccount(orgCode, ownerMemberKey));
+        Claim claim = claimOrgAccountWithTokens(orgCode, ownerMemberKey, ownerMemberKey);
+        return new Fixture(orgId, orgCode, rootId, claim.orgToken(), claim.personalToken());
     }
 
     /** 用手机号注册个人账号，返回个人身份的令牌。 */
@@ -471,10 +492,16 @@ class OrgModuleTest {
      * @param phone     认领者自己的个人账号手机号
      */
     private String claimOrgAccount(String orgCode, String memberKey, String phone) throws Exception {
+        return claimOrgAccountWithTokens(orgCode, memberKey, phone).orgToken();
+    }
+
+    /** 认领并同时拿到个人令牌（用于验证「同一账号在同一组织只能绑一个成员」这类规则）。 */
+    private Claim claimOrgAccountWithTokens(String orgCode, String memberKey, String phone) throws Exception {
         String personalToken = registerPersonalAccount(phone);
-        return postJson("/api/v1/org-accounts/login?deviceId=dev", personalToken,
+        JsonNode claimed = postJson("/api/v1/org-accounts/login?deviceId=dev", personalToken,
                 "{\"org\":\"" + orgCode + "\",\"memberKey\":\"" + memberKey + "\"}")
-                .path("data").path("accessToken").asText();
+                ;
+        return new Claim(personalToken, claimed.path("data").path("accessToken").asText());
     }
 
     private long createDepartment(Fixture fixture, long parentId, String name) throws Exception {
@@ -588,6 +615,18 @@ class OrgModuleTest {
             builder.header("Authorization", "Bearer " + token);
         }
         return getJson(builder);
+    }
+
+    /** 不校验业务成功码：专门用于「应该被挡住」的用例，需要读错误码与文案。 */
+    private JsonNode postRaw(String path, String token, String body) throws Exception {
+        MockHttpServletRequestBuilder builder = post(path)
+                .contentType(MediaType.APPLICATION_JSON).content(body);
+        if (token != null) {
+            builder.header("Authorization", "Bearer " + token);
+        }
+        String response = mockMvc.perform(builder).andExpect(status().isOk()).andReturn()
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(response);
     }
 
     private JsonNode getJson(MockHttpServletRequestBuilder builder) throws Exception {
