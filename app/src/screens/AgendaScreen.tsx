@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError } from '../api/client';
 import type { EventOccurrence } from '../api/types';
+import { EventEditorModal } from '../components/EventEditorModal';
 import { MonthCalendar } from '../components/MonthCalendar';
 import { Card, EmptyState, Pill, Screen } from '../components/ui';
 import { useAppTheme, useRuntime } from '../context/AppContext';
 import { formatTimeRange, localDateKey } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
+import { buildCreatePayload, type EventDraft } from '../domain/eventDraft';
 
 const WEEKDAY_FULL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -47,6 +49,9 @@ export function AgendaScreen() {
   const [occurrences, setOccurrences] = useState<EventOccurrence[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editorVisible, setEditorVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editorError, setEditorError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -86,6 +91,21 @@ export function AgendaScreen() {
     // 新月份若包含今天则选今天，否则选 1 号
     const inThisMonth = today.startsWith(`${nextYear}-${pad(nextMonth)}`);
     setSelectedDateKey(inThisMonth ? today : `${nextYear}-${pad(nextMonth)}-01`);
+  };
+
+  const createEvent = async (draft: EventDraft) => {
+    setSaving(true);
+    setEditorError(null);
+    try {
+      // 日期取当前选中的那天，无需在弹窗里再选一次
+      await api.createEvent(buildCreatePayload(selectedDateKey, draft));
+      setEditorVisible(false);
+      await load();
+    } catch (cause) {
+      setEditorError(cause instanceof ApiError ? cause.message : '保存失败');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -143,6 +163,31 @@ export function AgendaScreen() {
           </View>
         ))}
       </ScrollView>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="新建日程"
+        onPress={() => setEditorVisible(true)}
+        style={({ pressed }) => [
+          styles.fab,
+          {
+            backgroundColor: theme.color.accent,
+            opacity: pressed ? 0.85 : 1,
+            transform: [{ scale: pressed ? 0.96 : 1 }],
+          },
+        ]}
+      >
+        <Text style={[styles.fabPlus, { color: theme.color.accentContrast }]}>＋</Text>
+      </Pressable>
+
+      <EventEditorModal
+        visible={editorVisible}
+        dateKey={selectedDateKey}
+        saving={saving}
+        error={editorError}
+        onCancel={() => setEditorVisible(false)}
+        onSubmit={(draft) => void createEvent(draft)}
+      />
     </Screen>
   );
 }
@@ -152,4 +197,15 @@ const styles = StyleSheet.create({
   dayHeading: { fontSize: 15, fontWeight: '600', marginBottom: 10 },
   eventRow: { flexDirection: 'row', alignItems: 'center' },
   pills: { flexDirection: 'row', gap: 6 },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabPlus: { fontSize: 28, lineHeight: 32 },
 });

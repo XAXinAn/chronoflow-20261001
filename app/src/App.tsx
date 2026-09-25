@@ -74,6 +74,10 @@ function AuthFlow() {
 
 function MainTabs() {
   const theme = useAppTheme();
+  const { session } = useAppSessionState();
+  // 组织 tab 只对组织身份可见；个人身份下它没有任何内容可展示
+  const isOrgIdentity = session?.identityType === 'ORG_MEMBER';
+
   return (
     <Tabs.Navigator
       screenOptions={{
@@ -93,11 +97,13 @@ function MainTabs() {
         component={TasksScreen}
         options={{ title: '待办', tabBarIcon: tabIcon('Tasks') }}
       />
-      <Tabs.Screen
-        name="OrgEvents"
-        component={OrgEventsScreen}
-        options={{ title: '组织', tabBarIcon: tabIcon('OrgEvents') }}
-      />
+      {isOrgIdentity ? (
+        <Tabs.Screen
+          name="OrgEvents"
+          component={OrgEventsScreen}
+          options={{ title: '组织', tabBarIcon: tabIcon('OrgEvents') }}
+        />
+      ) : null}
       <Tabs.Screen
         name="Settings"
         component={SettingsScreen}
