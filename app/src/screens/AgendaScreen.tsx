@@ -1,21 +1,50 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { EventOccurrence } from '../api/types';
 import { ApiError } from '../api/client';
+import type { EventOccurrence } from '../api/types';
+import { MonthCalendar } from '../components/MonthCalendar';
 import { Card, EmptyState, Pill, Screen } from '../components/ui';
-import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
-import { formatDayLabel, formatTimeRange, groupOccurrences, localDateKey } from '../domain/agenda';
+import { useAppTheme, useRuntime } from '../context/AppContext';
+import { formatTimeRange, localDateKey } from '../domain/agenda';
+import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 
-const LOOKAHEAD_DAYS = 14;
+const WEEKDAY_FULL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
+function pad(value: number): string {
+  return value < 10 ? `0${value}` : String(value);
+}
+
+function todayKey(): string {
+  return localDateKey(new Date().toISOString(), APP_TIMEZONE);
+}
+
+function dayHeading(dateKey: string, today: string): string {
+  const [year, month, day] = dateKey.split('-').map(Number) as [number, number, number];
+  const weekday = WEEKDAY_FULL[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  const prefix = dateKey === today ? '今天 · ' : '';
+  return `${prefix}${month} 月 ${day} 日 ${weekday}`;
+}
+
+/**
+ * 首页：日历 + 当日日程（spec §7.6 黑白极简）。
+ *
+ * 日历展示整月的日程分布（有日程的日子带圆点），下方是该日的详细日程。
+ */
 export function AgendaScreen() {
   const theme = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { api } = useRuntime();
-  const { session } = useAppSessionState();
-  const timeZone = 'Asia/Shanghai';
+  const today = useMemo(todayKey, []);
+  const [todayYear, todayMonth] = useMemo(() => {
+    const [year, month] = today.split('-').map(Number) as [number, number];
+    return [year, month];
+  }, [today]);
 
-  const [items, setItems] = useState<EventOccurrence[]>([]);
+  const [{ year, month }, setView] = useState({ year: todayYear, month: todayMonth });
+  const [selectedDateKey, setSelectedDateKey] = useState(today);
+  const [occurrences, setOccurrences] = useState<EventOccurrence[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,65 +52,94 @@ export function AgendaScreen() {
     setLoading(true);
     setError(null);
     try {
-      const now = new Date();
-      const end = new Date(now.getTime() + LOOKAHEAD_DAYS * 86_400_000);
-      setItems(await api.eventsInRange(now.toISOString(), end.toISOString()));
+      const grid = buildMonthGrid(year, month);
+      // 按整个网格范围查询（含上/下月补位），这样相邻月份的格子也能显示圆点
+      setOccurrences(
+        await api.eventsInRange(dateKeyToIso(grid.startDateKey), dateKeyToIso(grid.endDateKey, true)),
+      );
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : '加载失败');
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, [api, year, month]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const sections = useMemo(() => groupOccurrences(items, timeZone), [items]);
-  const todayKey = localDateKey(new Date().toISOString(), timeZone);
+  const eventDates = useMemo(
+    () => new Set(occurrences.map((item) => localDateKey(item.startAt, APP_TIMEZONE))),
+    [occurrences],
+  );
+
+  const dayEvents = useMemo(
+    () =>
+      occurrences
+        .filter((item) => localDateKey(item.startAt, APP_TIMEZONE) === selectedDateKey)
+        .sort((a, b) => a.startAt.localeCompare(b.startAt)),
+    [occurrences, selectedDateKey],
+  );
+
+  const changeMonth = (nextYear: number, nextMonth: number) => {
+    setView({ year: nextYear, month: nextMonth });
+    // 新月份若包含今天则选今天，否则选 1 号
+    const inThisMonth = today.startsWith(`${nextYear}-${pad(nextMonth)}`);
+    setSelectedDateKey(inThisMonth ? today : `${nextYear}-${pad(nextMonth)}-01`);
+  };
 
   return (
     <Screen>
       <ScrollView
-        contentContainerStyle={{ padding: theme.spacing.md }}
+        contentContainerStyle={{
+          padding: theme.spacing.md,
+          // 去掉顶部标题栏后，内容紧贴屏幕顶边，需要补安全区避免压到状态栏
+          paddingTop: insets.top + theme.spacing.sm,
+          paddingBottom: theme.spacing.xxl,
+        }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} />}
       >
-        <Text style={[styles.title, { color: theme.color.textPrimary }]}>我的日程</Text>
-        <Text style={{ color: theme.color.textSecondary, marginBottom: theme.spacing.md }}>
-          {session?.identityType === 'ORG_MEMBER' ? '个人身份' : (session?.nickname ?? '')} · 未来 {LOOKAHEAD_DAYS} 天
+        <MonthCalendar
+          year={year}
+          month={month}
+          selectedDateKey={selectedDateKey}
+          todayKey={today}
+          eventDates={eventDates}
+          onSelectDate={setSelectedDateKey}
+          onChangeMonth={changeMonth}
+        />
+
+        <View style={[styles.divider, { backgroundColor: theme.color.border }]} />
+
+        <Text style={[styles.dayHeading, { color: theme.color.textPrimary }]}>
+          {dayHeading(selectedDateKey, today)}
         </Text>
 
-        {error ? <Text style={{ color: theme.color.danger, marginBottom: theme.spacing.md }}>{error}</Text> : null}
-        {!loading && sections.length === 0 ? (
-          <EmptyState title="近期没有安排" hint="在个人日历里新建一条日程试试" />
+        {error ? <Text style={{ color: theme.color.danger, marginBottom: 8 }}>{error}</Text> : null}
+
+        {!loading && dayEvents.length === 0 ? (
+          <EmptyState title="这天没有安排" hint="下拉可刷新" />
         ) : null}
 
-        {sections.map((section) => (
-          <View key={section.date} style={{ marginBottom: theme.spacing.lg }}>
-            <Text style={[styles.sectionTitle, { color: theme.color.textSecondary }]}>
-              {formatDayLabel(section.date, todayKey)} · {section.date}
-            </Text>
-            {section.items.map((item) => (
-              <View key={`${item.eventId}-${item.startAt}`} style={{ marginBottom: theme.spacing.sm }}>
-                <Card>
-                  <View style={styles.row}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>
-                        {item.title}
-                      </Text>
-                      <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 2 }}>
-                        {formatTimeRange(item.startAt, item.endAt, item.allDay, item.timezone || timeZone)}
-                        {item.location ? ` · ${item.location}` : ''}
-                      </Text>
-                    </View>
-                    <View style={styles.pills}>
-                      {item.recurring ? <Pill text="重复" /> : null}
-                      {item.modified ? <Pill text="已改期" tone="warning" /> : null}
-                    </View>
-                  </View>
-                </Card>
+        {dayEvents.map((item) => (
+          <View key={`${item.eventId}-${item.startAt}`} style={{ marginBottom: theme.spacing.sm }}>
+            <Card>
+              <View style={styles.eventRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>
+                    {item.title}
+                  </Text>
+                  <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 2 }}>
+                    {formatTimeRange(item.startAt, item.endAt, item.allDay, item.timezone || APP_TIMEZONE)}
+                    {item.location ? ` · ${item.location}` : ''}
+                  </Text>
+                </View>
+                <View style={styles.pills}>
+                  {item.recurring ? <Pill text="重复" /> : null}
+                  {item.modified ? <Pill text="已改期" tone="warning" /> : null}
+                </View>
               </View>
-            ))}
+            </Card>
           </View>
         ))}
       </ScrollView>
@@ -90,8 +148,8 @@ export function AgendaScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 24, fontWeight: '600', marginBottom: 4 },
-  sectionTitle: { fontSize: 13, marginBottom: 8 },
-  row: { flexDirection: 'row', alignItems: 'center' },
+  divider: { height: 1, marginVertical: 14 },
+  dayHeading: { fontSize: 15, fontWeight: '600', marginBottom: 10 },
+  eventRow: { flexDirection: 'row', alignItems: 'center' },
   pills: { flexDirection: 'row', gap: 6 },
 });

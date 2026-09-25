@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Task } from '../api/types';
 import { ApiError } from '../api/client';
@@ -9,6 +10,7 @@ import { sortTasks } from '../domain/agenda';
 
 export function TasksScreen() {
   const theme = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { api } = useRuntime();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [draft, setDraft] = useState('');
@@ -63,14 +65,12 @@ export function TasksScreen() {
   return (
     <Screen>
       <ScrollView
-        contentContainerStyle={{ padding: theme.spacing.md }}
+        contentContainerStyle={{
+          padding: theme.spacing.md,
+          paddingTop: insets.top + theme.spacing.sm,
+        }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} />}
       >
-        <Text style={[styles.title, { color: theme.color.textPrimary }]}>待办</Text>
-        <Text style={{ color: theme.color.textSecondary, marginBottom: theme.spacing.md }}>
-          共 {tasks.length} 条，未完成 {tasks.filter((task) => task.status !== 'DONE').length} 条
-        </Text>
-
         <View style={styles.addRow}>
           <TextInput
             value={draft}
@@ -149,7 +149,6 @@ export function TasksScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 24, fontWeight: '600', marginBottom: 4 },
   addRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   input: { flex: 1, height: 48, borderWidth: 1, paddingHorizontal: 12, fontSize: 16 },
   row: { flexDirection: 'row', alignItems: 'center' },

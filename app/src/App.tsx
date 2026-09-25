@@ -1,6 +1,7 @@
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Text, useColorScheme, View } from 'react-native';
@@ -23,6 +24,28 @@ type AuthStackParamList = {
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const Tabs = createBottomTabNavigator();
+
+/**
+ * 底部导航图标。用线性图标 + 选中态实心，符合黑白极简的设计语言（spec §7.6.5）。
+ *
+ * 之前没配图标时 React Navigation 会渲染缺字体的占位符，看起来就是「乱码方块」。
+ */
+const TAB_ICONS: Record<string, { active: string; inactive: string }> = {
+  Agenda: { active: 'calendar', inactive: 'calendar-outline' },
+  Tasks: { active: 'checkbox', inactive: 'checkbox-outline' },
+  OrgEvents: { active: 'business', inactive: 'business-outline' },
+  Settings: { active: 'person', inactive: 'person-outline' },
+};
+
+function tabIcon(routeName: keyof typeof TAB_ICONS) {
+  return ({ focused, color, size }: { focused: boolean; color: string; size: number }) => (
+    <Ionicons
+      name={(focused ? TAB_ICONS[routeName].active : TAB_ICONS[routeName].inactive) as never}
+      size={size}
+      color={color}
+    />
+  );
+}
 
 function AuthFlow() {
   return (
@@ -60,10 +83,26 @@ function MainTabs() {
         tabBarStyle: { backgroundColor: theme.color.surfaceRaised, borderTopColor: theme.color.border },
       }}
     >
-      <Tabs.Screen name="Agenda" component={AgendaScreen} options={{ title: '日程' }} />
-      <Tabs.Screen name="Tasks" component={TasksScreen} options={{ title: '待办' }} />
-      <Tabs.Screen name="OrgEvents" component={OrgEventsScreen} options={{ title: '组织' }} />
-      <Tabs.Screen name="Settings" component={SettingsScreen} options={{ title: '我的' }} />
+      <Tabs.Screen
+        name="Agenda"
+        component={AgendaScreen}
+        options={{ title: '日历', tabBarIcon: tabIcon('Agenda') }}
+      />
+      <Tabs.Screen
+        name="Tasks"
+        component={TasksScreen}
+        options={{ title: '待办', tabBarIcon: tabIcon('Tasks') }}
+      />
+      <Tabs.Screen
+        name="OrgEvents"
+        component={OrgEventsScreen}
+        options={{ title: '组织', tabBarIcon: tabIcon('OrgEvents') }}
+      />
+      <Tabs.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ title: '我的', tabBarIcon: tabIcon('Settings') }}
+      />
     </Tabs.Navigator>
   );
 }

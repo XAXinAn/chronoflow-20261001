@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { IdentityView } from '../api/types';
 import { ApiError } from '../api/client';
@@ -8,6 +9,7 @@ import { useAppScheme, useAppSessionState, useAppTheme, useRuntime } from '../co
 
 export function SettingsScreen() {
   const theme = useAppTheme();
+  const insets = useSafeAreaInsets();
   const scheme = useAppScheme();
   const { api, baseUrl } = useRuntime();
   const { session, toggleScheme, applyTokenResponse, signOut } = useAppSessionState();
@@ -55,9 +57,9 @@ export function SettingsScreen() {
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.md }}>
-        <Text style={[styles.title, { color: theme.color.textPrimary }]}>我的</Text>
-
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.md, paddingTop: insets.top + theme.spacing.sm }}
+      >
         <Card style={{ marginBottom: theme.spacing.md }}>
           <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>
             {session?.nickname ?? '未命名'}
@@ -120,6 +122,5 @@ export function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 24, fontWeight: '600', marginBottom: 16 },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 });
