@@ -99,8 +99,6 @@ public class EventController {
     }
 
     private static EventResponse toResponse(Event event) {
-        return new EventResponse(event.getId(), event.getCalendarId(), event.getTitle(),
-                event.getDescription(), event.getLocation(), event.getStartAt(), event.getEndAt(),
-                event.getAllDay(), event.getTimezone(), event.getRrule(), event.getStatus());
+        return EventResponse.from(event);
     }
 }

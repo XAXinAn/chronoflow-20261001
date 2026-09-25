@@ -337,6 +337,139 @@ class PersonalModuleTest {
         assertThat(after.path("data").get(0).path("title").asText()).isEqualTo("改成待办");
     }
 
+    @Test
+    @DisplayName("结构化地点与扩展字段：落库后原样返回，坐标统一标注为 GCJ-02")
+    void richEventFieldsArePersisted() throws Exception {
+        String token = registerAccount("13800000231");
+
+        JsonNode created = postJson("/api/v1/events", token, """
+                {"title":"季度评审","description":"带上 OKR","startAt":"2026-10-08T09:00:00+08:00",
+                 "endAt":"2026-10-08T11:00:00+08:00","timezone":"Asia/Shanghai",
+                 "locationName":"北京南站","locationAddress":"北京市丰台区永外大街车站路12号",
+                 "latitude":39.865400,"longitude":116.378700,"poiId":"BJ-NAN",
+                 "priority":"HIGH","category":"会议","url":"https://example.com/meet",
+                 "availability":"FREE","status":"TENTATIVE","travelTimeMinutes":30}
+                """).path("data");
+
+        assertThat(created.path("locationName").asText()).isEqualTo("北京南站");
+        assertThat(created.path("locationAddress").asText()).isEqualTo("北京市丰台区永外大街车站路12号");
+        assertThat(created.path("latitude").decimalValue()).isEqualByComparingTo("39.8654");
+        assertThat(created.path("longitude").decimalValue()).isEqualByComparingTo("116.3787");
+        assertThat(created.path("poiId").asText()).isEqualTo("BJ-NAN");
+        // 客户端不声明坐标系，服务端统一按 GCJ-02 标注
+        assertThat(created.path("coordinateSystem").asText()).isEqualTo("GCJ-02");
+        assertThat(created.path("priority").asText()).isEqualTo("HIGH");
+        assertThat(created.path("category").asText()).isEqualTo("会议");
+        assertThat(created.path("url").asText()).isEqualTo("https://example.com/meet");
+        assertThat(created.path("availability").asText()).isEqualTo("FREE");
+        assertThat(created.path("status").asText()).isEqualTo("TENTATIVE");
+        assertThat(created.path("travelTimeMinutes").asInt()).isEqualTo(30);
+
+        // 列表接口（展开后的实例）同样要带地点，否则日历页只能显示标题
+        JsonNode range = rangeQuery(token, "2026-10-08T00:00:00+08:00", "2026-10-09T00:00:00+08:00");
+        assertThat(range.path("data").get(0).path("locationName").asText()).isEqualTo("北京南站");
+
+        // 详情接口
+        long eventId = created.path("id").asLong();
+        JsonNode detail = getJson("/api/v1/events/" + eventId, token);
+        assertThat(detail.path("data").path("locationName").asText()).isEqualTo("北京南站");
+    }
+
+    @Test
+    @DisplayName("经纬度必须成对提供，半个坐标点直接拒绝")
+    void halfCoordinateRejected() throws Exception {
+        String token = registerAccount("13800000232");
+
+        mockMvc.perform(post("/api/v1/events")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"只有纬度\",\"startAt\":\"2026-10-09T09:00:00+08:00\","
+                                + "\"endAt\":\"2026-10-09T10:00:00+08:00\",\"latitude\":39.9}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(10002));
+    }
+
+    @Test
+    @DisplayName("枚举取值非法时给出业务错误码，而不是让数据库约束抛异常")
+    void invalidEnumsRejected() throws Exception {
+        String token = registerAccount("13800000233");
+        String common = "\"startAt\":\"2026-10-10T09:00:00+08:00\",\"endAt\":\"2026-10-10T10:00:00+08:00\",";
+
+        for (String bad : new String[]{"availability", "priority", "status"}) {
+            mockMvc.perform(post("/api/v1/events")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"title\":\"非法枚举\"," + common + "\"" + bad + "\":\"NOT_A_VALUE\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(10002));
+        }
+    }
+
+    @Test
+    @DisplayName("清空地点时坐标一并清掉，不留「有坐标没名字」的脏数据")
+    void clearingPlaceAlsoClearsCoordinates() throws Exception {
+        String token = registerAccount("13800000234");
+        long eventId = postJson("/api/v1/events", token,
+                "{\"title\":\"带地点\",\"startAt\":\"2026-10-11T09:00:00+08:00\","
+                        + "\"endAt\":\"2026-10-11T10:00:00+08:00\",\"locationName\":\"外滩\","
+                        + "\"latitude\":31.24,\"longitude\":121.49,\"poiId\":\"SH-BUND\"}")
+                .path("data").path("id").asLong();
+
+        JsonNode updated = patchJson("/api/v1/events/" + eventId, token, "{\"locationName\":\"\"}").path("data");
+        assertThat(updated.path("locationName").isMissingNode() || updated.path("locationName").isNull()).isTrue();
+        assertThat(updated.path("latitude").isMissingNode() || updated.path("latitude").isNull()).isTrue();
+        assertThat(updated.path("longitude").isMissingNode() || updated.path("longitude").isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("未配置地图 Key 时地点服务降级为内置地点集，且降级态对客户端可见")
+    void geoFallsBackToLocalProviderWithoutKey() throws Exception {
+        String token = registerAccount("13800000235");
+
+        JsonNode config = getJson("/api/v1/geo/config", token);
+        // 测试环境没有 GEO_AMAP_KEY，因此必然走降级实现
+        assertThat(config.path("data").path("provider").asText()).isEqualTo("local");
+        assertThat(config.path("data").path("configuredProvider").asText()).isEqualTo("amap");
+        assertThat(config.path("data").path("degraded").asBoolean()).isTrue();
+        assertThat(config.path("data").path("degradedReason").asText()).contains("降级");
+
+        JsonNode found = getJson(get("/api/v1/geo/places").param("keyword", "北京南站")
+                .header("Authorization", "Bearer " + token));
+        assertThat(found.path("data")).hasSize(1);
+        assertThat(found.path("data").get(0).path("name").asText()).isEqualTo("北京南站");
+        assertThat(found.path("data").get(0).path("latitude").decimalValue()).isEqualByComparingTo("39.8654");
+    }
+
+    @Test
+    @DisplayName("逆地理编码返回最近的内置地点；附近没有已知地点时如实返回自定义地点")
+    void geoReverseGeocode() throws Exception {
+        String token = registerAccount("13800000236");
+
+        JsonNode near = getJson(get("/api/v1/geo/regeo")
+                .param("lat", "39.9088").param("lng", "116.4571")
+                .header("Authorization", "Bearer " + token));
+        assertThat(near.path("data").path("name").asText()).isEqualTo("国贸三期");
+
+        JsonNode nowhere = getJson(get("/api/v1/geo/regeo")
+                .param("lat", "0.0").param("lng", "0.0")
+                .header("Authorization", "Bearer " + token));
+        assertThat(nowhere.path("data").path("name").asText()).isEqualTo("自定义地点");
+    }
+
+    @Test
+    @DisplayName("地点搜索必须带关键字，逆地理必须带坐标")
+    void geoRequiresParameters() throws Exception {
+        String token = registerAccount("13800000237");
+
+        mockMvc.perform(get("/api/v1/geo/places").param("keyword", "")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.code").value(10001));
+
+        mockMvc.perform(get("/api/v1/geo/regeo").param("lat", "39.9").param("lng", "200")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.code").value(10002));
+    }
+
     private JsonNode putJson(String path, String token, String body) throws Exception {
         var builder = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path)
                 .contentType(MediaType.APPLICATION_JSON)

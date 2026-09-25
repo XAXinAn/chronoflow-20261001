@@ -123,7 +123,9 @@ def _occurrence(
         "eventId": event["id"],
         "calendarId": event["calendar_id"],
         "title": title if title is not None else event["title"],
-        "location": event.get("location"),
+        # 地点已结构化（spec §5.9）：实例同样带名称与地址，与 Java 版 EventOccurrence 对齐
+        "locationName": event.get("location_name"),
+        "locationAddress": event.get("location_address"),
         "startAt": start,
         "endAt": end,
         "allDay": bool(event.get("all_day")),

@@ -355,9 +355,9 @@ class OrgService:
         event = self._session.execute(
             text(
                 "INSERT INTO event (calendar_id, org_id, creator_identity_id, source_type, title,"
-                " description, location, start_at, end_at, all_day, timezone, status,"
+                " description, location_name, start_at, end_at, all_day, timezone, status,"
                 " updated_after_dispatch) VALUES (:calendar_id, :org_id, :identity, 'ORG_DISPATCH',"
-                " :title, :description, :location, :start_at, :end_at, :all_day, :timezone,"
+                " :title, :description, :location_name, :start_at, :end_at, :all_day, :timezone,"
                 " 'CONFIRMED', false) RETURNING *"
             ),
             {
@@ -366,7 +366,8 @@ class OrgService:
                 "identity": member["identity_id"],
                 "title": payload["title"],
                 "description": payload.get("description"),
-                "location": payload.get("location"),
+                # 组织日程目前只用「地点名称」一个字段（V9 起该列叫 location_name）
+                "location_name": payload.get("location"),
                 "start_at": payload["startAt"],
                 "end_at": payload["endAt"],
                 "all_day": bool(payload.get("allDay")),
@@ -491,7 +492,7 @@ class OrgService:
                 "id": row["event_id"],
                 "calendar_id": row["calendar_id"],
                 "title": row["title"],
-                "location": row["location"],
+                "location": row["location_name"],
                 "start_at": row["start_at"],
                 "end_at": row["end_at"],
                 "all_day": row["all_day"],
@@ -506,7 +507,7 @@ class OrgService:
                         "dispatchId": row["dispatch_id"],
                         "title": occurrence["title"],
                         "description": event["description"],
-                        "location": occurrence["location"],
+                        "location": occurrence["locationName"],
                         "startAt": occurrence["startAt"],
                         "endAt": occurrence["endAt"],
                         "allDay": occurrence["allDay"],
@@ -552,7 +553,7 @@ class OrgService:
             "dispatchId": row["dispatch_id"],
             "title": row["title"],
             "description": row["description"],
-            "location": row["location"],
+            "location": row["location_name"],
             "startAt": row["start_at"],
             "endAt": row["end_at"],
             "allDay": bool(row["all_day"]),
@@ -662,7 +663,7 @@ class OrgService:
             text(
                 "UPDATE event SET title = COALESCE(:title, title),"
                 " description = COALESCE(:description, description),"
-                " location = COALESCE(:location, location),"
+                " location_name = COALESCE(:location_name, location_name),"
                 " start_at = COALESCE(:start_at, start_at), end_at = COALESCE(:end_at, end_at),"
                 " all_day = COALESCE(:all_day, all_day),"
                 " timezone = COALESCE(:timezone, timezone), updated_after_dispatch = true,"
@@ -672,7 +673,7 @@ class OrgService:
                 "id": event_id,
                 "title": payload.get("title"),
                 "description": payload.get("description"),
-                "location": payload.get("location"),
+                "location_name": payload.get("location"),
                 "start_at": payload.get("startAt"),
                 "end_at": payload.get("endAt"),
                 "all_day": payload.get("allDay"),
@@ -1034,7 +1035,7 @@ def _org_event_view(event, dispatch, receipt) -> dict:
         "dispatchId": dispatch["id"],
         "title": event["title"],
         "description": event["description"],
-        "location": event["location"],
+        "location": event["location_name"],
         "startAt": event["start_at"],
         "endAt": event["end_at"],
         "allDay": bool(event["all_day"]),

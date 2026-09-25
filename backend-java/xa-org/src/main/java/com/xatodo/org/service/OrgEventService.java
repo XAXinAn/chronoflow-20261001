@@ -115,7 +115,9 @@ public class OrgEventService {
         event.setSourceType("ORG_DISPATCH");
         event.setTitle(request.title());
         event.setDescription(request.description());
-        event.setLocation(request.location());
+        // 组织日程目前只用「地点名称」这一个字段（V9 起该列叫 location_name）；
+        // 结构化的地址与坐标留给后续的组织日程编辑器，见 spec §5.9
+        event.setLocationName(request.location());
         event.setStartAt(request.startAt());
         event.setEndAt(request.endAt());
         event.setAllDay(Boolean.TRUE.equals(request.allDay()));
@@ -199,7 +201,7 @@ public class OrgEventService {
             event.setDescription(request.description());
         }
         if (request.location() != null) {
-            event.setLocation(request.location());
+            event.setLocationName(request.location());
         }
         event.setStartAt(start);
         event.setEndAt(end);
@@ -331,7 +333,7 @@ public class OrgEventService {
                     event, exceptions.getOrDefault(event.getId(), List.of()), rangeStart, rangeEnd)) {
                 result.add(new OrgEventResponse(
                         event.getId(), dispatch.getId(), occurrence.title(), event.getDescription(),
-                        occurrence.location(),
+                        occurrence.locationName(),
                         OffsetDateTime.ofInstant(occurrence.startAt(), ZoneOffset.UTC),
                         OffsetDateTime.ofInstant(occurrence.endAt(), ZoneOffset.UTC),
                         occurrence.allDay(), occurrence.timezone(), event.getRrule(),
@@ -373,7 +375,7 @@ public class OrgEventService {
 
         Event event = eventMapper.selectById(eventId);
         return new OrgEventResponse(event.getId(), dispatch.getId(), event.getTitle(),
-                event.getDescription(), event.getLocation(), event.getStartAt(), event.getEndAt(),
+                event.getDescription(), event.getLocationName(), event.getStartAt(), event.getEndAt(),
                 event.getAllDay(), event.getTimezone(), event.getRrule(),
                 dispatch.getRequireReceipt(), recipient.getReceiptStatus(), recipient.getReceiptAt(),
                 recipient.getRemark(), true);
@@ -541,7 +543,7 @@ public class OrgEventService {
 
     private OrgEventResponse toResponse(Event event, EventDispatch dispatch, EventRecipient receipt) {
         return new OrgEventResponse(event.getId(), dispatch.getId(), event.getTitle(),
-                event.getDescription(), event.getLocation(), event.getStartAt(), event.getEndAt(),
+                event.getDescription(), event.getLocationName(), event.getStartAt(), event.getEndAt(),
                 event.getAllDay(), event.getTimezone(), event.getRrule(), dispatch.getRequireReceipt(),
                 receipt == null ? null : receipt.getReceiptStatus(),
                 receipt == null ? null : receipt.getReceiptAt(),

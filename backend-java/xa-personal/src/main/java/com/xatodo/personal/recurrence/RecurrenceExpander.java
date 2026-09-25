@@ -65,7 +65,8 @@ public class RecurrenceExpander {
                 return List.of();
             }
             return List.of(new EventOccurrence(
-                    event.getId(), event.getCalendarId(), event.getTitle(), event.getLocation(),
+                    event.getId(), event.getCalendarId(), event.getTitle(),
+                    event.getLocationName(), event.getLocationAddress(),
                     eventStart, eventEnd, Boolean.TRUE.equals(event.getAllDay()),
                     event.getTimezone(), false, null, false));
         }
@@ -113,7 +114,8 @@ public class RecurrenceExpander {
             }
 
             occurrences.add(new EventOccurrence(
-                    event.getId(), event.getCalendarId(), title, event.getLocation(),
+                    event.getId(), event.getCalendarId(), title,
+                    event.getLocationName(), event.getLocationAddress(),
                     effectiveStart, effectiveEnd, Boolean.TRUE.equals(event.getAllDay()),
                     event.getTimezone(), true, occurrenceDate, modified));
         }

@@ -60,6 +60,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/admin/auth/login").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // 地图选点页：由 WebView 直接按 URL 加载，带不了 Authorization；
+                        // 页面本身只有地图和公开的 JS Key，不含任何用户数据
+                        .requestMatchers("/map/**").permitAll()
                         // 登录链路的入口接口自身校验受限令牌（注册令牌 / 选择身份令牌 / 刷新令牌）
                         .requestMatchers(
                                 "/api/v1/auth/sms/**",

@@ -33,23 +33,46 @@ class EventCreate(BaseModel):
     calendarId: int | None = None
     title: str
     description: str | None = None
-    location: str | None = None
+    # 结构化地点（spec §5.9）。坐标系不接受客户端指定，服务端统一按 GCJ-02 落库。
+    locationName: str | None = Field(default=None, max_length=128)
+    locationAddress: str | None = Field(default=None, max_length=255)
+    latitude: float | None = None
+    longitude: float | None = None
+    poiId: str | None = Field(default=None, max_length=64)
     startAt: datetime
     endAt: datetime
     allDay: bool | None = None
     timezone: str | None = None
     rrule: str | None = None
+    status: str | None = None
+    availability: str | None = None
+    color: str | None = None
+    priority: str | None = None
+    category: str | None = None
+    url: str | None = None
+    travelTimeMinutes: int | None = None
 
 
 class EventUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
-    location: str | None = None
+    locationName: str | None = None
+    locationAddress: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    poiId: str | None = None
     startAt: datetime | None = None
     endAt: datetime | None = None
     allDay: bool | None = None
     timezone: str | None = None
     rrule: str | None = None
+    status: str | None = None
+    availability: str | None = None
+    color: str | None = None
+    priority: str | None = None
+    category: str | None = None
+    url: str | None = None
+    travelTimeMinutes: int | None = None
     scope: str | None = None
     occurrenceDate: str | None = None
 

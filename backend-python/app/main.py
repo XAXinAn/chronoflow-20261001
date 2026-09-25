@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from .errors import ApiError, ErrorCode, envelope, set_trace_id
-from .routers import admin, auth, me, org, personal, system
+from .routers import admin, auth, geo, me, org, personal, system
 
 logger = logging.getLogger(__name__)
 
@@ -109,3 +109,4 @@ app.include_router(me.router)
 app.include_router(personal.router)
 app.include_router(org.router)
 app.include_router(admin.router)
+app.include_router(geo.router)

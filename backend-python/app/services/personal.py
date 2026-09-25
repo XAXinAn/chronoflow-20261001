@@ -12,6 +12,70 @@ from . import recurrence
 
 DEFAULT_CALENDAR_NAME = "我的日程"
 
+# 枚举取值集中在这里校验：脏值以业务错误码返回，而不是写进库后被数据库约束拒绝
+_STATUSES = {"CONFIRMED", "TENTATIVE", "CANCELLED"}
+_AVAILABILITIES = {"BUSY", "FREE"}
+_PRIORITIES = {"LOW", "NORMAL", "HIGH", "URGENT"}
+_COORDINATE_SYSTEM = "GCJ-02"
+
+
+def _choice(value, allowed, fallback, label):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return fallback
+    normalized = str(value).strip().upper()
+    if normalized not in allowed:
+        raise ApiError(ErrorCode.PARAM_INVALID, f"{label}取值非法: {value}")
+    return normalized
+
+
+def _blank_to_none(value):
+    return value if value is not None and str(value).strip() else None
+
+
+def _place_columns(payload):
+    """地点字段的统一处理：坐标必须成对，且一律标注 GCJ-02（spec §5.9）。"""
+    lat = payload.get("latitude")
+    lng = payload.get("longitude")
+    if lat is None and lng is None:
+        return {"latitude": None, "longitude": None, "coordinate_system": None}
+    if lat is None or lng is None:
+        raise ApiError(ErrorCode.PARAM_INVALID, "经纬度必须成对提供")
+    if not -90 <= float(lat) <= 90 or not -180 <= float(lng) <= 180:
+        raise ApiError(ErrorCode.PARAM_INVALID, "经纬度超出有效范围")
+    return {"latitude": lat, "longitude": lng, "coordinate_system": _COORDINATE_SYSTEM}
+
+
+def _event_columns(payload, defaults):
+    """请求体 → event 表列值。编辑时空值交给 COALESCE 保留原值。"""
+    columns = {
+        "location_name": _blank_to_none(payload.get("locationName")),
+        "location_address": _blank_to_none(payload.get("locationAddress")),
+        "poi_id": _blank_to_none(payload.get("poiId")),
+        "category": _blank_to_none(payload.get("category")),
+        "url": _blank_to_none(payload.get("url")),
+        "color": _blank_to_none(payload.get("color")),
+        **_place_columns(payload),
+    }
+    if defaults:
+        columns["status"] = _choice(payload.get("status"), _STATUSES, "CONFIRMED", "日程状态")
+        columns["availability"] = _choice(payload.get("availability"), _AVAILABILITIES, "BUSY", "忙碌状态")
+        columns["priority"] = _choice(payload.get("priority"), _PRIORITIES, "NORMAL", "优先级")
+        columns["travel_time_minutes"] = payload.get("travelTimeMinutes")
+    else:
+        columns["status"] = (
+            _choice(payload.get("status"), _STATUSES, None, "日程状态") if payload.get("status") else None
+        )
+        columns["availability"] = (
+            _choice(payload.get("availability"), _AVAILABILITIES, None, "忙碌状态")
+            if payload.get("availability")
+            else None
+        )
+        columns["priority"] = (
+            _choice(payload.get("priority"), _PRIORITIES, None, "优先级") if payload.get("priority") else None
+        )
+        columns["travel_time_minutes"] = payload.get("travelTimeMinutes")
+    return columns
+
 
 class PersonalService:
     def __init__(self, session: Session):
@@ -194,10 +258,14 @@ class PersonalService:
         row = self._session.execute(
             text(
                 "INSERT INTO event (calendar_id, creator_identity_id, source_type, title,"
-                " description, location, start_at, end_at, all_day, timezone, rrule, status,"
+                " description, location_name, location_address, latitude, longitude, poi_id,"
+                " coordinate_system, start_at, end_at, all_day, timezone, rrule, status,"
+                " availability, color, priority, category, url, travel_time_minutes,"
                 " updated_after_dispatch)"
-                " VALUES (:calendar_id, :identity, 'PERSONAL', :title, :description, :location,"
-                " :start_at, :end_at, :all_day, :timezone, :rrule, 'CONFIRMED', false)"
+                " VALUES (:calendar_id, :identity, 'PERSONAL', :title, :description, :location_name,"
+                " :location_address, :latitude, :longitude, :poi_id, :coordinate_system,"
+                " :start_at, :end_at, :all_day, :timezone, :rrule, :status,"
+                " :availability, :color, :priority, :category, :url, :travel_time_minutes, false)"
                 " RETURNING *"
             ),
             {
@@ -205,12 +273,12 @@ class PersonalService:
                 "identity": identity_id,
                 "title": payload["title"],
                 "description": payload.get("description"),
-                "location": payload.get("location"),
                 "start_at": payload["startAt"],
                 "end_at": payload["endAt"],
                 "all_day": bool(payload.get("allDay")),
                 "timezone": payload.get("timezone") or calendar["timezone"],
                 "rrule": payload.get("rrule"),
+                **_event_columns(payload, defaults=True),
             },
         ).mappings().one()
         self._session.commit()
@@ -228,22 +296,45 @@ class PersonalService:
                 text(
                     "UPDATE event SET title = COALESCE(:title, title),"
                     " description = COALESCE(:description, description),"
-                    " location = COALESCE(:location, location), start_at = :start_at,"
-                    " end_at = :end_at, all_day = COALESCE(:all_day, all_day),"
+                    # 地点是一组联动字段：显式送空串表示「清空地点」，此时名称、地址、坐标一起清掉，
+                    # 否则会留下「有坐标没名字」的脏数据，也过不了 coordinate_system 的成对约束
+                    " location_name = CASE WHEN :clear_place THEN NULL"
+                    "   ELSE COALESCE(:location_name, location_name) END,"
+                    " location_address = CASE WHEN :clear_place THEN NULL"
+                    "   ELSE COALESCE(:location_address, location_address) END,"
+                    " poi_id = CASE WHEN :clear_place THEN NULL ELSE COALESCE(:poi_id, poi_id) END,"
+                    " latitude = CASE WHEN :clear_place THEN NULL ELSE COALESCE(:latitude, latitude) END,"
+                    " longitude = CASE WHEN :clear_place THEN NULL ELSE COALESCE(:longitude, longitude) END,"
+                    " coordinate_system = CASE WHEN :clear_place THEN NULL"
+                    "   ELSE COALESCE(:coordinate_system, coordinate_system) END,"
+                    " start_at = :start_at, end_at = :end_at,"
+                    " all_day = COALESCE(:all_day, all_day),"
                     " timezone = COALESCE(:timezone, timezone),"
-                    " rrule = COALESCE(:rrule, rrule), updated_at = now()"
+                    " rrule = COALESCE(:rrule, rrule),"
+                    " status = COALESCE(:status, status),"
+                    " availability = COALESCE(:availability, availability),"
+                    " color = COALESCE(:color, color),"
+                    " priority = COALESCE(:priority, priority),"
+                    " category = COALESCE(:category, category),"
+                    " url = COALESCE(:url, url),"
+                    " travel_time_minutes = COALESCE(:travel_time_minutes, travel_time_minutes),"
+                    " updated_at = now()"
                     " WHERE id = :id RETURNING *"
                 ),
                 {
                     "id": event_id,
                     "title": payload.get("title"),
                     "description": payload.get("description"),
-                    "location": payload.get("location"),
                     "start_at": start,
                     "end_at": end,
                     "all_day": payload.get("allDay"),
                     "timezone": payload.get("timezone"),
                     "rrule": payload.get("rrule"),
+                    # 只有「显式送了空串」才清空地点；字段缺失或为 null 一律视为不修改，
+                    # 与 Java 版保持一致（PATCH 的 null 语义是「不动」）
+                    "clear_place": payload.get("locationName") is not None
+                    and _blank_to_none(payload.get("locationName")) is None,
+                    **_event_columns(payload, defaults=False),
                 },
             ).mappings().one()
             self._session.commit()
@@ -289,10 +380,14 @@ class PersonalService:
         row = self._session.execute(
             text(
                 "INSERT INTO event (calendar_id, creator_identity_id, source_type, title,"
-                " description, location, start_at, end_at, all_day, timezone, rrule, status,"
+                " description, location_name, location_address, latitude, longitude, poi_id,"
+                " coordinate_system, start_at, end_at, all_day, timezone, rrule, status,"
+                " availability, color, priority, category, url, travel_time_minutes,"
                 " updated_after_dispatch)"
-                " VALUES (:calendar_id, :identity, 'PERSONAL', :title, :description, :location,"
-                " :start_at, :end_at, :all_day, :timezone, :rrule, 'CONFIRMED', false)"
+                " VALUES (:calendar_id, :identity, 'PERSONAL', :title, :description, :location_name,"
+                " :location_address, :latitude, :longitude, :poi_id, :coordinate_system,"
+                " :start_at, :end_at, :all_day, :timezone, :rrule, :status,"
+                " :availability, :color, :priority, :category, :url, :travel_time_minutes, false)"
                 " RETURNING *"
             ),
             {
@@ -300,7 +395,20 @@ class PersonalService:
                 "identity": identity_id,
                 "title": payload.get("title") or event["title"],
                 "description": _coalesce(payload.get("description"), event["description"]),
-                "location": _coalesce(payload.get("location"), event["location"]),
+                "location_name": _coalesce(_blank_to_none(payload.get("locationName")), event["location_name"]),
+                "location_address": _coalesce(payload.get("locationAddress"), event["location_address"]),
+                "latitude": _coalesce(payload.get("latitude"), event["latitude"]),
+                "longitude": _coalesce(payload.get("longitude"), event["longitude"]),
+                "poi_id": _coalesce(payload.get("poiId"), event["poi_id"]),
+                "coordinate_system": event["coordinate_system"],
+                "status": _choice(payload.get("status"), _STATUSES, None, "日程状态") or event["status"],
+                "availability": _choice(payload.get("availability"), _AVAILABILITIES, None, "忙碌状态")
+                or event["availability"],
+                "priority": _choice(payload.get("priority"), _PRIORITIES, None, "优先级") or event["priority"],
+                "color": _coalesce(payload.get("color"), event["color"]),
+                "category": _coalesce(payload.get("category"), event["category"]),
+                "url": _coalesce(payload.get("url"), event["url"]),
+                "travel_time_minutes": _coalesce(payload.get("travelTimeMinutes"), event["travel_time_minutes"]),
                 "start_at": payload.get("startAt") or start,
                 "end_at": payload.get("endAt") or end,
                 "all_day": _coalesce(payload.get("allDay"), event["all_day"]),
@@ -579,14 +687,30 @@ def _event_view(row) -> dict:
         "calendarId": row["calendar_id"],
         "title": row["title"],
         "description": row["description"],
-        "location": row["location"],
+        "locationName": row["location_name"],
+        "locationAddress": row["location_address"],
+        "latitude": _num(row["latitude"]),
+        "longitude": _num(row["longitude"]),
+        "poiId": row["poi_id"],
+        "coordinateSystem": row["coordinate_system"],
         "startAt": row["start_at"],
         "endAt": row["end_at"],
         "allDay": bool(row["all_day"]),
         "timezone": row["timezone"],
         "rrule": row["rrule"],
         "status": row["status"],
+        "availability": row["availability"],
+        "color": row["color"],
+        "priority": row["priority"],
+        "category": row["category"],
+        "url": row["url"],
+        "travelTimeMinutes": row["travel_time_minutes"],
     }
+
+
+def _num(value):
+    """NUMERIC 列在 psycopg 下是 Decimal，转成 float 才能与 Java 版输出一致（JSON 数字）。"""
+    return float(value) if value is not None else None
 
 
 def _task_view(row) -> dict:

@@ -52,9 +52,7 @@ public class TaskController {
                 identityId, id,
                 request == null ? null : request.startAt(),
                 request == null ? null : request.endAt());
-        return ApiResponse.ok(new EventResponse(event.getId(), event.getCalendarId(), event.getTitle(),
-                event.getDescription(), event.getLocation(), event.getStartAt(), event.getEndAt(),
-                event.getAllDay(), event.getTimezone(), event.getRrule(), event.getStatus()));
+        return ApiResponse.ok(EventResponse.from(event));
     }
 
     @GetMapping

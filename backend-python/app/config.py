@@ -36,6 +36,12 @@ class Settings:
     sms_max_verify_attempts: int
     max_devices_per_identity: int
     expose_sms_code: bool
+    geo_provider: str
+    amap_key: str
+    amap_js_key: str
+    amap_js_security_code: str
+    amap_base_url: str
+    amap_timeout: float
 
 
 def load_settings() -> Settings:
@@ -62,6 +68,14 @@ def load_settings() -> Settings:
         max_devices_per_identity=_int("MAX_DEVICES_PER_IDENTITY", 5),
         # 生产环境必须为 false；无短信通道时仅开发/测试开启
         expose_sms_code=_bool("EXPOSE_SMS_CODE", False),
+        # 地点服务（spec §5.9）。与 Java 版同名环境变量，两边可共用同一份配置。
+        # 没配 Key 时服务层自动降级到内置地点集，保证离线环境与 CI 也能跑通全流程。
+        geo_provider=os.getenv("GEO_PROVIDER", "amap"),
+        amap_key=os.getenv("GEO_AMAP_KEY", ""),
+        amap_js_key=os.getenv("GEO_AMAP_JS_KEY", ""),
+        amap_js_security_code=os.getenv("GEO_AMAP_JS_SECURITY_CODE", ""),
+        amap_base_url=os.getenv("GEO_AMAP_BASE_URL", "https://restapi.amap.com"),
+        amap_timeout=float(os.getenv("GEO_AMAP_TIMEOUT_SECONDS", "5")),
     )
 
 

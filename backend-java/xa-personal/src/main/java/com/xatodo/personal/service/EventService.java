@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -28,7 +29,9 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -41,6 +44,12 @@ public class EventService {
     private final EventExceptionMapper eventExceptionMapper;
     private final CalendarService calendarService;
     private final RecurrenceExpander expander;
+
+    private static final Set<String> STATUSES =
+            Set.of(Event.STATUS_CONFIRMED, Event.STATUS_TENTATIVE, Event.STATUS_CANCELLED);
+    private static final Set<String> AVAILABILITIES =
+            Set.of(Event.AVAILABILITY_BUSY, Event.AVAILABILITY_FREE);
+    private static final Set<String> PRIORITIES = Set.of("LOW", "NORMAL", "HIGH", "URGENT");
 
     public EventService(EventMapper eventMapper,
                         EventExceptionMapper eventExceptionMapper,
@@ -69,13 +78,22 @@ public class EventService {
         event.setSourceType(Event.SOURCE_PERSONAL);
         event.setTitle(request.title());
         event.setDescription(request.description());
-        event.setLocation(request.location());
+        event.setLocationName(request.locationName());
+        event.setLocationAddress(request.locationAddress());
+        event.setPoiId(request.poiId());
+        applyCoordinates(event, request.latitude(), request.longitude());
         event.setStartAt(request.startAt());
         event.setEndAt(request.endAt());
         event.setAllDay(Boolean.TRUE.equals(request.allDay()));
         event.setTimezone(StringUtils.hasText(request.timezone()) ? request.timezone() : calendar.getTimezone());
         event.setRrule(request.rrule());
-        event.setStatus(Event.STATUS_CONFIRMED);
+        event.setStatus(choice(request.status(), STATUSES, Event.STATUS_CONFIRMED, "日程状态"));
+        event.setAvailability(choice(request.availability(), AVAILABILITIES, Event.AVAILABILITY_BUSY, "忙碌状态"));
+        event.setColor(request.color());
+        event.setPriority(choice(request.priority(), PRIORITIES, Event.PRIORITY_NORMAL, "优先级"));
+        event.setCategory(request.category());
+        event.setUrl(request.url());
+        event.setTravelTimeMinutes(request.travelTimeMinutes());
         event.setUpdatedAfterDispatch(false);
         eventMapper.insert(event);
         return event;
@@ -212,8 +230,49 @@ public class EventService {
         if (request.description() != null) {
             event.setDescription(request.description());
         }
-        if (request.location() != null) {
-            event.setLocation(request.location());
+        if (request.status() != null) {
+            event.setStatus(choice(request.status(), STATUSES, Event.STATUS_CONFIRMED, "日程状态"));
+        }
+        if (request.availability() != null) {
+            event.setAvailability(choice(request.availability(), AVAILABILITIES, Event.AVAILABILITY_BUSY, "忙碌状态"));
+        }
+        if (request.color() != null) {
+            event.setColor(blankToNull(request.color()));
+        }
+        if (request.priority() != null) {
+            event.setPriority(choice(request.priority(), PRIORITIES, Event.PRIORITY_NORMAL, "优先级"));
+        }
+        if (request.category() != null) {
+            event.setCategory(blankToNull(request.category()));
+        }
+        if (request.url() != null) {
+            event.setUrl(blankToNull(request.url()));
+        }
+        if (request.travelTimeMinutes() != null) {
+            event.setTravelTimeMinutes(request.travelTimeMinutes());
+        }
+        if (request.locationName() != null) {
+            if (!StringUtils.hasText(request.locationName())) {
+                // 显式清空地点：名称、地址、坐标一起清掉，
+                // 否则会留下「有坐标却没有名字」的脏数据，且在 §5.9 的成对约束下无法通过校验
+                event.setLocationName(null);
+                event.setLocationAddress(null);
+                event.setPoiId(null);
+                event.setLatitude(null);
+                event.setLongitude(null);
+                event.setCoordinateSystem(null);
+            } else {
+                event.setLocationName(request.locationName());
+                if (request.locationAddress() != null) {
+                    event.setLocationAddress(blankToNull(request.locationAddress()));
+                }
+                if (request.poiId() != null) {
+                    event.setPoiId(blankToNull(request.poiId()));
+                }
+                if (request.latitude() != null || request.longitude() != null) {
+                    applyCoordinates(event, request.latitude(), request.longitude());
+                }
+            }
         }
         if (request.startAt() != null) {
             event.setStartAt(request.startAt());
@@ -230,6 +289,51 @@ public class EventService {
         if (request.rrule() != null) {
             event.setRrule(StringUtils.hasText(request.rrule()) ? request.rrule() : null);
         }
+    }
+
+    /**
+     * 枚举取值统一在这里校验：让脏值以业务错误码返回，
+     * 而不是写进库后被数据库约束拒绝、报出对用户毫无意义的约束名。
+     */
+    private static String choice(String value, Set<String> allowed, String fallback, String label) {
+        if (!StringUtils.hasText(value)) {
+            return fallback;
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        if (!allowed.contains(normalized)) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, label + "取值非法: " + value);
+        }
+        return normalized;
+    }
+
+    private static String blankToNull(String value) {
+        return StringUtils.hasText(value) ? value : null;
+    }
+
+    /**
+     * 写入坐标。
+     *
+     * 坐标必须成对出现，且一律标注为 GCJ-02：客户端提交的坐标来自国内地图服务，
+     * 本身就是 GCJ-02，服务端不采信客户端自报的坐标系（spec §5.9）。
+     */
+    private static void applyCoordinates(Event event, BigDecimal latitude, BigDecimal longitude) {
+        if (latitude == null && longitude == null) {
+            event.setLatitude(null);
+            event.setLongitude(null);
+            event.setCoordinateSystem(null);
+            return;
+        }
+        if (latitude == null || longitude == null) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "经纬度必须成对提供");
+        }
+        if (latitude.compareTo(BigDecimal.valueOf(-90)) < 0 || latitude.compareTo(BigDecimal.valueOf(90)) > 0
+                || longitude.compareTo(BigDecimal.valueOf(-180)) < 0
+                || longitude.compareTo(BigDecimal.valueOf(180)) > 0) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "经纬度超出有效范围");
+        }
+        event.setLatitude(latitude);
+        event.setLongitude(longitude);
+        event.setCoordinateSystem(Event.COORDINATE_GCJ02);
     }
 
     private void upsertModifiedException(Event event, LocalDate occurrenceDate, EventUpdateRequest request) {

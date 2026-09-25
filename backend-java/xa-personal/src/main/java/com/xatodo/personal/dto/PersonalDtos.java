@@ -52,23 +52,47 @@ public final class PersonalDtos {
             @NotBlank(message = "日程标题不能为空")
             @Size(max = 200, message = "标题最长 200 个字符") String title,
             String description,
-            @Size(max = 255) String location,
+            // 结构化地点（spec §5.9）。坐标由服务端统一按 GCJ-02 落库，
+            // 客户端不得自行声明坐标系，因此这里不暴露 coordinateSystem。
+            @Size(max = 128, message = "地点名称最长 128 个字符") String locationName,
+            @Size(max = 255, message = "地点地址最长 255 个字符") String locationAddress,
+            java.math.BigDecimal latitude,
+            java.math.BigDecimal longitude,
+            @Size(max = 64) String poiId,
             @NotNull(message = "开始时间不能为空") OffsetDateTime startAt,
             @NotNull(message = "结束时间不能为空") OffsetDateTime endAt,
             Boolean allDay,
             @Size(max = 64) String timezone,
-            @Size(max = 512) String rrule) {
+            @Size(max = 512) String rrule,
+            @Size(max = 16) String status,
+            @Size(max = 16) String availability,
+            @Size(max = 16) String color,
+            @Size(max = 16) String priority,
+            @Size(max = 64) String category,
+            @Size(max = 512) String url,
+            Integer travelTimeMinutes) {
     }
 
     public record EventUpdateRequest(
             @Size(max = 200) String title,
             String description,
-            @Size(max = 255) String location,
+            @Size(max = 128) String locationName,
+            @Size(max = 255) String locationAddress,
+            java.math.BigDecimal latitude,
+            java.math.BigDecimal longitude,
+            @Size(max = 64) String poiId,
             OffsetDateTime startAt,
             OffsetDateTime endAt,
             Boolean allDay,
             @Size(max = 64) String timezone,
             @Size(max = 512) String rrule,
+            @Size(max = 16) String status,
+            @Size(max = 16) String availability,
+            @Size(max = 16) String color,
+            @Size(max = 16) String priority,
+            @Size(max = 64) String category,
+            @Size(max = 512) String url,
+            Integer travelTimeMinutes,
             EventScope scope,
             LocalDate occurrenceDate) {
     }
@@ -77,13 +101,38 @@ public final class PersonalDtos {
                                 Long calendarId,
                                 String title,
                                 String description,
-                                String location,
+                                String locationName,
+                                String locationAddress,
+                                java.math.BigDecimal latitude,
+                                java.math.BigDecimal longitude,
+                                String poiId,
+                                String coordinateSystem,
                                 OffsetDateTime startAt,
                                 OffsetDateTime endAt,
                                 Boolean allDay,
                                 String timezone,
                                 String rrule,
-                                String status) {
+                                String status,
+                                String availability,
+                                String color,
+                                String priority,
+                                String category,
+                                String url,
+                                Integer travelTimeMinutes) {
+
+        /**
+         * 实体 → 响应。字段多且有两处调用方（日程接口、待办转日程），
+         * 映射集中在这里，避免两处各写一遍后逐渐漂移。
+         */
+        public static EventResponse from(com.xatodo.personal.entity.Event event) {
+            return new EventResponse(
+                    event.getId(), event.getCalendarId(), event.getTitle(), event.getDescription(),
+                    event.getLocationName(), event.getLocationAddress(),
+                    event.getLatitude(), event.getLongitude(), event.getPoiId(), event.getCoordinateSystem(),
+                    event.getStartAt(), event.getEndAt(), event.getAllDay(), event.getTimezone(),
+                    event.getRrule(), event.getStatus(), event.getAvailability(), event.getColor(),
+                    event.getPriority(), event.getCategory(), event.getUrl(), event.getTravelTimeMinutes());
+        }
     }
 
     // ---------------------------------------------------------------- task

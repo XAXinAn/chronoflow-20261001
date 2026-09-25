@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /**
@@ -13,8 +14,14 @@ import java.time.OffsetDateTime;
 public class Event {
 
     public static final String STATUS_CONFIRMED = "CONFIRMED";
+    public static final String STATUS_TENTATIVE = "TENTATIVE";
     public static final String STATUS_CANCELLED = "CANCELLED";
     public static final String SOURCE_PERSONAL = "PERSONAL";
+    public static final String AVAILABILITY_BUSY = "BUSY";
+    public static final String AVAILABILITY_FREE = "FREE";
+    public static final String PRIORITY_NORMAL = "NORMAL";
+    /** 国内地图展示层统一使用 GCJ-02，落库坐标一律用它（spec §5.9）。 */
+    public static final String COORDINATE_GCJ02 = "GCJ-02";
 
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -31,7 +38,35 @@ public class Event {
 
     private String description;
 
-    private String location;
+    // ---------------------------------------------------------------- 地点
+    // 地点不再是一个自由文本字段，拆成结构化信息以便导航与按地点归并（spec §5.9）
+    private String locationName;
+
+    private String locationAddress;
+
+    private BigDecimal latitude;
+
+    private BigDecimal longitude;
+
+    private String poiId;
+
+    private String coordinateSystem;
+
+    // ------------------------------------------------------------ 日程属性
+    /** 忙碌状态：BUSY / FREE，供合并视图判断是否占用时段 */
+    private String availability;
+
+    /** 覆盖所属日历颜色，为空时跟随日历 */
+    private String color;
+
+    private String priority;
+
+    private String category;
+
+    private String url;
+
+    /** 出行时间（分钟），用于出发提醒 */
+    private Integer travelTimeMinutes;
 
     private OffsetDateTime startAt;
 
@@ -113,12 +148,100 @@ public class Event {
         this.description = description;
     }
 
-    public String getLocation() {
-        return location;
+    public String getLocationName() {
+        return locationName;
     }
 
-    public void setLocation(String location) {
-        this.location = location;
+    public void setLocationName(String locationName) {
+        this.locationName = locationName;
+    }
+
+    public String getLocationAddress() {
+        return locationAddress;
+    }
+
+    public void setLocationAddress(String locationAddress) {
+        this.locationAddress = locationAddress;
+    }
+
+    public BigDecimal getLatitude() {
+        return latitude;
+    }
+
+    public void setLatitude(BigDecimal latitude) {
+        this.latitude = latitude;
+    }
+
+    public BigDecimal getLongitude() {
+        return longitude;
+    }
+
+    public void setLongitude(BigDecimal longitude) {
+        this.longitude = longitude;
+    }
+
+    public String getPoiId() {
+        return poiId;
+    }
+
+    public void setPoiId(String poiId) {
+        this.poiId = poiId;
+    }
+
+    public String getCoordinateSystem() {
+        return coordinateSystem;
+    }
+
+    public void setCoordinateSystem(String coordinateSystem) {
+        this.coordinateSystem = coordinateSystem;
+    }
+
+    public String getAvailability() {
+        return availability;
+    }
+
+    public void setAvailability(String availability) {
+        this.availability = availability;
+    }
+
+    public String getColor() {
+        return color;
+    }
+
+    public void setColor(String color) {
+        this.color = color;
+    }
+
+    public String getPriority() {
+        return priority;
+    }
+
+    public void setPriority(String priority) {
+        this.priority = priority;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public void setCategory(String category) {
+        this.category = category;
+    }
+
+    public String getUrl() {
+        return url;
+    }
+
+    public void setUrl(String url) {
+        this.url = url;
+    }
+
+    public Integer getTravelTimeMinutes() {
+        return travelTimeMinutes;
+    }
+
+    public void setTravelTimeMinutes(Integer travelTimeMinutes) {
+        this.travelTimeMinutes = travelTimeMinutes;
     }
 
     public OffsetDateTime getStartAt() {

@@ -88,6 +88,17 @@ xatodo:
     max-devices-per-identity: 5
     # 生产环境必须保持 false；无短信通道时仅开发/测试开启
     expose-sms-code: false
+  geo:
+    # 期望的服务商。没配 Key 时自动降级为内置地点集，并在 /geo/config 里如实上报，
+    # 保证离线环境与 CI 也能跑通「搜索地点 → 落库带坐标」的完整链路（spec §5.9）
+    provider: ${GEO_PROVIDER:amap}
+    amap:
+      key: ${GEO_AMAP_KEY:}
+      # 地图选点用的 Web端(JS API) 凭证。和上面的 Web 服务 Key 是两套，缺了只影响地图选点。
+      js-key: ${GEO_AMAP_JS_KEY:}
+      js-security-code: ${GEO_AMAP_JS_SECURITY_CODE:}
+      base-url: ${GEO_AMAP_BASE_URL:https://restapi.amap.com}
+      timeout-seconds: ${GEO_AMAP_TIMEOUT_SECONDS:5}
 
 logging:
   pattern:

@@ -56,6 +56,10 @@
     { "method": "PUT", "path": "/api/v1/reminders", "auth": "access" },
     { "method": "GET", "path": "/api/v1/reminders", "auth": "access" },
 
+    { "method": "GET", "path": "/api/v1/geo/places", "auth": "access" },
+    { "method": "GET", "path": "/api/v1/geo/regeo", "auth": "access" },
+    { "method": "GET", "path": "/api/v1/geo/config", "auth": "access" },
+
     { "method": "GET", "path": "/api/v1/org/current", "auth": "access" },
     { "method": "GET", "path": "/api/v1/org/departments/tree", "auth": "access" },
     { "method": "GET", "path": "/api/v1/org/members", "auth": "access" },
