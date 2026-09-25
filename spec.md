@@ -245,6 +245,39 @@ POST /auth/identity/select（凭 selectToken）→ 签发绑定该身份的 Toke
 - 逾期高亮；无时间的待办归入「待安排」清单。
 - 子任务完成不影响父任务状态，父任务完成需二次确认。
 
+#### 4.1.4 日程字段（对齐主流系统日历）
+
+首版字段以「iOS 日历 / Google 日历 / 小米日历 / 华为日历」的公共交集为准，保证从其他日历迁入时不丢信息：
+
+| 字段 | 说明 | 首版 |
+| --- | --- | --- |
+| 标题 | 必填 | ✔ |
+| 起止时间 | 含跨天与全天 | ✔ |
+| 时区 | 默认取身份时区 | ✔ |
+| 重复规则 | RRULE + 结束条件（永不 / 指定日期 / 次数） | ✔ |
+| 提醒 | 可配置多个，提前量自定义 | ✔ |
+| 地点 | 结构化地点 + 真实地图，见 §5.9 | ✔ |
+| 描述 / 备注 | 长文本 | ✔ |
+| URL | 会议链接、资料地址 | ✔ |
+| 日历归属与颜色 | 多日历场景 | ✔ |
+| 忙碌状态 | `BUSY` / `FREE`，供合并视图判断是否占用时段 | ✔ |
+| 日程状态 | `CONFIRMED` / `TENTATIVE` / `CANCELLED` | ✔ |
+| 分类 / 标签 | 单值分类，用于筛选 | ✔ |
+| 优先级 | 对齐待办的 `LOW / NORMAL / HIGH / URGENT` | ✔ |
+| 出行时间 | 出发提醒用，单位分钟 | ✔ |
+| 参与者 / 邀请 | 需邀请通知与 RSVP 子系统 | ✘ 阶段二 |
+| 附件 | 依赖对象存储通道 | ✘ 阶段二 |
+| 视频会议 | 依赖第三方会议凭证 | ✘ 阶段二 |
+
+> 参与者、附件、视频会议不进入首版：三者各自需要独立子系统（通知投递 / 对象存储 / 第三方会议凭证），均为外部依赖，与 §8 的推迟项保持一致。
+
+#### 4.1.5 新增与编辑交互
+
+- **新建 / 编辑日程、新建 / 编辑待办一律使用独立页面**（导航栈 push），**不使用模态弹窗**。
+- 原因：字段量已达系统日历级别，弹窗承载不下；地点搜索、重复规则、提醒都需要各自的二级页面与返回栈。
+- 列表页只保留快速入口（日历页右下角 `+`、待办页底部主按钮），点击后 push 到编辑页。
+- 编辑页顶部为「取消 / 标题 / 保存」三段式导航栏；有未保存修改时退出需二次确认。
+
 ### 4.2 组织端（App）
 
 #### 4.2.1 组织结构
@@ -384,7 +417,7 @@ erDiagram
 | 表 | 关键字段 | 约束 / 说明 |
 | --- | --- | --- |
 | `calendar` | `id`、`calendar_type`、`owner_identity_id`(可空)、`org_id`(可空)、`department_id`(可空)、`name`、`color`、`timezone`、`is_default`、`status`、`created_at`、`updated_at` | `PERSONAL` 时 `owner_identity_id` 必填；`ORG`/`ORG_DEPARTMENT` 时 `org_id` 必填 |
-| `event` | `id`、`calendar_id`、`org_id`(可空)、`creator_identity_id`、`source_type`、`title`、`description`、`location`、`start_at`、`end_at`、`all_day`、`timezone`、`rrule`、`rrule_until`、`status`、`dispatch_id`(可空)、`updated_after_dispatch`、`created_at`、`updated_at`、`deleted_at` | 索引 `idx_calendar_range(calendar_id, start_at, end_at)`；`end_at > start_at` |
+| `event` | `id`、`calendar_id`、`org_id`(可空)、`creator_identity_id`、`source_type`、`title`、`description`、`location_name`、`location_address`、`latitude`、`longitude`、`poi_id`、`coordinate_system`、`start_at`、`end_at`、`all_day`、`timezone`、`rrule`、`rrule_until`、`status`、`availability`、`color`、`priority`、`category`、`url`、`travel_time_minutes`、`dispatch_id`(可空)、`updated_after_dispatch`、`created_at`、`updated_at`、`deleted_at` | 索引 `idx_calendar_range(calendar_id, start_at, end_at)`；`end_at > start_at`；`status` ∈ `CONFIRMED`/`TENTATIVE`/`CANCELLED`；`availability` ∈ `BUSY`/`FREE`；地点字段语义见 §5.9 |
 | `event_exception` | `id`、`event_id`、`occurrence_date`、`exception_type`(MODIFIED/CANCELLED)、`override_start_at`、`override_end_at`、`override_title`、`created_at` | `(event_id, occurrence_date)` 唯一 |
 | `task` | `id`、`calendar_id`、`owner_identity_id`、`org_id`(可空)、`parent_task_id`(可空)、`title`、`description`、`due_at`(可空)、`all_day`、`status`、`completed_at`、`priority`、`rrule`、`sort_order`、`created_at`、`updated_at`、`deleted_at` | 仅两层（父/子）；父任务与子任务须同 `calendar_id` |
 | `reminder` | `id`、`target_type`(EVENT/TASK)、`target_id`、`identity_id`、`occurrence_date`(可空)、`minutes_before`、`channel`、`enabled`、`sent_at`、`created_at` | `(target_type, target_id, identity_id, occurrence_date, minutes_before)` 唯一 |
@@ -412,6 +445,25 @@ erDiagram
 - 逻辑删除统一使用 `deleted_at`，查询默认过滤。
 - 所有表带 `created_at` / `updated_at`，由框架自动填充。
 - 高频查询索引：`event(calendar_id, start_at, end_at)`、`event(org_id, start_at)`、`task(owner_identity_id, status, due_at)`、`org_member(org_id, department_id, status)`、`department(org_id, path)`、`event_recipient(org_member_id, receipt_status)`。
+
+### 5.9 地点与地图（geo）
+
+**存储**：地点不再是一个自由文本字段，拆成结构化字段存在 `event` 上，便于「按地点筛选」「一键导航」「相同地点归并」。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `location_name` | varchar(128) | 地点名称，如「北京南站」 |
+| `location_address` | varchar(255) | 完整地址 |
+| `latitude` / `longitude` | numeric(10,7) | 坐标；手工输入的地点可为空 |
+| `poi_id` | varchar(64) | 第三方 POI 唯一标识，用于「同一地点」判定 |
+| `coordinate_system` | varchar(16) | `GCJ-02`（国内地图）/ `WGS-84`（GPS 原始） |
+
+- **坐标统一存 GCJ-02**：国内地图展示层（高德 / 腾讯）均为 GCJ-02；GPS 原始坐标（WGS-84）在写入前转换。字段保留 `coordinate_system`，将来接海外服务时无需数据迁移。
+- **Key 一律留在服务端**：App 不持有任何地图厂商 Key。App 只调用本服务的 `/geo/*`，由服务端再调第三方。这样 Key 可轮换、可限流、可按租户统计配额。
+- **服务商抽象**：服务端定义 `GeoProvider`（`searchPlaces` / `reverseGeocode`），首版实现高德 Web 服务；未配置 Key 时降级为 `LOCAL` 实现（内置有限地点集 + 已选地点回显），保证开发与自动化测试离线可跑。
+- **降级可见**：`GET /system/info` 返回当前 geo provider 与可用状态，App 在搜索页对降级态给出明确提示，避免用户误判为网络故障。
+- **失败语义**：第三方不可用返回 `90002`，App 提示「地点服务暂不可用」，**不影响日程本身保存**（地点字段允许留空）。
+- **坐标系与地图组件**：App 运行在 Expo Go，无法引入 `react-native-maps` 这类原生模块，否则需要自定义 Dev Client。地图能力走「服务端代理 + WebView / 静态图 + 唤起系统地图导航」的组合，选点交互以服务端返回的 POI 列表为主。
 
 ---
 
@@ -502,6 +554,16 @@ erDiagram
 | POST | `/tasks/{id}/convert-to-event` | 转为日程 |
 | PUT | `/reminders` | 批量覆盖某日程/待办的提醒设置 |
 | GET | `/holidays` | 节假日与调休数据（按年月，带缓存） |
+
+**地点与地图**
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/geo/places` | 关键字搜索地点。入参 `keyword`，可选 `city` / `lat` / `lng`；返回名称、地址、坐标、`poiId` |
+| GET | `/geo/regeo` | 逆地理编码。入参 `lat`、`lng`；用于定位后回填当前地点 |
+| GET | `/geo/config` | 返回当前服务商与可用状态，供 App 决定是否展示搜索入口 |
+
+> `/events` 的创建与编辑请求体包含 §4.1.4 的全部可写字段；地点以 `locationName` / `locationAddress` / `latitude` / `longitude` / `poiId` 的结构化形式提交，`coordinateSystem` 由服务端按服务商统一为 `GCJ-02`，客户端不得自行指定。
 
 **组织（组织身份）**
 
@@ -721,6 +783,13 @@ erDiagram
 - Web 后台基于 Ant Design 主题算法生成令牌，通过 `ConfigProvider` 注入。
 - App 端通过 ThemeProvider 注入，支持跟随系统深浅色切换。
 - 交付验收包含黑白模式与深浅色四种组合下的视觉走查。
+
+#### 7.6.7 页面与交互模式
+
+- **新增类操作一律进独立页面**：新建 / 编辑日程、新建 / 编辑待办都 push 到完整页面，不使用模态弹窗（详见 §4.1.5）。
+- **只有确认类、选择类交互使用弹层**：二次确认、日期时间选择、下拉选择、轻提示可以弹层或半屏抽屉。
+- 判断口径：需要键盘长时间输入、字段超过 3 个、或需要跳转二级页面的场景，必须是独立页面。
+- 因此 App 导航栈需要暴露编辑页路由，列表页仅作为入口；编辑页与列表页之间使用标准的「取消 / 标题 / 保存」三段式导航栏。
 
 ---
 
