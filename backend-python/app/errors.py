@@ -58,6 +58,11 @@ class ErrorCode(IntEnum):
     INTERNAL_ERROR = 90001
     THIRD_PARTY_UNAVAILABLE = 90002
 
+    # 上传通道（spec §5.10）：格式与体积都是客户端能直接弄坏的东西，必须有自己的错误码，
+    # 否则 App 只能拿到笼统的 90001，给不出任何有用的提示
+    UPLOAD_TYPE_UNSUPPORTED = 90003
+    UPLOAD_TOO_LARGE = 90004
+
 
 DEFAULT_MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.SUCCESS: "ok",
@@ -75,6 +80,8 @@ DEFAULT_MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.PASSWORD_NOT_SET: "该账号未设置密码",
     ErrorCode.PASSWORD_MISMATCH: "原密码不正确",
     ErrorCode.INTERNAL_ERROR: "服务内部错误",
+    ErrorCode.UPLOAD_TYPE_UNSUPPORTED: "不支持的图片格式",
+    ErrorCode.UPLOAD_TOO_LARGE: "图片超出大小上限",
 }
 
 

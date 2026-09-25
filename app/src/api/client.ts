@@ -118,9 +118,48 @@ export function createApiClient(options: ApiClientOptions) {
     return envelope.data as T;
   }
 
+  /**
+   * multipart 上传。
+   *
+   * <p>单独一条路径而不是复用 request：JSON 请求会把 body 序列化并显式设 Content-Type，
+   * 而 multipart 必须让 RN 自己带 boundary —— 手写 Content-Type 会让服务端解析不出文件。
+   */
+  async function upload<T>(path: string, form: FormData): Promise<T> {
+    const send = async () => {
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      try {
+        const token = await options.session?.getAccessToken();
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+      } catch {
+        options.onSessionExpired?.();
+        throw new ApiError(20002, '登录已过期，请重新登录');
+      }
+      const response = await fetchImpl(buildUrl(path), { method: 'POST', headers, body: form });
+      const text = await response.text();
+      try {
+        return JSON.parse(text) as ApiEnvelope<unknown>;
+      } catch {
+        throw new ApiError(-1, `响应不是合法 JSON（HTTP ${response.status}）`);
+      }
+    };
+
+    let envelope = await send();
+    if ((envelope.code === 20001 || envelope.code === 20002) && options.session) {
+      await options.session.forceRefresh();
+      envelope = await send();
+    }
+    if (envelope.code !== 0) {
+      throw new ApiError(envelope.code, envelope.message || '上传失败', envelope.traceId);
+    }
+    return envelope.data as T;
+  }
+
   return {
     baseUrl,
     request,
+    upload,
     get: <T>(path: string, query?: ApiRequestOptions['query']) => request<T>(path, { query }),
     post: <T>(path: string, body?: unknown, extra: ApiRequestOptions = {}) =>
       request<T>(path, { ...extra, method: 'POST', body }),

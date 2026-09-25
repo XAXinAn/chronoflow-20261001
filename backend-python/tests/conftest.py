@@ -128,6 +128,10 @@ def databases() -> Iterator[dict[str, str]]:
         # 于是**整个套件**共用一个计数器，用例一多就会随机变红（表现为无关用例报「发送次数已达上限」）。
         # 手机号维度的限额保持原样，它才是测试真正会碰到的那个。
         os.environ["SMS_DAILY_LIMIT_PER_IP"] = "100000"
+        # 测试不依赖外网：关掉节假日自动同步（真实环境默认开启，见 app/config.py）
+        os.environ["HOLIDAY_SYNC_ENABLED"] = "false"
+        # 上传目录指向临时目录：测试不该往仓库里写图片
+        os.environ["XATODO_UPLOAD_DIR"] = tempfile.mkdtemp(prefix="xa-uploads-")
 
         try:
             yield {"dsn": dsn}

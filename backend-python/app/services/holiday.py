@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 from datetime import date
@@ -15,6 +14,7 @@ from datetime import date
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..errors import ApiError, ErrorCode
 
 DEFAULT_COUNTRY = "zh-CN"
@@ -24,15 +24,8 @@ DEFAULT_TTL_SECONDS = 300
 
 
 def _ttl_seconds() -> float:
-    """缓存时长可用 HOLIDAY_CACHE_TTL_SECONDS 覆盖（与 Java 版 cache-ttl 对应）。"""
-    raw = os.getenv("HOLIDAY_CACHE_TTL_SECONDS")
-    if not raw:
-        return DEFAULT_TTL_SECONDS
-    try:
-        return max(1.0, float(raw))
-    except ValueError:
-        # 配错了不该让接口挂掉：退回默认值继续服务
-        return DEFAULT_TTL_SECONDS
+    """缓存时长来自配置（HOLIDAY_CACHE_TTL_SECONDS，与 Java 版 cache-ttl 对应）。"""
+    return max(1.0, float(settings.holiday_cache_ttl or DEFAULT_TTL_SECONDS))
 
 
 class _TtlCache:

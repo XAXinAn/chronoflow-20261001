@@ -1,7 +1,10 @@
 import type { ApiClient } from './client';
+import { File } from 'expo-file-system';
 import type {
   EventDetail,
   EventOccurrence,
+  FeedbackCategory,
+  FeedbackItem,
   GeoPlace,
   GeoStatus,
   HolidayResponse,
@@ -11,6 +14,7 @@ import type {
   SmsLoginResponse,
   Task,
   TokenResponse,
+  UploadedImage,
 } from './types';
 
 export interface CalendarSummary {
@@ -107,6 +111,12 @@ export function createEndpoints(client: ApiClient) {
         { skipAuthRetry: true, headers: { Authorization: `Bearer ${registerToken}` } },
       ),
 
+    /** 当前身份信息（含 avatarUrl）。头像这类身份级属性以服务端为准，不只靠本地会话缓存。 */
+    me: () => client.get<IdentityView>('/api/v1/me'),
+    /** 更新昵称 / 头像 / 时区（spec §4.1.8）。avatarUrl 传上传通道返回的相对 URL。 */
+    updateMe: (payload: { nickname?: string; avatarUrl?: string | null; timezone?: string }) =>
+      client.patch<IdentityView>('/api/v1/me', payload),
+
     // ----------------------------------------------------------- 个人日历
     calendars: () => client.get<CalendarSummary[]>('/api/v1/calendars'),
     eventsInRange: (start: string, end: string) =>
@@ -154,6 +164,29 @@ export function createEndpoints(client: ApiClient) {
      */
     holidays: (year: number, month?: number, country?: string) =>
       client.get<HolidayResponse>('/api/v1/holidays', { year, month, country }),
+
+    // ------------------------------------------------------- 上传与反馈
+    /**
+     * 上传本地图片（spec §5.10）。
+     *
+     * <p>这里必须用 expo-file-system 的 File，不能写 RN 那套 `{ uri, name, type }`：
+     * Expo SDK 57 的 fetch 自己拼 multipart，只接受 **Blob 或带 bytes() 的文件对象**，
+     * 传 `{ uri, ... }` 会直接抛 `Unsupported FormDataPart implementation`（实测踩过）。
+     * File 正好实现 Blob 接口，并自带 name / type。
+     */
+    uploadImage: (uri: string) => {
+      const form = new FormData();
+      form.append('file', new File(uri) as unknown as Blob);
+      return client.upload<UploadedImage>('/api/v1/uploads/images', form);
+    },
+    /** 提交意见反馈（spec §4.1.9）。images 是上传通道返回的相对 URL 数组。 */
+    submitFeedback: (payload: {
+      category: FeedbackCategory;
+      content: string;
+      images?: string[];
+    }) => client.post<FeedbackItem>('/api/v1/feedback', payload),
+    /** 我提交过的反馈；用户端不展示处理过程，只用来回看自己提过什么。 */
+    myFeedback: () => client.get<FeedbackItem[]>('/api/v1/feedback'),
 
     // --------------------------------------------------------------- 组织
     orgCurrent: () => client.get<Record<string, unknown>>('/api/v1/org/current'),

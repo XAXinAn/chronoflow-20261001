@@ -59,6 +59,10 @@
     { "method": "GET", "path": "/api/v1/holidays", "auth": "access" },
     { "method": "GET", "path": "/api/v1/search", "auth": "access" },
 
+    { "method": "POST", "path": "/api/v1/uploads/images", "auth": "access" },
+    { "method": "POST", "path": "/api/v1/feedback", "auth": "access" },
+    { "method": "GET", "path": "/api/v1/feedback", "auth": "access" },
+
     { "method": "GET", "path": "/api/v1/geo/places", "auth": "access" },
     { "method": "GET", "path": "/api/v1/geo/regeo", "auth": "access" },
     { "method": "GET", "path": "/api/v1/geo/config", "auth": "access" },
@@ -110,6 +114,8 @@
     { "method": "PUT", "path": "/api/v1/admin/configs/{key}", "auth": "access" },
     { "method": "GET", "path": "/api/v1/admin/dashboard/stats", "auth": "access" },
     { "method": "GET", "path": "/api/v1/admin/audit-logs", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/admin/audit-logs/export", "auth": "access" }
+    { "method": "GET", "path": "/api/v1/admin/audit-logs/export", "auth": "access" },
+    { "method": "GET", "path": "/api/v1/admin/feedback", "auth": "access" },
+    { "method": "POST", "path": "/api/v1/admin/feedback/{id}/handle", "auth": "access" }
   ]
 }

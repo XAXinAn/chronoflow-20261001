@@ -2,13 +2,21 @@ package com.xatodo.bootstrap;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xatodo.personal.holiday.HolidaySource;
+import com.xatodo.personal.service.HolidayService;
+import com.xatodo.personal.service.HolidaySyncService;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -24,6 +32,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.IntFunction;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -39,6 +48,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(SearchAndHolidayTest.StubUpstreamConfig.class)
 class SearchAndHolidayTest {
 
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
@@ -54,6 +64,59 @@ class SearchAndHolidayTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private HolidaySyncService holidaySyncService;
+
+    @Autowired
+    private HolidayService holidayService;
+
+    /**
+     * 节假日缓存是**进程级**的，而测试会绕过缓存直接写库（那正是要验证的路径）。
+     * 每个用例开始前清一次，读到的才是数据库的真实状态，用例之间也不会互相串。
+     */
+    @BeforeEach
+    void clearHolidayCache() {
+        holidayService.clearCache();
+    }
+
+    /** 上游假数据：默认给当年两条（1 放假 + 1 调休）。测试可以替换它，模拟上游格式变化。 */
+    private static volatile IntFunction<String> upstream = SearchAndHolidayTest::defaultUpstream;
+
+    /**
+     * 定时同步从上游拉数据，测试不该依赖外网，所以这里把数据源换成假的。
+     *
+     * <p>拉取失败 / 年份错位 / 脏数据这些**分支**才是真正要测的部分，
+     * 它们与「谁去把字节拉下来」无关。
+     */
+    @TestConfiguration
+    static class StubUpstreamConfig {
+
+        @Bean
+        @Primary
+        HolidaySource stubHolidaySource() {
+            // 注意写成 lambda 而不是 `upstream::apply`：方法引用会捕获当前那个函数对象，
+            // 之后测试再替换 upstream 就不生效了
+            return year -> upstream.apply(year);
+        }
+    }
+
+    private static String defaultUpstream(int year) {
+        if (year != currentYear()) {
+            // 次年在通知发布前上游就是没有数据：返回 null 表示「尚未发布」，不是错误
+            return null;
+        }
+        return """
+                {"year": %d, "papers": ["https://example.gov/notice"], "days": [
+                  {"name": "国庆节", "date": "%d-10-01", "isOffDay": true},
+                  {"name": "国庆节", "date": "%d-10-10", "isOffDay": false}
+                ]}
+                """.formatted(year, year, year);
+    }
+
+    private static int currentYear() {
+        return java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).getYear();
+    }
 
     @DynamicPropertySource
     static void dependencies(DynamicPropertyRegistry registry) throws IOException {
@@ -186,8 +249,11 @@ class SearchAndHolidayTest {
         assertThat(september.path("days").get(1).path("dayType").asText()).isEqualTo("WORKDAY");
 
         // 省略 month 返回全年：日历页翻月时不该被月度切片限制
+        // 断言「包含这三条」而不是「一共三条」：同类里其它用例也会往这张表写，
+        // 总数会互相影响，但「本用例插入的都在」是稳定的事实
         JsonNode wholeYear = getJson("/api/v1/holidays?year=2026", token).path("data");
-        assertThat(wholeYear.path("days")).hasSize(3);
+        assertThat(datesOf(wholeYear.path("days")))
+                .contains("2026-09-25", "2026-09-27", "2026-10-01");
         assertThat(wholeYear.path("month").isMissingNode()).isTrue();
 
         // country 大小写归一：zh-cn 与 zh-CN 必须命中同一份数据
@@ -204,6 +270,80 @@ class SearchAndHolidayTest {
 
         assertThat(data.path("year").asInt()).isEqualTo(2031);
         assertThat(data.path("days")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("定时同步：拉上游数据入库，并立刻清掉缓存（否则界面还是旧的）")
+    void holidaySyncUpsertsAndInvalidatesCache() throws Exception {
+        String token = registerAccount("13800000409");
+        int year = currentYear();
+        String path = "/api/v1/holidays?year=" + year;
+
+        int before = getJson(path, token).path("data").path("days").size();
+
+        // 直接写库（绕过服务层缓存），再读一次：读到的必须还是旧值，否则说明缓存根本没生效
+        insertHoliday(year + "-05-01", "劳动节", "HOLIDAY");
+        int cached = getJson(path, token).path("data").path("days").size();
+        assertThat(cached).as("库里改了但缓存未失效，这里应该还是旧值").isEqualTo(before);
+
+        holidaySyncService.syncOnce();
+
+        JsonNode after = getJson(path, token).path("data").path("days");
+        assertThat(after.size()).as("同步后必须立刻可见（缓存被清）").isGreaterThan(cached);
+        assertThat(titlesOfDays(after)).contains("国庆节");
+
+        // 状态要如实上报：后台任务静默失败是排查噩梦
+        JsonNode sync = publicJson("/api/v1/system/info").path("data").path("holidaySync");
+        assertThat(sync.path("lastSuccessAt").asText()).as("成功时间必须上报").isNotEmpty();
+        assertThat(sync.path("lastSyncedDays").asInt()).isEqualTo(2);
+        assertThat(sync.path("lastError").isMissingNode()).as("成功时不应残留上次的失败原因").isTrue();
+    }
+
+    @Test
+    @DisplayName("定时同步：上游数据缺字段时整年跳过、不写半截，并把失败原因记进状态")
+    void holidaySyncSkipsMalformedUpstreamWithoutPartialWrite() throws Exception {
+        String token = registerAccount("13800000410");
+        int year = currentYear();
+        String path = "/api/v1/holidays?year=" + year;
+        List<String> beforeDates = datesOf(getJson(path, token).path("data").path("days"));
+
+        // 第 2 条缺 date：整年都不该写进去（半截数据比旧数据更难排查）
+        upstream = target -> target != year ? null : """
+                {"year": %d, "days": [
+                  {"name": "元旦", "date": "%d-01-01", "isOffDay": true},
+                  {"name": "春节", "isOffDay": true}
+                ]}
+                """.formatted(target, target);
+        try {
+            holidaySyncService.syncOnce();
+            JsonNode days = getJson(path, token).path("data").path("days");
+            // 第一条是合法的「元旦 01-01」，但它同样不该落库——这一年整年放弃
+            assertThat(titlesOfDays(days)).doesNotContain("元旦");
+            // 比较日期集合而不是行数：行数会被同一测试类里其它用例直接写库影响
+            assertThat(datesOf(days)).as("脏数据不该写进任何一行").isEqualTo(beforeDates);
+
+            JsonNode failed = publicJson("/api/v1/system/info").path("data").path("holidaySync");
+            assertThat(failed.path("lastError").asText()).contains("缺少日期或名称");
+        } finally {
+            // 恢复成正常上游再同步一次：失败状态要能被下一次成功清掉，也不给后续用例留脏状态
+            upstream = SearchAndHolidayTest::defaultUpstream;
+            holidaySyncService.syncOnce();
+        }
+
+        JsonNode sync = publicJson("/api/v1/system/info").path("data").path("holidaySync");
+        assertThat(sync.path("lastError").isMissingNode()).as("成功一次后失败原因应被清掉").isTrue();
+    }
+
+    private List<String> titlesOfDays(JsonNode days) {
+        List<String> names = new ArrayList<>();
+        days.forEach(node -> names.add(node.path("name").asText()));
+        return names;
+    }
+
+    private List<String> datesOf(JsonNode days) {
+        List<String> dates = new ArrayList<>();
+        days.forEach(node -> dates.add(node.path("date").asText()));
+        return dates;
     }
 
     // ------------------------------------------------------------------ 工具
@@ -266,6 +406,13 @@ class SearchAndHolidayTest {
     private JsonNode getJson(String path, String token) throws Exception {
         String body = mockMvc.perform(get(path).header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk()).andReturn()
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return assertSuccess(read(body), path);
+    }
+
+    /** 公开接口：不带 Authorization 头（带个 "Bearer null" 反而会被过滤器当成坏令牌）。 */
+    private JsonNode publicJson(String path) throws Exception {
+        String body = mockMvc.perform(get(path)).andExpect(status().isOk()).andReturn()
                 .getResponse().getContentAsString(StandardCharsets.UTF_8);
         return assertSuccess(read(body), path);
     }

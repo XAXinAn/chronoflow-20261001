@@ -3,6 +3,7 @@ package com.xatodo.personal.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.xatodo.personal.entity.Holiday;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
@@ -28,4 +29,23 @@ public interface HolidayMapper extends BaseMapper<Holiday> {
     List<Holiday> selectInRange(@Param("country") String country,
                                 @Param("from") LocalDate from,
                                 @Param("to") LocalDate to);
+
+    /**
+     * 按唯一键 upsert 一条节假日/调休。
+     *
+     * <p>定时同步与手动脚本走的是同一条写入路径的语义：**重复执行是「更正」，不是「再插一条」**。
+     * 靠 `ON CONFLICT` 而不是「先查再决定插还是改」，是为了并发下也不会写出重复行。
+     */
+    @Insert("""
+            INSERT INTO holiday (country_code, holiday_date, name, day_type)
+            VALUES (#{country}, CAST(#{date} AS date), #{name}, #{dayType})
+            ON CONFLICT (country_code, holiday_date)
+            DO UPDATE SET name = EXCLUDED.name,
+                          day_type = EXCLUDED.day_type,
+                          updated_at = now()
+            """)
+    int upsert(@Param("country") String country,
+               @Param("date") LocalDate date,
+               @Param("name") String name,
+               @Param("dayType") String dayType);
 }

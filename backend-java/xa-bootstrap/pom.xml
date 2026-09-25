@@ -36,6 +36,10 @@
             <artifactId>xa-admin</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.xatodo</groupId>
+            <artifactId>xa-support</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
@@ -111,6 +115,18 @@
             </testResource>
         </testResources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- 测试不依赖外网：关掉节假日自动同步（真实环境默认开启，见 application.yml）。
+                         写在这里而不是各测试类的 @DynamicPropertySource：系统属性优先级高于
+                         application.yml，一处生效，将来新增测试类也不会漏。 -->
+                    <systemPropertyVariables>
+                        <HOLIDAY_SYNC_ENABLED>false</HOLIDAY_SYNC_ENABLED>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -200,7 +201,13 @@ def test_holidays_are_returned_by_month_and_year(client, db) -> None:
     whole_year = client.get(
         "/api/v1/holidays", params={"year": 2026}, headers=auth(tokens)
     ).json()["data"]
-    assert len(whole_year["days"]) == 3
+    # 断言「包含这三条」而不是「一共三条」：同类里其它用例（含自动同步）也会往这张表写，
+    # 总数会互相影响，但「本用例插入的都在」是稳定的事实
+    assert {item["date"] for item in whole_year["days"]} >= {
+        "2026-09-25",
+        "2026-09-27",
+        "2026-10-01",
+    }
     assert whole_year["month"] is None
 
     # country 大小写归一：zh-cn 与 zh-CN 命中同一份数据
@@ -218,6 +225,247 @@ def test_holiday_year_without_data_returns_empty(client) -> None:
     ).json()["data"]
     assert data["year"] == 2031
     assert data["days"] == []
+
+
+def _holiday_days(client, tokens, year: int) -> list[dict]:
+    return client.get(
+        "/api/v1/holidays", params={"year": year}, headers=auth(tokens)
+    ).json()["data"]["days"]
+
+
+def test_holiday_sync_upserts_and_clears_cache(client, db, monkeypatch) -> None:
+    """定时同步：拉上游数据入库，并立刻清掉缓存（否则界面还是旧的）。"""
+    from app.services import holiday_sync
+    from app.services.holiday import clear_cache
+
+    year = datetime.now(ZoneInfo("Asia/Shanghai")).year
+    tokens = register(client, "13900002201")
+    # 缓存是进程级的，且本用例会绕过缓存直接写库：先清一次，读到的才是库里的真实状态
+    clear_cache()
+
+    def fake_fetch(target: int) -> str | None:
+        if target != year:
+            # 次年在通知发布前上游就是没有数据
+            return None
+        return json.dumps(
+            {
+                "year": year,
+                "papers": ["https://example.gov/notice"],
+                "days": [
+                    {"name": "国庆节", "date": f"{year}-10-01", "isOffDay": True},
+                    {"name": "国庆节", "date": f"{year}-10-10", "isOffDay": False},
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(holiday_sync, "_fetch", fake_fetch)
+
+    first = _holiday_days(client, tokens, year)
+    # 直接写库（绕过服务层缓存），再读一次：必须还是旧值，否则说明缓存根本没生效
+    db.execute(
+        "INSERT INTO holiday (country_code, holiday_date, name, day_type)"
+        " VALUES ('zh-CN', %s::date, '劳动节', 'HOLIDAY')"
+        " ON CONFLICT (country_code, holiday_date) DO NOTHING",
+        (f"{year}-05-01",),
+    )
+    cached = _holiday_days(client, tokens, year)
+    assert cached == first, "库里改了但缓存未失效，这里应该还是旧值"
+
+    holiday_sync.sync_once()
+
+    after = _holiday_days(client, tokens, year)
+    assert len(after) > len(cached), "同步后必须立刻可见（缓存被清）"
+    assert any(item["name"] == "国庆节" for item in after)
+    assert any(item["dayType"] == "WORKDAY" for item in after), "调休上班日也要同步进来"
+
+    state = holiday_sync.status()
+    assert state["lastSuccessAt"] is not None
+    assert state["lastError"] is None
+    assert state["lastSyncedDays"] == 2
+    # 状态要能从 /system/info 看到：后台任务静默失败是排查噩梦
+    info = client.get("/api/v1/system/info").json()["data"]["holidaySync"]
+    assert info["lastSuccessAt"] is not None
+    assert info["enabled"] is False  # 测试环境显式关掉了自动调度
+
+
+def test_holiday_sync_skips_malformed_year_without_partial_write(client, monkeypatch) -> None:
+    from app.services import holiday_sync
+    from app.services.holiday import clear_cache
+
+    year = datetime.now(ZoneInfo("Asia/Shanghai")).year
+    tokens = register(client, "13900002202")
+    clear_cache()
+    before = _holiday_days(client, tokens, year)
+
+    # 第 2 条缺 date：整年都不该写进去（半截数据比旧数据更难排查）
+    monkeypatch.setattr(
+        holiday_sync,
+        "_fetch",
+        lambda target: json.dumps(
+            {
+                "year": target,
+                "days": [
+                    {"name": "元旦", "date": f"{target}-01-01", "isOffDay": True},
+                    {"name": "春节", "isOffDay": True},
+                ],
+            },
+            ensure_ascii=False,
+        )
+        if target == year
+        else None,
+    )
+
+    holiday_sync.sync_once()
+
+    after = _holiday_days(client, tokens, year)
+    # 第一条是合法的「元旦 01-01」，但它同样不该落库——这一年整年放弃
+    assert {item["date"] for item in after} == {item["date"] for item in before}
+    assert not any(item["name"] == "元旦" for item in after)
+    assert "缺少日期或名称" in (holiday_sync.status()["lastError"] or "")
+
+
+def test_seconds_until_next_run_is_computed_in_app_timezone() -> None:
+    """每日同步时刻按东八区计算，与 Java 版 cron 对齐。"""
+    from app.services import holiday_sync
+
+    zone = ZoneInfo("Asia/Shanghai")
+    # 凌晨 1:00 → 当天 3:10，还有 2 小时 10 分
+    assert holiday_sync.seconds_until_next_run(datetime(2026, 9, 25, 1, 0, tzinfo=zone)) == 7800.0
+    # 凌晨 4:00（已过今天的 3:10）→ 明天的 3:10
+    assert (
+        holiday_sync.seconds_until_next_run(datetime(2026, 9, 25, 4, 0, tzinfo=zone)) == 83400.0
+    )
+
+
+# 1x1 的 PNG 头 + 填充：只要够短，服务端只按文件头判定格式
+PNG_BYTES = bytes.fromhex("89504e470d0a1a0a") + b"\x00" * 24
+
+
+def test_upload_checks_file_header_not_declared_mime(client) -> None:
+    """上传通道：按文件头判定格式，不信任客户端声明的 MIME（spec §5.10）。"""
+    tokens = register(client, "13900002301")
+
+    # 声明成 image/jpeg，内容却是文本——把 .exe 改名成 .jpg 就是这个形状
+    fake = client.post(
+        "/api/v1/uploads/images",
+        files={"file": ("evil.jpg", b"not an image at all", "image/jpeg")},
+        headers=auth(tokens),
+    ).json()
+    assert fake["code"] == ErrorCode.UPLOAD_TYPE_UNSUPPORTED
+
+    uploaded = client.post(
+        "/api/v1/uploads/images",
+        files={"file": ("shot.png", PNG_BYTES, "image/png")},
+        headers=auth(tokens),
+    ).json()
+    assert uploaded["code"] == 0, uploaded
+    data = uploaded["data"]
+    assert data["url"].startswith("/uploads/") and data["url"].endswith(".png")
+    assert data["contentType"] == "image/png"
+    assert data["size"] == len(PNG_BYTES)
+
+    # 文件名取内容哈希：同一张图重复上传得到同一个 URL（天然去重）
+    again = client.post(
+        "/api/v1/uploads/images",
+        files={"file": ("copy.png", PNG_BYTES, "image/png")},
+        headers=auth(tokens),
+    ).json()
+    assert again["data"]["url"] == data["url"]
+
+    # 静态目录必须免鉴权：<Image> 直接按 URL 取图，带不了 Authorization
+    served = client.get(data["url"])
+    assert served.status_code == 200
+    assert served.content == PNG_BYTES
+
+
+def test_upload_rejects_oversized_file(client) -> None:
+    from app.services.storage import DEFAULT_MAX_BYTES
+
+    tokens = register(client, "13900002302")
+    oversized = bytes.fromhex("89504e470d0a1a0a") + b"\x00" * DEFAULT_MAX_BYTES
+
+    response = client.post(
+        "/api/v1/uploads/images",
+        files={"file": ("big.png", oversized, "image/png")},
+        headers=auth(tokens),
+    ).json()
+
+    assert response["code"] == ErrorCode.UPLOAD_TOO_LARGE
+
+
+def test_feedback_submit_and_list_only_mine(client) -> None:
+    """意见反馈：提交后进入 OPEN，用户只能看到自己的（spec §4.1.9）。"""
+    mine = register(client, "13900002303")
+    other = register(client, "13900002304")
+
+    created = client.post(
+        "/api/v1/feedback",
+        json={"category": "BUG", "content": "日历页周末的休/班标记有时不显示", "images": ["/uploads/a.png"]},
+        headers=auth(mine),
+    ).json()
+    assert created["code"] == 0, created
+    data = created["data"]
+    assert data["status"] == "OPEN"
+    assert data["images"] == ["/uploads/a.png"]
+    # createdAt 由数据库生成：接口返回的是从库里读回来的那条，不是内存对象
+    assert data["createdAt"] is not None
+    assert data["handledAt"] is None
+
+    # 分类非法
+    bad_category = client.post(
+        "/api/v1/feedback", json={"category": "NOPE", "content": "x"}, headers=auth(mine)
+    ).json()
+    assert bad_category["code"] == ErrorCode.PARAM_INVALID
+    # 内容必填
+    empty = client.post("/api/v1/feedback", json={"category": "BUG", "content": "  "}, headers=auth(mine)).json()
+    assert empty["code"] != 0
+    # 图片只接受本服务上传通道的相对 URL：外链等于让别人在我们的界面上打广告
+    external = client.post(
+        "/api/v1/feedback",
+        json={"category": "BUG", "content": "x", "images": ["https://evil.example/a.png"]},
+        headers=auth(mine),
+    ).json()
+    assert external["code"] == ErrorCode.PARAM_INVALID
+
+    assert [item["id"] for item in client.get("/api/v1/feedback", headers=auth(mine)).json()["data"]] == [
+        data["id"]
+    ]
+    assert client.get("/api/v1/feedback", headers=auth(other)).json()["data"] == []
+
+
+def test_admin_lists_and_handles_feedback(client) -> None:
+    """超管查阅与处理反馈（spec §6.3）；重复处理是幂等的。"""
+    user = register(client, "13900002305")
+    created = client.post(
+        "/api/v1/feedback",
+        json={"category": "SUGGESTION", "content": "希望支持把日程导出成 ics"},
+        headers=auth(user),
+    ).json()["data"]
+
+    admin = admin_headers(admin_login(client))
+    opened = client.get("/api/v1/admin/feedback", headers=admin).json()["data"]
+    assert any(item["id"] == created["id"] for item in opened)
+    assert all(item["status"] == "OPEN" for item in opened), "默认只列待处理的"
+
+    handled = client.post(
+        f"/api/v1/admin/feedback/{created['id']}/handle", headers=admin
+    ).json()["data"]
+    assert handled["status"] == "HANDLED"
+    assert handled["handledAt"] is not None
+
+    # 处理完就不该再出现在待处理列表里
+    still_open = client.get("/api/v1/admin/feedback", headers=admin).json()["data"]
+    assert all(item["id"] != created["id"] for item in still_open)
+    handled_list = client.get(
+        "/api/v1/admin/feedback", params={"status": "HANDLED"}, headers=admin
+    ).json()["data"]
+    assert any(item["id"] == created["id"] for item in handled_list)
+
+    # 幂等：再点一次不报错，也不改变处理时间
+    again = client.post(f"/api/v1/admin/feedback/{created['id']}/handle", headers=admin).json()
+    assert again["code"] == 0
+    assert again["data"]["handledAt"] == handled["handledAt"]
 
 
 def test_weekly_recurrence_expands_in_event_timezone(client) -> None:

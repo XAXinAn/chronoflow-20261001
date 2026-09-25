@@ -16,12 +16,19 @@ export function EditorHeader({
   onSave,
   saving = false,
   saveDisabled = false,
+  cancelLabel = '取消',
+  saveLabel = '保存',
+  savingLabel = '保存中…',
 }: {
   title: string;
   onCancel: () => void;
   onSave: () => void;
   saving?: boolean;
   saveDisabled?: boolean;
+  /** 文案可按页面定制（例如反馈页是「提交」而不是「保存」） */
+  cancelLabel?: string;
+  saveLabel?: string;
+  savingLabel?: string;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -39,7 +46,7 @@ export function EditorHeader({
       ]}
     >
       <Pressable accessibilityRole="button" accessibilityLabel="取消" onPress={onCancel} hitSlop={10}>
-        <Text style={{ color: theme.color.textSecondary, fontSize: 16 }}>取消</Text>
+        <Text style={{ color: theme.color.textSecondary, fontSize: 16 }}>{cancelLabel}</Text>
       </Pressable>
       <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>{title}</Text>
       <Pressable
@@ -56,7 +63,7 @@ export function EditorHeader({
             fontWeight: '600',
           }}
         >
-          {saving ? '保存中…' : '保存'}
+          {saving ? savingLabel : saveLabel}
         </Text>
       </Pressable>
     </View>

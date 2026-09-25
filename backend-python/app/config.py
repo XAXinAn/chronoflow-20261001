@@ -42,6 +42,14 @@ class Settings:
     amap_js_security_code: str
     amap_base_url: str
     amap_timeout: float
+    holiday_cache_ttl: int
+    holiday_sync_enabled: bool
+    holiday_sync_base_url: str
+    holiday_sync_hour: int
+    holiday_sync_minute: int
+    holiday_sync_run_on_startup: bool
+    holiday_sync_startup_delay: float
+    holiday_sync_timeout: float
 
 
 def load_settings() -> Settings:
@@ -76,6 +84,19 @@ def load_settings() -> Settings:
         amap_js_security_code=os.getenv("GEO_AMAP_JS_SECURITY_CODE", ""),
         amap_base_url=os.getenv("GEO_AMAP_BASE_URL", "https://restapi.amap.com"),
         amap_timeout=float(os.getenv("GEO_AMAP_TIMEOUT_SECONDS", "5")),
+        # 节假日（spec §5.11）。环境变量名与 Java 版保持一致，两版可共用同一份配置。
+        holiday_cache_ttl=_int("HOLIDAY_CACHE_TTL_SECONDS", 300),
+        holiday_sync_enabled=_bool("HOLIDAY_SYNC_ENABLED", True),
+        holiday_sync_base_url=os.getenv(
+            "HOLIDAY_SYNC_BASE_URL",
+            "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master",
+        ),
+        # 每天 03:10（东八区）同步，与 Java 版默认 cron 对齐
+        holiday_sync_hour=_int("HOLIDAY_SYNC_HOUR", 3),
+        holiday_sync_minute=_int("HOLIDAY_SYNC_MINUTE", 10),
+        holiday_sync_run_on_startup=_bool("HOLIDAY_SYNC_RUN_ON_STARTUP", True),
+        holiday_sync_startup_delay=float(os.getenv("HOLIDAY_SYNC_STARTUP_DELAY", "30")),
+        holiday_sync_timeout=float(os.getenv("HOLIDAY_SYNC_TIMEOUT", "15")),
     )
 
 

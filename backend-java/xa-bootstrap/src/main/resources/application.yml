@@ -103,6 +103,25 @@ xatodo:
     # 节假日数据的进程内缓存时长（spec §5.11）。数据由 scripts/load_holidays.py 灌库，
     # 热更新的可见延迟上限就是这个 TTL：不想等就重启服务，或把 TTL 调小。
     cache-ttl: ${HOLIDAY_CACHE_TTL:5m}
+    sync:
+      # 每天自动从 holiday-cn 拉当年 + 次年的放假安排（幂等 upsert）。
+      # 数据只有几十条、上游一年动几次，每天跑一次几乎没有代价，但能消掉「忘了更新」这类事故。
+      # 测试里显式关掉：单元测试不该依赖外网。
+      enabled: ${HOLIDAY_SYNC_ENABLED:true}
+      # 每天凌晨 3:10（东八区）同步；cron 是 6 段式（秒 分 时 日 月 周）
+      cron: ${HOLIDAY_SYNC_CRON:0 10 3 * * *}
+      zone: ${HOLIDAY_SYNC_ZONE:Asia/Shanghai}
+      # 启动后也补跑一次：新部署或刚重建库时不必等到凌晨
+      run-on-startup: ${HOLIDAY_SYNC_RUN_ON_STARTUP:true}
+      startup-delay: ${HOLIDAY_SYNC_STARTUP_DELAY:30s}
+      # 上游地址可覆盖，便于指向内网镜像
+      base-url: ${HOLIDAY_SYNC_BASE_URL:https://raw.githubusercontent.com/NateScarlet/holiday-cn/master}
+      timeout: ${HOLIDAY_SYNC_TIMEOUT:15s}
+  upload:
+    # 图片上传目录（spec §5.10）。首版是本地目录 + /uploads/** 静态映射，
+    # 换 MinIO/OSS 时接口不变、只替换存储实现。
+    dir: ${XATODO_UPLOAD_DIR:./data/uploads}
+    max-bytes: ${XATODO_UPLOAD_MAX_BYTES:5242880}
 
 logging:
   pattern:

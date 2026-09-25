@@ -10,6 +10,7 @@ from ..deps import current_admin, current_super_admin
 from ..errors import envelope
 from ..security import AdminPrincipal
 from ..services.admin import AdminService
+from ..services.feedback import FeedbackService
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -289,3 +290,25 @@ def export_audit_logs(
         media_type="text/csv;charset=UTF-8",
         headers={"Content-Disposition": 'attachment; filename="audit-logs.csv"'},
     )
+
+
+@router.get("/feedback")
+def list_feedback(
+    status: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    limit: int | None = Query(default=None),
+    principal: AdminPrincipal = Depends(current_super_admin),
+    session: Session = Depends(get_session),
+) -> dict:
+    """意见反馈列表（spec §4.1.9 / §6.3）。省略 status 时只看待处理的。"""
+    return envelope(FeedbackService(session).list_for_admin(status, category, limit))
+
+
+@router.post("/feedback/{id}/handle")
+def handle_feedback(
+    id: int,
+    principal: AdminPrincipal = Depends(current_super_admin),
+    session: Session = Depends(get_session),
+) -> dict:
+    """标记反馈已处理，并记录处理人。重复调用是幂等的。"""
+    return envelope(FeedbackService(session).handle(principal.admin_id, id))

@@ -6,19 +6,25 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import bcrypt
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .errors import ApiError, ErrorCode, envelope, set_trace_id
-from .routers import admin, auth, geo, me, org, personal, system
+from .routers import admin, auth, geo, me, org, personal, support, system
+from .config import settings
+from .services import holiday_sync
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +60,18 @@ def bootstrap_super_admin() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     bootstrap_super_admin()
-    yield
+    # 节假日数据每天自动同步一次（spec §5.11）。测试里用 HOLIDAY_SYNC_ENABLED=false 关掉：
+    # 单元测试不该依赖外网。
+    sync_task = None
+    if settings.holiday_sync_enabled:
+        sync_task = asyncio.create_task(holiday_sync.run_forever())
+    try:
+        yield
+    finally:
+        if sync_task is not None:
+            sync_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await sync_task
 
 app = FastAPI(
     title="XaTodo API（Python 版）",
@@ -110,3 +127,11 @@ app.include_router(personal.router)
 app.include_router(org.router)
 app.include_router(admin.router)
 app.include_router(geo.router)
+app.include_router(support.router)
+
+# 上传目录映射成 /uploads/**（spec §5.10）。
+# 必须免鉴权：<Image> 直接按 URL 取图，带不了 Authorization 头——
+# 代价是这里不能放任何私有内容，只有头像与反馈图片走这条路。
+_upload_dir = Path(os.getenv("XATODO_UPLOAD_DIR", "./data/uploads")).resolve()
+_upload_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=_upload_dir), name="uploads")

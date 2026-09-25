@@ -312,6 +312,8 @@ POST /auth/identity/select（凭 selectToken）→ 签发绑定该身份的 Toke
 
 - 「我的」页顶部头像可点击 → 选择图片 → 上传 → 回填到当前身份。
 - 复用已有的 `PATCH /me`（`avatarUrl` 字段已支持），**只缺图片上传通道**（见 §5.10）。
+- `avatarUrl` 存的是**相对 URL**（如 `/uploads/9f2c….jpg`），客户端展示时拼当前 API 地址；
+  服务端不存绝对域名，换域名 / 上 CDN 都不用改数据。
 - 头像是**身份级**属性（`identity.avatar_url`）：切到组织身份时用的是该组织身份的头像。
 
 #### 4.1.9 意见反馈
@@ -442,6 +444,8 @@ erDiagram
 | `Priority` | `LOW`、`NORMAL`、`HIGH`、`URGENT` |
 | `ReminderChannel` | `PUSH`、`LOCAL` |
 | `AdminRole` | `SUPER_ADMIN`、`ORG_ADMIN` |
+| `FeedbackCategory` | `BUG`（功能异常）、`SUGGESTION`（体验建议）、`OTHER`（其他） |
+| `FeedbackStatus` | `OPEN`（待处理）、`HANDLED`（已处理） |
 
 ### 5.3 账号与身份
 
@@ -530,16 +534,20 @@ erDiagram
 | --- | --- |
 | 接口 | `POST /uploads/images`，`multipart/form-data`，字段名 `file` |
 | 校验 | 仅 `image/jpeg`、`image/png`、`image/webp`、`image/gif`；单文件 ≤ 5 MB |
+| 校验方式 | **按文件头字节判定格式，不信任客户端声明的 MIME**——把 `a.exe` 改名成 `a.jpg` 声明 `image/jpeg` 是拦不住的；落盘扩展名由嗅探结果决定 |
 | 存储 | 可配置目录（`XATODO_UPLOAD_DIR`）；文件名取内容哈希，天然去重 |
 | 对外 | 返回相对 URL（如 `/uploads/ab12cd34.jpg`），由服务端映射 `/uploads/**` 静态目录 |
 | 演进 | 换成 MinIO/OSS 时**接口不变**，只替换存储实现；业务侧不感知 |
+| 错误码 | `90003` 不支持的图片格式、`90004` 图片超出大小上限（两版后端一致） |
 
 > 图片走相对 URL 而不是绝对地址：域名换了、换 CDN 了都不用改数据。
 > `/uploads/**` 需要免鉴权（`<Image>` 直接加载时带不了 Authorization），因此目录内不放任何私有内容。
 
 | 表 | 关键字段 | 约束 / 说明 |
 | --- | --- | --- |
-| `feedback` | `id`、`account_id`、`identity_id`、`category`、`content`、`images`(jsonb)、`status`、`created_at`、`handled_at` | `content` 必填；`status` ∈ `OPEN`/`HANDLED`；`images` 存上传后的相对 URL 数组 |
+| `feedback` | `id`、`account_id`、`identity_id`、`category`、`content`、`images`(jsonb)、`status`、`created_at`、`handled_at`、`handled_by_admin_id` | `content` 必填；`category` ∈ `BUG`/`SUGGESTION`/`OTHER`；`status` ∈ `OPEN`/`HANDLED`；`images` 存上传后的相对 URL 数组；`handled_by_admin_id` 记录是谁处理的（只追加，不覆盖历史） |
+
+> 反馈记 `identity_id`：用户可能是从组织身份提交的，后台需要知道是哪条身份说的，而不是只记到账号。
 
 ---
 
@@ -560,9 +568,12 @@ erDiagram
 
 - 唯一约束 `(country_code, holiday_date)`：同一天在同一国家日历下只有一条记录，热更新按它 upsert，重复执行不会产生重复数据。
 - **只记「与常规周末不同的日子」**：普通周六周日不落库，由客户端按星期几判断；`WORKDAY` 专指被调成工作日的周末与调休上班日。
-- **数据源是数据文件，不是代码、也不是迁移**：迁移**只建表**。数据放 `scripts/data/holidays/*.json`（一个国家一个文件），由 `scripts/load_holidays.py` 幂等 upsert 入库；目录可配置（`--dir` / `XATODO_HOLIDAY_DIR`），生产上可以指向运维自己的路径或由配置管理系统下发。
-- **热更新**：改数据 → 重跑脚本 → 最迟 5 分钟（缓存 TTL）生效。不发版、不加迁移、不重启。官方通知撤掉某个调休日时用 `--prune` 删除该国家日历里不在文件中的行。
-- **覆盖范围**：仓库里的 `zh-CN.json` 是开发/演示用种子，只含**法定节假日**（元旦 / 春节 / 清明 / 劳动节 / 端午 / 中秋 / 国庆，按《全国年节及纪念日放假办法》共 13 天）。**调休上班日**（`WORKDAY`）以国务院办公厅当年通知为准，通知发布后追加进文件并重跑脚本。
+- **数据源是数据文件 + 上游定时同步，不是代码、也不是迁移**：迁移**只建表**。数据来自 holiday-cn（国务院办公厅通知整理），落库由两条通道完成：
+  1. **后端每天自动同步**：默认每天 03:10（东八区，`xatodo.holiday.sync.cron` / `HOLIDAY_SYNC_CRON` 可配）拉当年与次年，幂等 upsert 后清缓存；启动后 30 秒再补跑一次，新部署不必等到凌晨。`enabled=false` 可整体关闭（测试就是这么关的）。
+  2. **离线/CI/需要立刻生效时用脚本**：`scripts/load_holidays.py`（`--url` 拉指定年份、`--dir` / `XATODO_HOLIDAY_DIR` 指向运维自己的目录、`--prune` 清理上游已撤掉的日子）。仓库里的 `scripts/data/holidays/*.json` 是上游文件的原样拷贝，供无外网环境使用。
+- **同步失败不影响服务**：失败只告警 + 记状态，界面继续用库里已有的数据；**次年文件是空占位或 404 都算正常**（通知通常当年 11 月才发），不报错。
+- **同步状态可见**：`GET /system/info` 返回 `holidaySync.lastRunAt / lastSuccessAt / lastError / years`。后台任务最糟的失败方式是静默失败——库里还是去年的安排、界面上看不出来。
+- **缓存**：服务端按 `(国家, 年, 月)` 做进程内缓存（TTL 5 分钟）；同步成功后主动清缓存，所以自动更新是「同步完立刻可见」。
 - **缺数据时的行为**：某年一条记录都没有时，`GET /holidays` 返回空数组、界面不显示任何休/班标记——不猜测、不用硬编码兜底。
 - **缓存**：服务端按 `(country, year, month)` 做进程内缓存（TTL 5 分钟）。数据源是数据库，因此热更新最迟 5 分钟后生效，期间不需要重启。
 - **读取**：`GET /holidays?year=&month=&country=`，`month` 省略时返回全年。
@@ -728,6 +739,8 @@ erDiagram
 | GET | `/admin/dashboard/stats` | 数据看板 |
 | GET | `/admin/audit-logs` | 审计日志检索与导出 |
 | GET | `/admin/login-logs` | 登录日志 |
+| GET | `/admin/feedback` | 意见反馈列表。入参可选 `status`（`OPEN`/`HANDLED`）、`category`、`limit`；默认只列 `OPEN`，见 §4.1.9 / §5.10 |
+| POST | `/admin/feedback/{id}/handle` | 标记反馈已处理，记录处理人 |
 
 **组织管理员**
 

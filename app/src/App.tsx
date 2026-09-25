@@ -13,6 +13,7 @@ import { createRuntime } from './runtime';
 import { AgendaScreen } from './screens/AgendaScreen';
 import { EventEditorScreen, type PlaceSelection } from './screens/EventEditorScreen';
 import { EventPickerScreen, type PickedEvent } from './screens/EventPickerScreen';
+import { FeedbackScreen } from './screens/FeedbackScreen';
 import { IdentitySelectScreen } from './screens/IdentitySelectScreen';
 import { IdentitySwitchScreen } from './screens/IdentitySwitchScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -85,6 +86,7 @@ type MainTabsProps = {
   onCreateTask: () => void;
   onOpenTask: (taskId: number) => void;
   onOpenIdentitySwitch: () => void;
+  onOpenFeedback: () => void;
 };
 
 function MainTabs({
@@ -93,6 +95,7 @@ function MainTabs({
   onCreateTask,
   onOpenTask,
   onOpenIdentitySwitch,
+  onOpenFeedback,
 }: MainTabsProps) {
   const theme = useAppTheme();
   const { session } = useAppSessionState();
@@ -136,7 +139,12 @@ function MainTabs({
         />
       ) : null}
       <Tabs.Screen name="Settings" options={{ title: '我的', tabBarIcon: tabIcon('Settings') }}>
-        {() => <SettingsScreen onOpenIdentitySwitch={onOpenIdentitySwitch} />}
+        {() => (
+          <SettingsScreen
+            onOpenIdentitySwitch={onOpenIdentitySwitch}
+            onOpenFeedback={onOpenFeedback}
+          />
+        )}
       </Tabs.Screen>
     </Tabs.Navigator>
   );
@@ -149,6 +157,7 @@ type AppStackParamList = {
   LocationPicker: undefined;
   EventPicker: undefined;
   IdentitySwitch: undefined;
+  Feedback: undefined;
 };
 
 const AppStack = createNativeStackNavigator<AppStackParamList>();
@@ -195,6 +204,7 @@ function MainStack() {
               navigation.navigate('TaskEditor', { taskId });
             }}
             onOpenIdentitySwitch={() => navigation.navigate('IdentitySwitch')}
+            onOpenFeedback={() => navigation.navigate('Feedback')}
           />
         )}
       </AppStack.Screen>
@@ -259,6 +269,10 @@ function MainStack() {
             onSwitched={() => navigation.goBack()}
           />
         )}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="Feedback">
+        {({ navigation }) => <FeedbackScreen onBack={() => navigation.goBack()} />}
       </AppStack.Screen>
     </AppStack.Navigator>
   );

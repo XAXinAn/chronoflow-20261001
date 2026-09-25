@@ -42,7 +42,12 @@ public enum ErrorCode {
 
     // 9xxxx 系统
     INTERNAL_ERROR(90001, "服务内部错误"),
-    THIRD_PARTY_UNAVAILABLE(90002, "第三方服务不可用");
+    THIRD_PARTY_UNAVAILABLE(90002, "第三方服务不可用"),
+
+    // 上传通道（spec §5.10）：格式与体积都是客户端能直接弄坏的东西，必须有自己的错误码，
+    // 否则 App 只能拿到笼统的 90001，给不出任何有用的提示
+    UPLOAD_TYPE_UNSUPPORTED(90003, "不支持的图片格式"),
+    UPLOAD_TOO_LARGE(90004, "图片超出大小上限");
 
     private final int code;
     private final String message;

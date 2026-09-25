@@ -177,6 +177,27 @@ export interface HolidayResponse {
   days: HolidayDay[];
 }
 
+/** 上传通道的返回值（POST /uploads/images，spec §5.10）。 */
+export interface UploadedImage {
+  /** 相对 URL（如 /uploads/ab12….jpg）；展示时用 absoluteMediaUrl 拼 API 地址 */
+  url: string;
+  size: number;
+  contentType: string;
+}
+
+export type FeedbackCategory = 'BUG' | 'SUGGESTION' | 'OTHER';
+
+/** 我提交过的反馈（GET /feedback）。用户端不展示处理过程，所以只需要一个状态。 */
+export interface FeedbackItem {
+  id: number;
+  category: FeedbackCategory;
+  content: string;
+  images: string[];
+  status: 'OPEN' | 'HANDLED';
+  createdAt: string;
+  handledAt?: string | null;
+}
+
 export interface OrgEvent {
   eventId: number;
   dispatchId: number;
