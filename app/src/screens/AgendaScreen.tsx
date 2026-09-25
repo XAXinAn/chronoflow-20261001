@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiError } from '../api/client';
 import type { EventOccurrence, HolidayResponse, SearchResultItem } from '../api/types';
 import { MonthCalendar } from '../components/MonthCalendar';
+import { WheelDatePicker } from '../components/WheelDatePicker';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
 import { Card, EmptyState, Pill, Screen } from '../components/ui';
 import { useAppTheme, useRuntime } from '../context/AppContext';
@@ -74,6 +75,8 @@ export function AgendaScreen({
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [jumpOpen, setJumpOpen] = useState(false);
+  /** 滚轮里的草稿日期：滚动过程不立刻跳，点「确定」才落到日历上 */
+  const [jumpDraft, setJumpDraft] = useState(selectedDateKey);
 
   const searchActive = keyword.trim().length > 0;
 
@@ -367,23 +370,33 @@ export function AgendaScreen({
           accessibilityViewIsModal
         >
           <Text style={[styles.jumpTitle, { color: theme.color.textSecondary }]}>跳到指定日期</Text>
-          <MonthCalendar
-            year={year}
-            month={month}
-            selectedDateKey={selectedDateKey}
-            todayKey={today}
-            eventDates={eventDates}
-            holidayMarks={holidayMarks}
-            onSelectDate={jumpToDate}
-            onChangeMonth={changeMonth}
-          />
+          {/* 滚轮（年 / 月 / 日 三列）：跨年跳日期比翻月历快得多，也不会像月历那样「点开还是一份月历」 */}
+          <WheelDatePicker value={jumpDraft} onChange={setJumpDraft} />
           <View style={styles.jumpActions}>
-            <Pressable accessibilityRole="button" accessibilityLabel="回到今天" onPress={() => jumpToDate(today)}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="回到今天"
+              // 「回到今天」是个动作，不是一个滚轮微调：点了就跳过去并收起面板
+              onPress={() => jumpToDate(today)}
+            >
               <Text style={{ color: theme.color.accent, fontSize: 15, fontWeight: '600' }}>回到今天</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="取消" onPress={() => setJumpOpen(false)}>
-              <Text style={{ color: theme.color.textSecondary, fontSize: 15 }}>取消</Text>
-            </Pressable>
+            <View style={styles.jumpConfirm}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="取消"
+                onPress={() => setJumpOpen(false)}
+              >
+                <Text style={{ color: theme.color.textSecondary, fontSize: 15 }}>取消</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="确定"
+                onPress={() => jumpToDate(jumpDraft)}
+              >
+                <Text style={{ color: theme.color.accent, fontSize: 15 }}>确定</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       ) : null}
@@ -393,7 +406,15 @@ export function AgendaScreen({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="跳到指定日期"
-            onPress={() => setJumpOpen((current) => !current)}
+            onPress={() =>
+              setJumpOpen((current) => {
+                // 每次打开都从当前选中的日期开始，而不是上次滚到哪
+                if (!current) {
+                  setJumpDraft(selectedDateKey);
+                }
+                return !current;
+              })
+            }
             style={({ pressed }) => [
               styles.jumpFab,
               {
@@ -489,8 +510,10 @@ const styles = StyleSheet.create({
   jumpTitle: { fontSize: 13, fontWeight: '600', marginBottom: 8, paddingHorizontal: 4 },
   jumpActions: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 4,
     marginTop: 8,
   },
+  jumpConfirm: { flexDirection: 'row', alignItems: 'center', gap: 20 },
 });
