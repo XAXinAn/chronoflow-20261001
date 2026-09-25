@@ -25,6 +25,9 @@ import java.time.Duration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -297,6 +300,114 @@ class AuthFlowTest {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    @Test
+    @DisplayName("账号设置：修改资料、设置密码、密码登录、设备查看与踢出")
+    void profilePasswordAndDevices() throws Exception {
+        String phone = "13800000120";
+        String refreshToken = registerAccountWithPersonalIdentity(phone, "设置用户")
+                .path("data").path("refreshToken").asText();
+        // 重新登录拿一个带 deviceId 的会话，便于验证设备列表
+        injectCode(phone, "246810");
+        String selectToken = postJson("/api/v1/auth/login/sms",
+                "{\"phone\":\"" + phone + "\",\"code\":\"246810\"}")
+                .path("data").path("selectToken").asText();
+        long identityId = jdbcTemplate.queryForObject(
+                "SELECT id FROM identity WHERE account_id = (SELECT id FROM account WHERE phone = ?) "
+                        + "AND identity_type = 'PERSONAL'", Long.class, phone);
+        JsonNode session = postJson("/api/v1/auth/identity/select",
+                "{\"selectToken\":\"" + selectToken + "\",\"identityId\":" + identityId
+                        + ",\"deviceId\":\"device-A\"}");
+        String accessToken = session.path("data").path("accessToken").asText();
+        String sessionRefreshToken = session.path("data").path("refreshToken").asText();
+
+        // 修改资料
+        JsonNode updated = patchJson("/api/v1/me", accessToken,
+                "{\"nickname\":\"新昵称\",\"timezone\":\"Asia/Shanghai\"}");
+        assertThat(updated.path("data").path("nickname").asText()).isEqualTo("新昵称");
+        assertThat(updated.path("data").path("timezone").asText()).isEqualTo("Asia/Shanghai");
+
+        // 首次设置密码无需原密码
+        putJson("/api/v1/me/password", accessToken, "{\"newPassword\":\"mySecret123\"}");
+
+        // 已设置密码后，不带原密码应被拒绝
+        mockMvc.perform(put("/api/v1/me/password")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\":\"anotherPass123\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(10002));
+
+        // 用新密码登录（密码登录走与短信登录相同的身份列表流程）
+        JsonNode passwordLogin = postJson("/api/v1/auth/login/password",
+                "{\"phone\":\"" + phone + "\",\"password\":\"mySecret123\"}");
+        assertThat(passwordLogin.path("data").path("needSelectIdentity").asBoolean()).isTrue();
+        assertThat(passwordLogin.path("data").path("identities")).hasSize(1);
+
+        // 错误密码返回 20011
+        mockMvc.perform(post("/api/v1/auth/login/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"phone\":\"" + phone + "\",\"password\":\"wrong-password\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(20011));
+
+        // 设备列表包含刚登录的设备
+        JsonNode devices = getJsonWithBearer("/api/v1/me/devices", accessToken);
+        assertThat(devices.path("data")).hasSize(2);
+        assertThat(devices.path("data").get(0).path("deviceId").asText()).isNotBlank();
+
+        // 踢出 device-A 后其刷新令牌立即失效
+        mockMvc.perform(delete("/api/v1/me/devices/device-A")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+        mockMvc.perform(post("/api/v1/auth/token/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + sessionRefreshToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(20007));
+        assertThat(refreshToken).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("通知偏好可整体覆盖保存")
+    void notificationPreferences() throws Exception {
+        String phone = "13800000121";
+        String token = registerAccountWithPersonalIdentity(phone, "偏好用户")
+                .path("data").path("accessToken").asText();
+
+        JsonNode saved = putJson("/api/v1/me/notifications", token,
+                "{\"prefs\":{\"eventReminder\":false,\"orgDispatch\":true}}");
+        assertThat(saved.path("data").path("eventReminder").asBoolean()).isFalse();
+        assertThat(saved.path("data").path("orgDispatch").asBoolean()).isTrue();
+    }
+
+    private JsonNode putJson(String path, String token, String body) throws Exception {
+        var builder = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path)
+                .contentType(MediaType.APPLICATION_JSON);
+        if (token != null) {
+            builder.header("Authorization", "Bearer " + token);
+        }
+        if (body != null) {
+            builder.content(body);
+        }
+        String response = mockMvc.perform(builder).andExpect(status().isOk()).andReturn()
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(response);
+    }
+
+    private JsonNode patchJson(String path, String token, String body) throws Exception {
+        var builder = patch(path).contentType(MediaType.APPLICATION_JSON);
+        if (token != null) {
+            builder.header("Authorization", "Bearer " + token);
+        }
+        if (body != null) {
+            builder.content(body);
+        }
+        String response = mockMvc.perform(builder).andExpect(status().isOk()).andReturn()
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(response);
+    }
 
     private String requestSmsCode(String phone) throws Exception {
         JsonNode response = postJson("/api/v1/auth/sms/code", "{\"phone\":\"" + phone + "\"}");

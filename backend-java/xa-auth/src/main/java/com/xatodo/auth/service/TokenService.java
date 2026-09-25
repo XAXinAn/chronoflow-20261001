@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -143,6 +144,17 @@ public class TokenService {
 
     public void revokeAllForAccount(Long accountId) {
         refreshTokenStore.deleteAllForAccount(accountId);
+    }
+
+    public List<RefreshTokenRecord> listSessionRecords(Long identityId) {
+        return refreshTokenStore.listForIdentity(identityId);
+    }
+
+    /** 踢出指定设备；返回是否命中。 */
+    public boolean revokeDevice(Long identityId, String deviceId) {
+        Optional<RefreshTokenRecord> record = refreshTokenStore.findByDevice(identityId, deviceId);
+        record.ifPresent(value -> refreshTokenStore.delete(value.tokenId()));
+        return record.isPresent();
     }
 
     public void revokeRefreshToken(String refreshToken) {

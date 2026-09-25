@@ -21,6 +21,8 @@ public enum ErrorCode {
     REFRESH_TOKEN_INVALID(20007, "刷新令牌无效或已过期"),
     ACCOUNT_DISABLED(20008, "账号已停用"),
     IDENTITY_NOT_OWNED(20009, "身份不属于当前账号"),
+    PASSWORD_NOT_SET(20010, "该账号未设置密码"),
+    PASSWORD_MISMATCH(20011, "原密码不正确"),
 
     // 3xxxx 个人日历 / 日程 / 待办
     EVENT_TIME_INVALID(30001, "日程时间非法"),

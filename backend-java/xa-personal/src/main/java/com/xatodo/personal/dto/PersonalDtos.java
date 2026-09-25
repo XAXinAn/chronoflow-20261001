@@ -125,4 +125,10 @@ public final class PersonalDtos {
                                String priority,
                                Integer sortOrder) {
     }
+
+    /**
+     * 待办转日程：需补齐起止时间；只给 startAt 时默认时长 1 小时（spec §4.1.1）。
+     */
+    public record TaskToEventRequest(OffsetDateTime startAt, OffsetDateTime endAt) {
+    }
 }

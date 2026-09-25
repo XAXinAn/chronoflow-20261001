@@ -6,6 +6,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.util.List;
+import java.util.Map;
+import java.time.OffsetDateTime;
 
 /**
  * 认证相关请求 / 响应体。集中定义以便与 spec §6.2 的接口清单对照。
@@ -83,5 +85,30 @@ public final class AuthDtos {
                                 String refreshToken,
                                 long expiresIn,
                                 IdentitySummary identity) {
+    }
+
+    // ------------------------------------------------------------ 账号设置
+
+    public record UpdateProfileRequest(@Size(max = 32, message = "昵称最长 32 个字符") String nickname,
+                                       @Size(max = 512) String avatarUrl,
+                                       @Size(max = 64) String timezone) {
+    }
+
+    public record SetPasswordRequest(@Size(max = 64) String oldPassword,
+                                     @NotBlank(message = "新密码不能为空")
+                                     @Size(min = 8, max = 64, message = "密码长度需在 8-64 之间") String newPassword) {
+    }
+
+    public record PasswordLoginRequest(
+            @NotBlank(message = "手机号不能为空")
+            @Pattern(regexp = PHONE_PATTERN, message = "手机号格式不正确") String phone,
+            @NotBlank(message = "密码不能为空") String password) {
+    }
+
+    public record NotificationPrefsRequest(
+            @NotNull(message = "prefs 不能为空") Map<String, Boolean> prefs) {
+    }
+
+    public record DeviceResponse(String deviceId, OffsetDateTime issuedAt) {
     }
 }

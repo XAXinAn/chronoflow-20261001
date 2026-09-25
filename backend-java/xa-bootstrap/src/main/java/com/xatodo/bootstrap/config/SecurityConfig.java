@@ -19,6 +19,8 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.io.IOException;
 
@@ -31,6 +33,15 @@ import java.io.IOException;
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    /**
+     * 密码哈希统一在这里定义：C 端账号密码与后台管理员共用同一实现，
+     * 避免各模块重复声明导致 bean 冲突（spec §7.1 要求 BCrypt cost ≥ 10）。
+     */
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder(10);
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,

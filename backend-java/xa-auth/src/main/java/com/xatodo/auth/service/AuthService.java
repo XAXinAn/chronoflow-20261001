@@ -37,15 +37,37 @@ public class AuthService {
     private final IdentityMapper identityMapper;
     private final VerificationCodeService verificationCodeService;
     private final TokenService tokenService;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     public AuthService(AccountMapper accountMapper,
                        IdentityMapper identityMapper,
                        VerificationCodeService verificationCodeService,
-                       TokenService tokenService) {
+                       TokenService tokenService,
+                       org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
         this.accountMapper = accountMapper;
         this.identityMapper = identityMapper;
         this.verificationCodeService = verificationCodeService;
         this.tokenService = tokenService;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    /**
+     * 手机号 + 密码登录。走与短信登录完全相同的身份列表流程，
+     * 便于账号同时拥有个人身份与多个组织身份时统一选择（spec §3.3）。
+     */
+    public SmsLoginResponse loginByPassword(String phone, String password) {
+        Account account = accountMapper.selectOne(
+                new LambdaQueryWrapper<Account>().eq(Account::getPhone, phone));
+        if (account == null || account.getPasswordHash() == null) {
+            throw BizException.of(ErrorCode.PASSWORD_NOT_SET);
+        }
+        if (STATUS_DISABLED.equals(account.getStatus())) {
+            throw BizException.of(ErrorCode.ACCOUNT_DISABLED);
+        }
+        if (!passwordEncoder.matches(password, account.getPasswordHash())) {
+            throw BizException.of(ErrorCode.PASSWORD_MISMATCH, "手机号或密码不正确");
+        }
+        return issueLoginChallenge(account);
     }
 
     /**
@@ -67,13 +89,19 @@ public class AuthService {
             accountMapper.updateById(account);
         }
 
+        return issueLoginChallenge(account);
+    }
+
+    /**
+     * 登录成功后的统一分支：无身份则下发注册令牌，有身份则下发选择身份令牌。
+     */
+    private SmsLoginResponse issueLoginChallenge(Account account) {
         List<IdentityView> identities = identityMapper.selectIdentityViews(account.getId());
         if (identities.isEmpty()) {
             String registerToken = tokenService.issueScopedToken(
                     account.getId(), TokenScope.REGISTER, tokenService.properties().getRegisterTokenTtl());
             return new SmsLoginResponse(true, registerToken, false, null, List.of());
         }
-
         String selectToken = tokenService.issueScopedToken(
                 account.getId(), TokenScope.IDENTITY_SELECT, tokenService.properties().getSelectTokenTtl());
         return new SmsLoginResponse(false, null, true, selectToken, identities);

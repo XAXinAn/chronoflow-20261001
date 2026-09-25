@@ -2,6 +2,7 @@ package com.xatodo.auth.web;
 
 import com.xatodo.auth.dto.AuthDtos.IdentitySelectRequest;
 import com.xatodo.auth.dto.AuthDtos.LogoutRequest;
+import com.xatodo.auth.dto.AuthDtos.PasswordLoginRequest;
 import com.xatodo.auth.dto.AuthDtos.RefreshTokenRequest;
 import com.xatodo.auth.dto.AuthDtos.SendSmsCodeRequest;
 import com.xatodo.auth.dto.AuthDtos.SendSmsCodeResponse;
@@ -55,6 +56,11 @@ public class AuthController {
     @PostMapping("/login/sms")
     public ApiResponse<SmsLoginResponse> loginBySms(@Valid @RequestBody SmsLoginRequest request) {
         return ApiResponse.ok(authService.loginBySms(request.phone(), request.code()));
+    }
+
+    @PostMapping("/login/password")
+    public ApiResponse<SmsLoginResponse> loginByPassword(@Valid @RequestBody PasswordLoginRequest request) {
+        return ApiResponse.ok(authService.loginByPassword(request.phone(), request.password()));
     }
 
     /**

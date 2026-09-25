@@ -8,6 +8,7 @@
                i.identity_type AS identity_type,
                i.nickname      AS nickname,
                i.avatar_url    AS avatar_url,
+               i.timezone      AS timezone,
                o.id            AS org_id,
                o.name          AS org_name,
                o.logo_url      AS org_logo_url,

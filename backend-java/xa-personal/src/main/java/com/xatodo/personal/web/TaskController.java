@@ -7,6 +7,9 @@ import com.xatodo.personal.dto.PersonalDtos.TaskCreateRequest;
 import com.xatodo.personal.dto.PersonalDtos.TaskResponse;
 import com.xatodo.personal.dto.PersonalDtos.TaskUpdateRequest;
 import com.xatodo.personal.entity.Task;
+import com.xatodo.personal.dto.PersonalDtos.EventResponse;
+import com.xatodo.personal.dto.PersonalDtos.TaskToEventRequest;
+import com.xatodo.personal.service.ConversionService;
 import com.xatodo.personal.service.TaskService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -29,9 +32,27 @@ import java.util.List;
 public class TaskController {
 
     private final TaskService taskService;
+    private final ConversionService conversionService;
 
-    public TaskController(TaskService taskService) {
+    public TaskController(TaskService taskService, ConversionService conversionService) {
         this.taskService = taskService;
+        this.conversionService = conversionService;
+    }
+
+    /**
+     * 待办转日程：需补齐起止时间；只给 startAt 时默认 1 小时。
+     */
+    @PostMapping("/{id}/convert-to-event")
+    public ApiResponse<EventResponse> convertToEvent(@PathVariable Long id,
+                                                     @RequestBody(required = false) TaskToEventRequest request) {
+        Long identityId = CurrentIdentity.require().identityId();
+        var event = conversionService.convertTaskToEvent(
+                identityId, id,
+                request == null ? null : request.startAt(),
+                request == null ? null : request.endAt());
+        return ApiResponse.ok(new EventResponse(event.getId(), event.getCalendarId(), event.getTitle(),
+                event.getDescription(), event.getLocation(), event.getStartAt(), event.getEndAt(),
+                event.getAllDay(), event.getTimezone(), event.getRrule(), event.getStatus()));
     }
 
     @GetMapping

@@ -16,6 +16,8 @@ public class IdentityView {
     private String memberNo;
     private String orgRole;
 
+    private String timezone;
+
     public Long getIdentityId() {
         return identityId;
     }
@@ -94,5 +96,13 @@ public class IdentityView {
 
     public void setOrgRole(String orgRole) {
         this.orgRole = orgRole;
+    }
+
+    public String getTimezone() {
+        return timezone;
+    }
+
+    public void setTimezone(String timezone) {
+        this.timezone = timezone;
     }
 }

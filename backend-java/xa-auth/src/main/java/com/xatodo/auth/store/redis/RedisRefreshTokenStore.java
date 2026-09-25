@@ -13,6 +13,9 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 /**
  * 基于 Redis 的刷新令牌存储。
@@ -96,6 +99,27 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
     @Override
     public Optional<String> findSuccessor(String previousTokenId) {
         return Optional.ofNullable(redis.opsForValue().get(SUCCESSOR_KEY + previousTokenId));
+    }
+
+    @Override
+    public List<RefreshTokenRecord> listForIdentity(Long identityId) {
+        Set<String> tokenIds = redis.opsForZSet().range(INDEX_IDENTITY + identityId, 0, -1);
+        if (tokenIds == null || tokenIds.isEmpty()) {
+            return List.of();
+        }
+        List<RefreshTokenRecord> records = new ArrayList<>();
+        for (String tokenId : tokenIds) {
+            find(tokenId).ifPresent(records::add);
+        }
+        records.sort(Comparator.comparing(RefreshTokenRecord::issuedAt));
+        return records;
+    }
+
+    @Override
+    public Optional<RefreshTokenRecord> findByDevice(Long identityId, String deviceId) {
+        return listForIdentity(identityId).stream()
+                .filter(record -> deviceId != null && deviceId.equals(record.deviceId()))
+                .findFirst();
     }
 
     @Override

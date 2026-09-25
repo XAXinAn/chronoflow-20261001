@@ -9,6 +9,8 @@ import com.xatodo.personal.dto.PersonalDtos.EventScope;
 import com.xatodo.personal.dto.PersonalDtos.EventUpdateRequest;
 import com.xatodo.personal.entity.Event;
 import com.xatodo.personal.service.EventService;
+import com.xatodo.personal.service.ConversionService;
+import com.xatodo.personal.dto.PersonalDtos.TaskResponse;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,9 +35,23 @@ import java.util.List;
 public class EventController {
 
     private final EventService eventService;
+    private final ConversionService conversionService;
 
-    public EventController(EventService eventService) {
+    public EventController(EventService eventService, ConversionService conversionService) {
         this.eventService = eventService;
+        this.conversionService = conversionService;
+    }
+
+    /**
+     * 日程转待办：保留标题、描述与结束时间（转为 due_at），原日程标记取消。
+     */
+    @PostMapping("/{id}/convert-to-task")
+    public ApiResponse<TaskResponse> convertToTask(@PathVariable Long id) {
+        Long identityId = CurrentIdentity.require().identityId();
+        var task = conversionService.convertEventToTask(identityId, id);
+        return ApiResponse.ok(new TaskResponse(task.getId(), task.getCalendarId(), task.getParentTaskId(),
+                task.getTitle(), task.getDescription(), task.getDueAt(), task.getAllDay(),
+                task.getStatus(), task.getCompletedAt(), task.getPriority(), task.getSortOrder()));
     }
 
     /**

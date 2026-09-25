@@ -1,8 +1,10 @@
 package com.xatodo.auth.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.xatodo.common.persistence.JsonbStringTypeHandler;
 
 import java.time.OffsetDateTime;
 
@@ -31,6 +33,12 @@ public class Identity {
     private String avatarUrl;
 
     private String status;
+
+    private String timezone;
+
+    /** 通知偏好，jsonb 字符串；按类型开关，新增类型无需改表。 */
+    @TableField(typeHandler = JsonbStringTypeHandler.class)
+    private String notificationPrefs;
 
     private OffsetDateTime createdAt;
 
@@ -90,6 +98,22 @@ public class Identity {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getTimezone() {
+        return timezone;
+    }
+
+    public void setTimezone(String timezone) {
+        this.timezone = timezone;
+    }
+
+    public String getNotificationPrefs() {
+        return notificationPrefs;
+    }
+
+    public void setNotificationPrefs(String notificationPrefs) {
+        this.notificationPrefs = notificationPrefs;
     }
 
     public OffsetDateTime getCreatedAt() {

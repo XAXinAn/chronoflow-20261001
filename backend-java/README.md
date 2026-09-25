@@ -16,9 +16,30 @@ Java 21 + Spring Boot 3 实现，对应 [spec.md](../spec.md) 阶段一。阶段
 数据库结构已按 spec §5 全量落地（19 张表，V1–V6 六个迁移脚本）；
 认证、个人日程 / 待办、组织下发与回执、平台超管后台端到端可用。
 
-未实现部分：密码登录、微信登录、绑定第三方、账号设置（`PATCH /me`）、真实短信通道、推送、
-日程提醒（`/reminders`）、日程↔待办互转、节假日与调休数据、
+未实现部分：微信登录与绑定、邮箱绑定、真实短信通道、推送（极光）、节假日与调休数据、
 对象存储接入（导入原文件暂只记引用占位）、后台双因素认证（TOTP）。
+
+> 微信 / 邮箱绑定暂缓：前者需要微信开放平台的应用凭证，后者需要邮件通道，
+> 两者都属于外部依赖而非代码缺口。`account` 表已预留 `wechat_unionid` / `email` 字段。
+
+### 提醒与日程互转（spec §4.1）
+
+- `PUT /reminders` 是**整体覆盖**语义：先清空该目标下当前身份的全部提醒再写入，
+  客户端不必自己算增删差异；传空数组即清空。提醒只能挂在自己有权访问的日程 / 待办上。
+- `POST /events/{id}/convert-to-task` 与 `POST /tasks/{id}/convert-to-event` 都是
+  「新建目标 + 把来源标记取消」，不做原地改类型——原地改类型会让挂在来源上的提醒等关联失效。
+  待办转日程时未给 `endAt` 默认 1 小时，未给 `startAt` 则回退到待办的截止时间。
+
+### 账号设置（spec §6.2）
+
+| 端点 | 说明 |
+| --- | --- |
+| `PATCH /me` | 修改昵称 / 头像 / 时区 |
+| `PUT /me/password` | 设置或修改密码；已有密码时必须提供原密码 |
+| `POST /auth/login/password` | 手机号 + 密码登录（复用与短信登录相同的身份选择流程） |
+| `GET /me/devices` | 当前身份的活跃设备（来自 Redis 中的刷新令牌索引） |
+| `DELETE /me/devices/{deviceId}` | 踢出指定设备，其刷新令牌立即失效 |
+| `PUT /me/notifications` | 通知偏好整体覆盖，存 `identity.notification_prefs`（jsonb） |
 
 ### 平台超管后台（spec §4.4）
 
@@ -181,6 +202,14 @@ mvn -pl xa-bootstrap spring-boot:run
 | GET | `/api/v1/auth/identities` | 当前账号的身份列表 |
 | POST | `/api/v1/identities/personal` | 创建个人身份（Bearer registerToken） |
 | GET | `/api/v1/me` | 当前身份信息 |
+| PATCH | `/api/v1/me` | 修改昵称 / 头像 / 时区 |
+| PUT | `/api/v1/me/password` | 设置或修改密码 |
+| GET / DELETE | `/api/v1/me/devices[/{deviceId}]` | 活跃设备列表 / 踢出设备 |
+| PUT | `/api/v1/me/notifications` | 通知偏好 |
+| POST | `/api/v1/auth/login/password` | 手机号 + 密码登录 |
+| PUT / GET | `/api/v1/reminders` | 覆盖 / 查询某日程或待办的提醒 |
+| POST | `/api/v1/events/{id}/convert-to-task` | 日程转待办 |
+| POST | `/api/v1/tasks/{id}/convert-to-event` | 待办转日程 |
 | GET / POST | `/api/v1/calendars` | 个人日历列表 / 新建（首次访问自动创建默认日历） |
 | GET / PATCH / DELETE | `/api/v1/calendars/{id}` | 日历详情 / 编辑 / 停用 |
 | GET | `/api/v1/events` | 范围查询（展开重复日程），参数 `start`、`end`、`calendarIds` |

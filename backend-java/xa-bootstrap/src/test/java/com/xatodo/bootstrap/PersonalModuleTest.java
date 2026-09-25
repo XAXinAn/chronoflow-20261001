@@ -268,6 +268,87 @@ class PersonalModuleTest {
 
     // ---------------------------------------------------------------- helpers
 
+    @Test
+    @DisplayName("提醒：整体覆盖设置、可查询，且不能挂到他人日程上")
+    void remindersAreScopedToOwnedTargets() throws Exception {
+        String token = registerAccount("13800000220");
+        long eventId = createWeeklyStandup(token);
+
+        JsonNode saved = putJson("/api/v1/reminders", token,
+                "{\"targetType\":\"EVENT\",\"targetId\":" + eventId
+                        + ",\"items\":[{\"minutesBefore\":60},{\"minutesBefore\":15}]}");
+        assertThat(saved.path("data")).hasSize(2);
+
+        JsonNode listed = getJson("/api/v1/reminders?targetType=EVENT&targetId=" + eventId, token);
+        assertThat(listed.path("data")).hasSize(2);
+        assertThat(listed.path("data").get(0).path("minutesBefore").asInt()).isEqualTo(15);
+
+        // 整体覆盖：只留一条
+        JsonNode replaced = putJson("/api/v1/reminders", token,
+                "{\"targetType\":\"EVENT\",\"targetId\":" + eventId + ",\"items\":[{\"minutesBefore\":30}]}");
+        assertThat(replaced.path("data")).hasSize(1);
+
+        // 清空
+        JsonNode cleared = putJson("/api/v1/reminders", token,
+                "{\"targetType\":\"EVENT\",\"targetId\":" + eventId + ",\"items\":[]}");
+        assertThat(cleared.path("data")).isEmpty();
+
+        // 他人日程不可挂提醒
+        String intruder = registerAccount("13800000221");
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/reminders")
+                        .header("Authorization", "Bearer " + intruder)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"targetType\":\"EVENT\",\"targetId\":" + eventId
+                                + ",\"items\":[{\"minutesBefore\":15}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(20003));
+    }
+
+    @Test
+    @DisplayName("日程与待办可互转，来源标记取消")
+    void convertBetweenEventAndTask() throws Exception {
+        String token = registerAccount("13800000222");
+
+        long eventId = postJson("/api/v1/events", token,
+                "{\"title\":\"改成待办\",\"startAt\":\"2026-10-05T09:00:00+08:00\","
+                        + "\"endAt\":\"2026-10-05T10:00:00+08:00\",\"timezone\":\"Asia/Shanghai\"}")
+                .path("data").path("id").asLong();
+
+        JsonNode task = postJson("/api/v1/events/" + eventId + "/convert-to-task", token, "{}");
+        assertThat(task.path("data").path("title").asText()).isEqualTo("改成待办");
+        assertThat(task.path("data").path("status").asText()).isEqualTo("TODO");
+        // 结束时间转为截止时间
+        assertThat(task.path("data").path("dueAt").asText()).startsWith("2026-10-05T02:00:00");
+
+        // 原日程已取消，不再出现在范围查询里
+        JsonNode events = rangeQuery(token, "2026-10-05T00:00:00+08:00", "2026-10-06T00:00:00+08:00");
+        assertThat(events.path("data")).isEmpty();
+
+        // 待办 → 日程：未给 endAt 时默认 1 小时
+        long taskId = task.path("data").path("id").asLong();
+        JsonNode createdEvent = postJson("/api/v1/tasks/" + taskId + "/convert-to-event", token,
+                "{\"startAt\":\"2026-10-06T09:00:00+08:00\"}");
+        assertThat(createdEvent.path("data").path("startAt").asText()).startsWith("2026-10-06T01:00:00");
+        assertThat(createdEvent.path("data").path("endAt").asText()).startsWith("2026-10-06T02:00:00");
+
+        JsonNode after = rangeQuery(token, "2026-10-06T00:00:00+08:00", "2026-10-07T00:00:00+08:00");
+        assertThat(after.path("data")).hasSize(1);
+        assertThat(after.path("data").get(0).path("title").asText()).isEqualTo("改成待办");
+    }
+
+    private JsonNode putJson(String path, String token, String body) throws Exception {
+        var builder = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body);
+        if (token != null) {
+            builder.header("Authorization", "Bearer " + token);
+        }
+        String response = mockMvc.perform(builder).andExpect(status().isOk()).andReturn()
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(response);
+    }
+
     private long createWeeklyStandup(String token) throws Exception {
         return postJson("/api/v1/events", token,
                 "{\"title\":\"站会\",\"startAt\":\"2026-10-05T09:00:00+08:00\","

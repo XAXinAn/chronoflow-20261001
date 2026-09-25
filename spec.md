@@ -364,7 +364,7 @@ erDiagram
 | 表 | 关键字段 | 约束 / 说明 |
 | --- | --- | --- |
 | `account` | `id`、`phone`(唯一)、`phone_verified_at`、`password_hash`、`wechat_unionid`、`wechat_openid`、`email`、`email_verified_at`、`status`、`last_login_at`、`created_at`、`updated_at` | `phone` 全局唯一；`wechat_unionid` 唯一（可空） |
-| `identity` | `id`、`account_id`、`identity_type`、`org_id`(可空)、`nickname`、`avatar_url`、`status`、`created_at`、`updated_at` | 唯一索引 `uk_personal(account_id) WHERE identity_type='PERSONAL'`；唯一索引 `uk_org(account_id, org_id)`；`PERSONAL` 时 `org_id` 必空 |
+| `identity` | `id`、`account_id`、`identity_type`、`org_id`(可空)、`nickname`、`avatar_url`、`timezone`、`notification_prefs`(jsonb)、`status`、`created_at`、`updated_at` | 唯一索引 `uk_personal(account_id) WHERE identity_type='PERSONAL'`；唯一索引 `uk_org(account_id, org_id)`；`PERSONAL` 时 `org_id` 必空 |
 | `admin_user` | `id`、`username`(唯一)、`password_hash`、`real_name`、`phone`、`email`、`role`、`org_id`(可空)、`mfa_enabled`、`mfa_secret`、`status`、`last_login_at`、`failed_login_count`、`locked_until`、`created_by`、`created_at`、`updated_at` | `SUPER_ADMIN` 时 `org_id` 必空 |
 | `login_log` | `id`、`principal_type`、`account_id`、`admin_user_id`、`identity_id`、`login_type`、`result`、`fail_reason`、`ip`、`user_agent`、`created_at` | 只读审计表 |
 
