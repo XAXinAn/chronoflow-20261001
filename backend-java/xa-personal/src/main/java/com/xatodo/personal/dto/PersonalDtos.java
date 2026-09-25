@@ -153,6 +153,13 @@ public final class PersonalDtos {
             @Size(max = 200) String title,
             String description,
             OffsetDateTime dueAt,
+            /**
+             * 显式清空截止时间（回到「待安排」）。
+             *
+             * <p>不能只靠 {@code dueAt = null} 表达：PATCH 语义里 null 是「不修改」，
+             * 否则用户一旦设过截止时间就再也去不掉了。
+             */
+            Boolean clearDueAt,
             Boolean allDay,
             String priority,
             String status,

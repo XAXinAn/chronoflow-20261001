@@ -288,8 +288,9 @@ class AdminService:
         rows = self._session.execute(
             text(
                 "SELECT * FROM account"
-                " WHERE (:phone IS NULL OR phone LIKE '%' || :phone || '%')"
-                "   AND (:status IS NULL OR status = :status)"
+                # 显式 CAST：PG 需要知道 NULL 参数的类型，否则条件里的参数会被判为歧义
+                " WHERE (CAST(:phone AS text) IS NULL OR phone LIKE '%' || CAST(:phone AS text) || '%')"
+                "   AND (CAST(:status AS text) IS NULL OR status = CAST(:status AS text))"
                 " ORDER BY id DESC LIMIT :limit"
             ),
             {"phone": phone or None, "status": status or None, "limit": min(max(limit, 1), 200)},
@@ -455,9 +456,10 @@ class AdminService:
         rows = self._session.execute(
             text(
                 "SELECT * FROM audit_log"
-                " WHERE (:action IS NULL OR action = :action)"
-                "   AND (:actor_name IS NULL OR actor_name LIKE '%' || :actor_name || '%')"
-                "   AND (:org_id IS NULL OR org_id = :org_id)"
+                " WHERE (CAST(:action AS text) IS NULL OR action = CAST(:action AS text))"
+                "   AND (CAST(:actor_name AS text) IS NULL"
+                "        OR actor_name LIKE '%' || CAST(:actor_name AS text) || '%')"
+                "   AND (CAST(:org_id AS bigint) IS NULL OR org_id = CAST(:org_id AS bigint))"
                 " ORDER BY id DESC LIMIT :limit"
             ),
             {

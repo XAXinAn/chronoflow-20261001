@@ -82,10 +82,17 @@ type MainTabsProps = {
   onCreateEvent: (dateKey: string) => void;
   onOpenEvent: (eventId: number, dateKey: string, occurrenceDate: string | null) => void;
   onCreateTask: () => void;
+  onOpenTask: (taskId: number) => void;
   onOpenIdentitySwitch: () => void;
 };
 
-function MainTabs({ onCreateEvent, onOpenEvent, onCreateTask, onOpenIdentitySwitch }: MainTabsProps) {
+function MainTabs({
+  onCreateEvent,
+  onOpenEvent,
+  onCreateTask,
+  onOpenTask,
+  onOpenIdentitySwitch,
+}: MainTabsProps) {
   const theme = useAppTheme();
   const { session } = useAppSessionState();
   // 组织 tab 只对组织身份可见；个人身份下它没有任何内容可展示
@@ -93,6 +100,13 @@ function MainTabs({ onCreateEvent, onOpenEvent, onCreateTask, onOpenIdentitySwit
 
   return (
     <Tabs.Navigator
+      /**
+       * 用身份 ID 做 key：切换身份时整棵 tab 树重建。
+       *
+       * 否则切回个人身份后，「组织」tab 虽然从列表里消失，但它**已经加载的数据**会留在内存里，
+       * 用户会看到"个人身份下还能看到组织日程"——数据没错，是界面状态没跟着身份走。
+       */
+      key={session?.identityId ?? 'anonymous'}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: theme.color.accent,
@@ -104,7 +118,7 @@ function MainTabs({ onCreateEvent, onOpenEvent, onCreateTask, onOpenIdentitySwit
         {() => <AgendaScreen onCreateEvent={onCreateEvent} onOpenEvent={onOpenEvent} />}
       </Tabs.Screen>
       <Tabs.Screen name="Tasks" options={{ title: '待办', tabBarIcon: tabIcon('Tasks') }}>
-        {() => <TasksScreen onCreateTask={onCreateTask} />}
+        {() => <TasksScreen onCreateTask={onCreateTask} onOpenTask={onOpenTask} />}
       </Tabs.Screen>
       {isOrgIdentity ? (
         <Tabs.Screen
@@ -123,7 +137,7 @@ function MainTabs({ onCreateEvent, onOpenEvent, onCreateTask, onOpenIdentitySwit
 type AppStackParamList = {
   Main: undefined;
   EventEditor: { dateKey: string; eventId?: number; occurrenceDate?: string | null };
-  TaskEditor: undefined;
+  TaskEditor: { taskId?: number };
   LocationPicker: undefined;
   IdentitySwitch: undefined;
 };
@@ -159,6 +173,7 @@ function MainStack() {
               navigation.navigate('EventEditor', { dateKey, eventId, occurrenceDate });
             }}
             onCreateTask={() => navigation.navigate('TaskEditor')}
+            onOpenTask={(taskId) => navigation.navigate('TaskEditor', { taskId })}
             onOpenIdentitySwitch={() => navigation.navigate('IdentitySwitch')}
           />
         )}
@@ -179,9 +194,10 @@ function MainStack() {
       </AppStack.Screen>
 
       <AppStack.Screen name="TaskEditor">
-        {({ navigation }) => (
+        {({ navigation, route }) => (
           <TaskEditorScreen
             todayKey={today}
+            taskId={route.params?.taskId}
             onCancel={() => navigation.goBack()}
             onSaved={() => navigation.goBack()}
           />

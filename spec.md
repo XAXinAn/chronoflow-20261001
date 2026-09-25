@@ -278,6 +278,22 @@ POST /auth/identity/select（凭 selectToken）→ 签发绑定该身份的 Toke
 - 列表页只保留快速入口（日历页右下角 `+`、待办页底部主按钮），点击后 push 到编辑页。
 - 编辑页顶部为「取消 / 标题 / 保存」三段式导航栏；有未保存修改时退出需二次确认。
 
+#### 4.1.6 日程与待办的关联
+
+日程与待办不只是「可互相转换」，还允许**同时存在并互相关联**：
+
+- **一个日程可关联多个待办**；一个待办**至多关联一个日程**（一对多，不设多对多）。
+- 关联在**待办侧建立**：在待办的新建/编辑页选择一条日程。
+- 日程详情展示其关联的待办列表，便于「开会前把这个会要用的待办都做完」。
+- 删除日程时**不删除**关联的待办，只解除关联（待办是用户自己的事，不应被日程的删除带崩）。
+- 关联不跨身份：只能关联当前身份可见的日程。
+
+#### 4.1.7 日历页的检索与跳转
+
+- 日历页顶部提供**常驻搜索框**，可同时搜索**日程与待办**，结果按类型区分展示。
+- 搜索走**服务端全量检索**，不受当前显示月份限制——否则「搜上个月那个会」永远搜不到。
+- 日历页提供**「跳到指定日期」**入口（悬浮按钮，位于新建按钮上方），选中后日历切到该月并选中该日。
+
 ### 4.2 组织端（App）
 
 #### 4.2.1 组织结构
@@ -307,7 +323,15 @@ POST /auth/identity/select（凭 selectToken）→ 签发绑定该身份的 Toke
 - 可对单次重复实例提交回执（`receipt` 绑定 `occurrence_date`）。
 - 「待回执」日程在列表顶部高亮提示。
 
-#### 4.2.3 提醒
+#### 4.2.3 组织 tab 的呈现
+
+- 组织 tab 与日历 tab **骨架同构**：月视图 + 当日日程，标题口径一致（`今天 · 9 月 25 日 周五`）。
+  两个 tab 回答的都是「某天有什么安排」，用户不该学两套交互。
+- 差异只在内容语义：组织日程对成员**只读**，卡片上多一个「我的回执」状态与回执按钮。
+- 成员端**不提供新建入口**：组织日程的下发权在部门管理员/组织管理员侧。
+- 组织 tab 仅对组织身份可见；个人身份下不展示该 tab。
+
+#### 4.2.4 提醒
 
 - 组织日程的提醒由下发方设定默认值，成员可在此基础上**追加个人提醒**，但不可关闭组织强制提醒。
 
@@ -419,7 +443,7 @@ erDiagram
 | `calendar` | `id`、`calendar_type`、`owner_identity_id`(可空)、`org_id`(可空)、`department_id`(可空)、`name`、`color`、`timezone`、`is_default`、`status`、`created_at`、`updated_at` | `PERSONAL` 时 `owner_identity_id` 必填；`ORG`/`ORG_DEPARTMENT` 时 `org_id` 必填 |
 | `event` | `id`、`calendar_id`、`org_id`(可空)、`creator_identity_id`、`source_type`、`title`、`description`、`location_name`、`location_address`、`latitude`、`longitude`、`poi_id`、`coordinate_system`、`start_at`、`end_at`、`all_day`、`timezone`、`rrule`、`rrule_until`、`status`、`availability`、`color`、`priority`、`category`、`url`、`travel_time_minutes`、`dispatch_id`(可空)、`updated_after_dispatch`、`created_at`、`updated_at`、`deleted_at` | 索引 `idx_calendar_range(calendar_id, start_at, end_at)`；`end_at > start_at`；`status` ∈ `CONFIRMED`/`TENTATIVE`/`CANCELLED`；`availability` ∈ `BUSY`/`FREE`；地点字段语义见 §5.9 |
 | `event_exception` | `id`、`event_id`、`occurrence_date`、`exception_type`(MODIFIED/CANCELLED)、`override_start_at`、`override_end_at`、`override_title`、`created_at` | `(event_id, occurrence_date)` 唯一 |
-| `task` | `id`、`calendar_id`、`owner_identity_id`、`org_id`(可空)、`parent_task_id`(可空)、`title`、`description`、`due_at`(可空)、`all_day`、`status`、`completed_at`、`priority`、`rrule`、`sort_order`、`created_at`、`updated_at`、`deleted_at` | 仅两层（父/子）；父任务与子任务须同 `calendar_id` |
+| `task` | `id`、`calendar_id`、`owner_identity_id`、`org_id`(可空)、`parent_task_id`(可空)、`event_id`(可空)、`title`、`description`、`due_at`(可空)、`all_day`、`status`、`completed_at`、`priority`、`rrule`、`sort_order`、`created_at`、`updated_at`、`deleted_at` | 仅两层（父/子）；父任务与子任务须同 `calendar_id`；`event_id` 指向关联日程（一个日程可关联多个待办，见 §4.1.6），删除日程时置空而非级联删除 |
 | `reminder` | `id`、`target_type`(EVENT/TASK)、`target_id`、`identity_id`、`occurrence_date`(可空)、`minutes_before`、`channel`、`enabled`、`sent_at`、`created_at` | `(target_type, target_id, identity_id, occurrence_date, minutes_before)` 唯一 |
 
 ### 5.6 组织日历下发与回执
@@ -463,7 +487,10 @@ erDiagram
 - **服务商抽象**：服务端定义 `GeoProvider`（`searchPlaces` / `reverseGeocode`），首版实现高德 Web 服务；未配置 Key 时降级为 `LOCAL` 实现（内置有限地点集 + 已选地点回显），保证开发与自动化测试离线可跑。
 - **降级可见**：`GET /system/info` 返回当前 geo provider 与可用状态，App 在搜索页对降级态给出明确提示，避免用户误判为网络故障。
 - **失败语义**：第三方不可用返回 `90002`，App 提示「地点服务暂不可用」，**不影响日程本身保存**（地点字段允许留空）。
-- **坐标系与地图组件**：App 运行在 Expo Go，无法引入 `react-native-maps` 这类原生模块，否则需要自定义 Dev Client。地图能力走「服务端代理 + WebView / 静态图 + 唤起系统地图导航」的组合，选点交互以服务端返回的 POI 列表为主。
+- **坐标系与地图组件**：App 运行在 Expo Go，无法引入 `react-native-maps` 这类原生模块，否则需要自定义 Dev Client。地图能力走「服务端代理 + WebView 加载高德 JS 地图」的组合：**地图页由后端提供**（Key 由服务端注入），App 侧不持有凭证。
+- **选点交互（搜索与地图融合）**：不把「搜索」和「地图选点」拆成两个入口——它们是同一件事的两半。搜索框常驻顶部、地图常驻下方、结果以浮层呈现；点结果地图飞过去，拖动地图图钉跟随，底部实时显示图钉位置的地址。
+- **进页面即定位**：打开选点页自动定位到「我的位置」，并且在**拿到位置之前不创建地图**（否则会先闪一个无关的默认城市再跳过去）；定位失败才退到兜底中心，并如实提示。
+- **当前位置按钮**：地图右下角提供手动重新定位的入口。GPS 原始坐标（WGS-84）必须经地图 SDK 转换为 GCJ-02 再落点，否则会偏移数百米。
 
 ---
 
@@ -554,6 +581,12 @@ erDiagram
 | POST | `/tasks/{id}/convert-to-event` | 转为日程 |
 | PUT | `/reminders` | 批量覆盖某日程/待办的提醒设置 |
 | GET | `/holidays` | 节假日与调休数据（按年月，带缓存） |
+
+**检索**
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/search` | 跨日程与待办的关键字检索。入参 `keyword`、可选 `types`（`EVENT`/`TASK`）、`limit`；返回统一条目（类型、id、标题、时间、地点/截止、是否命中重复实例）。**服务端全量检索**，不受客户端当前月份限制（spec §4.1.7） |
 
 **地点与地图**
 
@@ -790,6 +823,8 @@ erDiagram
 - **只有确认类、选择类交互使用弹层**：二次确认、日期时间选择、下拉选择、轻提示可以弹层或半屏抽屉。
 - 判断口径：需要键盘长时间输入、字段超过 3 个、或需要跳转二级页面的场景，必须是独立页面。
 - 因此 App 导航栈需要暴露编辑页路由，列表页仅作为入口；编辑页与列表页之间使用标准的「取消 / 标题 / 保存」三段式导航栏。
+- **身份切换用独立页面**：「我的」页只放一个「切换身份」入口，不把所有身份直接摊在页面上——身份一多会把页面撑长，而且看不到「当前是哪个身份」，那恰恰是切换时最需要的信息。切换页列出**全部身份**并标注当前项，无需重新登录。
+- **「我的」页采用商用 App 的通行结构**：顶部个人信息区（头像 + 昵称 + 身份与账号），下方是带图标的分组列表（账号 / 偏好 / 关于 / 退出登录）。分组、图标与层级用视觉建立，不让用户逐行读文字。
 
 ---
 

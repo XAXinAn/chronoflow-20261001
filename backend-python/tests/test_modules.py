@@ -96,6 +96,70 @@ def test_future_scope_truncates_and_clones_series(client) -> None:
     assert occurrences[3]["title"] == "新节奏站会"
 
 
+def test_task_update_and_clear_due_at(client) -> None:
+    """待办可编辑，且截止时间能被显式清空回到「待安排」。"""
+    tokens = register(client, "13800000301")
+    created = client.post(
+        "/api/v1/tasks",
+        json={"title": "交周报", "dueAt": "2026-10-09T18:00:00+08:00", "priority": "LOW"},
+        headers=auth(tokens),
+    ).json()["data"]
+
+    edited = client.patch(
+        f"/api/v1/tasks/{created['id']}",
+        json={"title": "交月报", "priority": "HIGH"},
+        headers=auth(tokens),
+    ).json()["data"]
+    assert edited["title"] == "交月报"
+    assert edited["priority"] == "HIGH"
+    # 只改标题/优先级时，截止时间不该被动到
+    assert edited["dueAt"] is not None
+
+    # PATCH 里 null 是「不修改」，清空必须靠 clearDueAt 显式表达
+    client.patch(
+        f"/api/v1/tasks/{created['id']}", json={"clearDueAt": True}, headers=auth(tokens)
+    )
+    detail = client.get(f"/api/v1/tasks/{created['id']}", headers=auth(tokens)).json()["data"]
+    assert detail["dueAt"] is None
+
+
+def test_task_delete(client) -> None:
+    tokens = register(client, "13800000302")
+    created = client.post(
+        "/api/v1/tasks", json={"title": "临时待办"}, headers=auth(tokens)
+    ).json()["data"]
+
+    response = client.delete(f"/api/v1/tasks/{created['id']}", headers=auth(tokens)).json()
+    assert response["code"] == 0
+    assert client.get("/api/v1/tasks", headers=auth(tokens)).json()["data"] == []
+
+
+def test_event_clear_place(client) -> None:
+    """清空地点时坐标一并清掉，且必须真的落库（不能只看接口返回）。"""
+    tokens = register(client, "13800000303")
+    event = create_event(
+        client,
+        tokens,
+        {
+            "title": "带地点",
+            "startAt": "2026-10-12T09:00:00+08:00",
+            "endAt": "2026-10-12T10:00:00+08:00",
+            "locationName": "外滩",
+            "locationAddress": "上海市黄浦区中山东一路",
+            "latitude": 31.24,
+            "longitude": 121.49,
+            "poiId": "SH-BUND",
+        },
+    )
+
+    client.patch(f"/api/v1/events/{event['id']}", json={"locationName": ""}, headers=auth(tokens))
+    detail = client.get(f"/api/v1/events/{event['id']}", headers=auth(tokens)).json()["data"]
+    assert detail["locationName"] is None
+    assert detail["locationAddress"] is None
+    assert detail["latitude"] is None
+    assert detail["longitude"] is None
+
+
 def test_event_to_task_conversion(client) -> None:
     tokens = register(client, "13900002003")
     event = create_event(

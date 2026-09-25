@@ -1,7 +1,9 @@
 package com.xatodo.personal.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.OffsetDateTime;
@@ -31,12 +33,19 @@ public class Task {
 
     private String description;
 
+    /**
+     * 截断更新必须能写入 null：MyBatis-Plus 的 updateById 默认忽略 null 字段，
+     * 会导致「清空截止时间 / 取消完成」看起来成功、实际没落库。
+     * 这些更新都是「先读出完整实体再改再写回」，因此全量写回是安全的。
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private OffsetDateTime dueAt;
 
     private Boolean allDay;
 
     private String status;
 
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private OffsetDateTime completedAt;
 
     private String priority;

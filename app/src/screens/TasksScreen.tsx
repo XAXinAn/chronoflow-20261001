@@ -17,7 +17,13 @@ const PRIORITY_LABEL: Record<Task['priority'], string | null> = {
   URGENT: '紧急',
 };
 
-export function TasksScreen({ onCreateTask }: { onCreateTask: () => void }) {
+export function TasksScreen({
+  onCreateTask,
+  onOpenTask,
+}: {
+  onCreateTask: () => void;
+  onOpenTask: (taskId: number) => void;
+}) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const { api } = useRuntime();
@@ -73,6 +79,8 @@ export function TasksScreen({ onCreateTask }: { onCreateTask: () => void }) {
             <ListRow
               title={task.title}
               strikethrough={isDone}
+              // 点整行进编辑；左侧复选框自己拦截点击，互不干扰
+              onPress={() => onOpenTask(task.id)}
               subtitle={
                 task.dueAt
                   ? new Date(task.dueAt).toLocaleString('zh-CN', {

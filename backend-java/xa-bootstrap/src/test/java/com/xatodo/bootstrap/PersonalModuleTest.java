@@ -417,8 +417,53 @@ class PersonalModuleTest {
 
         JsonNode updated = patchJson("/api/v1/events/" + eventId, token, "{\"locationName\":\"\"}").path("data");
         assertThat(updated.path("locationName").isMissingNode() || updated.path("locationName").isNull()).isTrue();
-        assertThat(updated.path("latitude").isMissingNode() || updated.path("latitude").isNull()).isTrue();
-        assertThat(updated.path("longitude").isMissingNode() || updated.path("longitude").isNull()).isTrue();
+
+        // 必须重新读一次才算数：PATCH 的返回体来自内存里的实体，
+        // 而 MyBatis-Plus 默认不写 null 字段——只看返回体会漏掉「清空其实没落库」这种 bug。
+        JsonNode reread = getJson("/api/v1/events/" + eventId, token).path("data");
+        assertThat(reread.path("locationName").isMissingNode() || reread.path("locationName").isNull()).isTrue();
+        assertThat(reread.path("locationAddress").isMissingNode() || reread.path("locationAddress").isNull()).isTrue();
+        assertThat(reread.path("latitude").isMissingNode() || reread.path("latitude").isNull()).isTrue();
+        assertThat(reread.path("longitude").isMissingNode() || reread.path("longitude").isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("待办可编辑：改标题/优先级，且截止时间能被显式清空回到「待安排」")
+    void taskUpdateAndClearDueAt() throws Exception {
+        String token = registerAccount("13800000241");
+        long taskId = postJson("/api/v1/tasks", token,
+                "{\"title\":\"交周报\",\"dueAt\":\"2026-10-09T18:00:00+08:00\",\"priority\":\"LOW\"}")
+                .path("data").path("id").asLong();
+
+        // 普通编辑：只改标题与优先级，截止时间不应被动到
+        JsonNode edited = patchJson("/api/v1/tasks/" + taskId, token,
+                "{\"title\":\"交月报\",\"priority\":\"HIGH\"}").path("data");
+        assertThat(edited.path("title").asText()).isEqualTo("交月报");
+        assertThat(edited.path("priority").asText()).isEqualTo("HIGH");
+        assertThat(edited.path("dueAt").isMissingNode() || edited.path("dueAt").isNull()).isFalse();
+
+        // 清空截止时间：PATCH 里 null 是「不修改」，必须靠 clearDueAt 显式表达，
+        // 否则用户设过截止时间后就再也回不到「待安排」
+        JsonNode cleared = patchJson("/api/v1/tasks/" + taskId, token, "{\"clearDueAt\":true}").path("data");
+        assertThat(cleared.path("dueAt").isMissingNode() || cleared.path("dueAt").isNull()).isTrue();
+
+        // 详情接口读回来也应是空的
+        JsonNode detail = getJson("/api/v1/tasks/" + taskId, token).path("data");
+        assertThat(detail.path("dueAt").isMissingNode() || detail.path("dueAt").isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("待办可删除，删除后不再出现在列表里")
+    void taskDelete() throws Exception {
+        String token = registerAccount("13800000242");
+        long taskId = postJson("/api/v1/tasks", token, "{\"title\":\"临时待办\"}")
+                .path("data").path("id").asLong();
+
+        mockMvc.perform(delete("/api/v1/tasks/" + taskId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        assertThat(getJson("/api/v1/tasks", token).path("data")).isEmpty();
     }
 
     @Test

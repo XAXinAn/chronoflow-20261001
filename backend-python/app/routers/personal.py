@@ -92,6 +92,9 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     dueAt: datetime | None = None
+    # 显式清空截止时间（回到「待安排」）。null 在 PATCH 里表示「不修改」，
+    # 只靠 dueAt=null 的话，用户一旦设过截止时间就再也去不掉了。
+    clearDueAt: bool | None = None
     allDay: bool | None = None
     priority: str | None = None
     status: str | None = None

@@ -1,6 +1,8 @@
 import type { Priority } from '../api/types';
+import type { Task } from '../api/types';
 import { isValidDateKey } from './calendar';
 import { parseTime, toIso } from './eventDraft';
+import { localDateKey } from './agenda';
 
 /**
  * 新建待办草稿。
@@ -65,4 +67,52 @@ export function buildCreateTaskPayload(draft: TaskDraft) {
     allDay: draft.hasDue ? draft.allDay : false,
     priority: draft.priority,
   };
+}
+
+const TASK_TIMEZONE = 'Asia/Shanghai';
+
+/** 从已有待办还原草稿，供编辑页预填。 */
+export function draftFromTask(task: Task, todayKey: string): TaskDraft {
+  if (!task.dueAt) {
+    return {
+      title: task.title,
+      description: task.description ?? '',
+      priority: task.priority ?? 'NORMAL',
+      hasDue: false,
+      dueDate: todayKey,
+      dueTime: '09:00',
+      allDay: false,
+    };
+  }
+  return {
+    title: task.title,
+    description: task.description ?? '',
+    priority: task.priority ?? 'NORMAL',
+    hasDue: true,
+    dueDate: localDateKey(task.dueAt, TASK_TIMEZONE),
+    dueTime: timeInZone(task.dueAt),
+    allDay: task.allDay,
+  };
+}
+
+/** 编辑待办的请求体：清空截止时间要靠 clearDueAt 显式表达。 */
+export function buildUpdateTaskPayload(draft: TaskDraft) {
+  const base = buildCreateTaskPayload(draft);
+  return {
+    title: base.title,
+    description: base.description,
+    priority: base.priority,
+    dueAt: base.dueAt,
+    allDay: base.allDay,
+    clearDueAt: !draft.hasDue,
+  };
+}
+
+function timeInZone(iso: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: TASK_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso));
 }

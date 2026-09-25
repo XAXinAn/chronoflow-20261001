@@ -457,7 +457,9 @@ class PersonalService:
         rows = self._session.execute(
             text(
                 "SELECT * FROM task WHERE owner_identity_id = :identity AND deleted_at IS NULL"
-                " AND (:status IS NULL OR status = :status)"
+                # 显式 CAST：不写类型时 PG 无法推断 NULL 参数的类型，
+                # 不带 status 参数查列表会直接 500（AmbiguousParameter）
+                " AND (CAST(:status AS text) IS NULL OR status = CAST(:status AS text))"
                 " ORDER BY sort_order, due_at NULLS LAST"
             ),
             {"identity": identity_id, "status": status},
@@ -510,11 +512,14 @@ class PersonalService:
     def update_task(self, identity_id: int, task_id: int, payload: dict) -> dict:
         self.require_task(identity_id, task_id)
         completed = payload.get("status") == "DONE"
+        # 先看「显式清空」再看赋值：否则一旦设过截止时间就再也回不到「待安排」
+        clear_due = bool(payload.get("clearDueAt"))
         row = self._session.execute(
             text(
                 "UPDATE task SET title = COALESCE(:title, title),"
                 " description = COALESCE(:description, description),"
-                " due_at = COALESCE(:due_at, due_at), all_day = COALESCE(:all_day, all_day),"
+                " due_at = CASE WHEN :clear_due THEN NULL ELSE COALESCE(:due_at, due_at) END,"
+                " all_day = CASE WHEN :clear_due THEN false ELSE COALESCE(:all_day, all_day) END,"
                 " priority = COALESCE(:priority, priority), status = COALESCE(:status, status),"
                 " completed_at = CASE WHEN :status = 'DONE' THEN now()"
                 "   WHEN :status IS NULL THEN completed_at ELSE NULL END,"
@@ -523,6 +528,7 @@ class PersonalService:
             ),
             {
                 "id": task_id,
+                "clear_due": clear_due,
                 "title": payload.get("title"),
                 "description": payload.get("description"),
                 "due_at": payload.get("dueAt"),

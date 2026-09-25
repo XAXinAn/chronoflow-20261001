@@ -96,7 +96,11 @@ public class TaskService {
         if (request.description() != null) {
             task.setDescription(request.description());
         }
-        if (request.dueAt() != null) {
+        // 先看「显式清空」再看赋值：否则一旦设过截止时间就再也回不到「待安排」
+        if (Boolean.TRUE.equals(request.clearDueAt())) {
+            task.setDueAt(null);
+            task.setAllDay(false);
+        } else if (request.dueAt() != null) {
             task.setDueAt(request.dueAt());
         }
         if (request.allDay() != null) {

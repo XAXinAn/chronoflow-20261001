@@ -1,7 +1,9 @@
 package com.xatodo.personal.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.math.BigDecimal;
@@ -40,16 +42,27 @@ public class Event {
 
     // ---------------------------------------------------------------- 地点
     // 地点不再是一个自由文本字段，拆成结构化信息以便导航与按地点归并（spec §5.9）
+    /*
+     * 这一组字段必须允许写入 null：MyBatis-Plus 的 updateById 默认忽略 null 字段，
+     * 「清空地点」会变成一次静默失败——接口返回看着是清空了，库里其实没动。
+     * 更新流程是「先读出完整实体、改完再写回」，所以全量写回不会误伤其他字段。
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String locationName;
 
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String locationAddress;
 
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private BigDecimal latitude;
 
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private BigDecimal longitude;
 
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String poiId;
 
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String coordinateSystem;
 
     // ------------------------------------------------------------ 日程属性

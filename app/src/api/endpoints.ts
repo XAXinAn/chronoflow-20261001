@@ -45,6 +45,23 @@ export interface EventWritePayload {
   occurrenceDate?: string | null;
 }
 
+/** 待办的写请求体。新建与编辑共用。 */
+export interface TaskWritePayload {
+  title: string;
+  description?: string | null;
+  dueAt?: string | null;
+  /**
+   * 显式清空截止时间。
+   *
+   * 服务端 PATCH 里 null 表示「不修改」，所以「改回待安排」必须靠这个开关表达，
+   * 否则用户设过截止时间后就再也去不掉了。
+   */
+  clearDueAt?: boolean;
+  allDay?: boolean;
+  priority?: string;
+  status?: string;
+}
+
 export function createEndpoints(client: ApiClient) {
   return {
     // ------------------------------------------------------------- 认证
@@ -111,13 +128,11 @@ export function createEndpoints(client: ApiClient) {
 
     // --------------------------------------------------------------- 待办
     tasks: (status?: string) => client.get<Task[]>('/api/v1/tasks', { status }),
-    createTask: (payload: {
-      title: string;
-      description?: string | null;
-      dueAt?: string | null;
-      allDay?: boolean;
-      priority?: string;
-    }) => client.post<Task>('/api/v1/tasks', payload),
+    createTask: (payload: TaskWritePayload) => client.post<Task>('/api/v1/tasks', payload),
+    taskDetail: (taskId: number) => client.get<Task>(`/api/v1/tasks/${taskId}`),
+    updateTask: (taskId: number, payload: TaskWritePayload) =>
+      client.patch<Task>(`/api/v1/tasks/${taskId}`, payload),
+    deleteTask: (taskId: number) => client.del<void>(`/api/v1/tasks/${taskId}`),
     completeTask: (taskId: number, completed: boolean) =>
       client.post<Task>(`/api/v1/tasks/${taskId}/complete`, { completed }),
 
