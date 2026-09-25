@@ -1,4 +1,4 @@
-import type { EventOccurrence, OrgEvent, ReceiptStatus, Task } from '../api/types';
+import type { EventOccurrence, ReceiptStatus, Task } from '../api/types';
 
 /** 把 ISO 时间转成指定时区的 `YYYY-MM-DD`。 */
 export function localDateKey(iso: string, timeZone: string): string {
@@ -45,10 +45,6 @@ export function groupOccurrences(items: EventOccurrence[], timeZone: string) {
   return groupByDay(items, (item) => item.startAt, timeZone);
 }
 
-export function groupOrgEvents(items: OrgEvent[], timeZone: string) {
-  return groupByDay(items, (item) => item.startAt, timeZone);
-}
-
 /** 相对日期标签：今天 / 明天 / 昨天 / 周几 / 具体日期。 */
 export function formatDayLabel(dateKey: string, todayKey: string): string {
   const diff = daysBetween(todayKey, dateKey);
@@ -73,6 +69,21 @@ export function daysBetween(fromKey: string, toKey: string): number {
     return Date.UTC(year, month - 1, day);
   };
   return Math.round((toUtc(toKey) - toUtc(fromKey)) / 86_400_000);
+}
+
+const WEEKDAY_FULL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+/**
+ * 当日标题：`今天 · 9 月 25 日 周五`。
+ *
+ * 日历页与组织页共用同一份实现——两个 tab 的骨架都是「月历 + 当日日程」，
+ * 标题口径不一致会让来回切换时产生割裂感。
+ */
+export function dayHeading(dateKey: string, todayKey: string): string {
+  const [year, month, day] = dateKey.split('-').map(Number) as [number, number, number];
+  const weekday = WEEKDAY_FULL[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  const prefix = dateKey === todayKey ? '今天 · ' : '';
+  return `${prefix}${month} 月 ${day} 日 ${weekday}`;
 }
 
 /** 时间范围展示：全天不显示具体时刻。 */

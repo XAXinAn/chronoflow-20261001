@@ -8,11 +8,9 @@ import { EventEditorModal } from '../components/EventEditorModal';
 import { MonthCalendar } from '../components/MonthCalendar';
 import { Card, EmptyState, Pill, Screen } from '../components/ui';
 import { useAppTheme, useRuntime } from '../context/AppContext';
-import { formatTimeRange, localDateKey } from '../domain/agenda';
+import { dayHeading, formatTimeRange, localDateKey } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 import { buildCreatePayload, type EventDraft } from '../domain/eventDraft';
-
-const WEEKDAY_FULL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
@@ -20,13 +18,6 @@ function pad(value: number): string {
 
 function todayKey(): string {
   return localDateKey(new Date().toISOString(), APP_TIMEZONE);
-}
-
-function dayHeading(dateKey: string, today: string): string {
-  const [year, month, day] = dateKey.split('-').map(Number) as [number, number, number];
-  const weekday = WEEKDAY_FULL[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
-  const prefix = dateKey === today ? '今天 · ' : '';
-  return `${prefix}${month} 月 ${day} 日 ${weekday}`;
 }
 
 /**
