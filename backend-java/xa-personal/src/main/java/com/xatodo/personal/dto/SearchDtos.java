@@ -13,6 +13,8 @@ public final class SearchDtos {
 
     public static final String TYPE_EVENT = "EVENT";
     public static final String TYPE_TASK = "TASK";
+    /** 组织下发给我的组织日程：跨组织一起搜，但点开要跳到它所属的组织视图（spec §4.1.7）。 */
+    public static final String TYPE_ORG_EVENT = "ORG_EVENT";
 
     private SearchDtos() {
     }
@@ -23,6 +25,9 @@ public final class SearchDtos {
      * @param dueAt          待办的截止时间，可为空（「待安排」）
      * @param recurring      是否命中重复日程
      * @param occurrenceDate 命中重复实例的日期；非重复日程为 null。App 用它打开「这一次」而非整条序列
+     * @param identityId     组织日程所属的组织身份；个人条目为 null。App 用它切到对应组织视图
+     * @param orgId          组织日程所属组织；个人条目为 null
+     * @param orgName        组织名（结果里要标明「这条是哪个组织的」）
      */
     public record SearchResultItem(String type,
                                    Long id,
@@ -36,6 +41,9 @@ public final class SearchDtos {
                                    String status,
                                    String priority,
                                    Boolean recurring,
-                                   LocalDate occurrenceDate) {
+                                   LocalDate occurrenceDate,
+                                   Long identityId,
+                                   Long orgId,
+                                   String orgName) {
     }
 }

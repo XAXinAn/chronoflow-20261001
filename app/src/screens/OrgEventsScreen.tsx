@@ -36,11 +36,16 @@ export function OrgEventsScreen({
   api,
   orgName,
   onOpenAccounts,
+  focusDateKey,
+  onFocusApplied,
 }: {
   /** 当前组织的接口客户端（组织 tab 里的每个组织各有一套令牌，spec §4.2.3） */
   api: Endpoints;
   orgName: string;
   onOpenAccounts: () => void;
+  /** 从检索结果跳进来时要定位的日期（消费一次后由上层清空） */
+  focusDateKey?: string | null;
+  onFocusApplied?: () => void;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -74,6 +79,17 @@ export function OrgEventsScreen({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 从检索结果跳进来：把视图与选中日期挪到那一条上，然后清掉这个一次性请求
+  useEffect(() => {
+    if (!focusDateKey) {
+      return;
+    }
+    const [focusYear, focusMonth] = focusDateKey.split('-').map(Number) as [number, number];
+    setView({ year: focusYear, month: focusMonth });
+    setSelectedDateKey(focusDateKey);
+    onFocusApplied?.();
+  }, [focusDateKey, onFocusApplied]);
 
   const eventDates = useMemo(
     () => new Set(items.map((item) => localDateKey(item.startAt, APP_TIMEZONE))),
@@ -132,6 +148,12 @@ export function OrgEventsScreen({
           eventDates={eventDates}
           onSelectDate={setSelectedDateKey}
           onChangeMonth={changeMonth}
+          // 组织日历同样提供「今天」：骨架与日历页同构，交互也不该两套
+          onToday={() => {
+            const [todayYear, todayMonth] = today.split('-').map(Number) as [number, number];
+            setView({ year: todayYear, month: todayMonth });
+            setSelectedDateKey(today);
+          }}
         />
 
         <View style={[styles.divider, { backgroundColor: theme.color.border }]} />

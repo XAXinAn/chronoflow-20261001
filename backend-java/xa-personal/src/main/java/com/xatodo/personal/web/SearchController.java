@@ -36,7 +36,9 @@ public class SearchController {
     public ApiResponse<List<SearchResultItem>> search(@RequestParam String keyword,
                                                       @RequestParam(required = false) List<String> types,
                                                       @RequestParam(required = false) Integer limit) {
-        Long identityId = CurrentIdentity.require().identityId();
-        return ApiResponse.ok(searchService.search(identityId, keyword, types, limit));
+        var principal = CurrentIdentity.require();
+        // 个人数据按身份查，组织日程按账号查（可能绑定多个组织）
+        return ApiResponse.ok(searchService.search(
+                principal.identityId(), principal.accountId(), keyword, types, limit));
     }
 }

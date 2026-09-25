@@ -13,6 +13,7 @@ import { AgendaScreen } from './screens/AgendaScreen';
 import { EventEditorScreen, type PlaceSelection } from './screens/EventEditorScreen';
 import { EventPickerScreen, type PickedEvent } from './screens/EventPickerScreen';
 import { FeedbackScreen } from './screens/FeedbackScreen';
+import { AgentChatScreen } from './screens/AgentChatScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { LocationPickerScreen } from './screens/LocationPickerScreen';
 import { OrgAccountsScreen } from './screens/OrgAccountsScreen';
@@ -67,6 +68,8 @@ type MainTabsProps = {
   onCreateTask: () => void;
   onOpenTask: (taskId: number) => void;
   onOpenOrgAccounts: () => void;
+  onOpenOrgEvent: (identityId: number, dateKey: string) => void;
+  onOpenAgent: (payload?: { photoUrl?: string }) => void;
   onOpenFeedback: () => void;
 };
 
@@ -76,6 +79,8 @@ function MainTabs({
   onCreateTask,
   onOpenTask,
   onOpenOrgAccounts,
+  onOpenOrgEvent,
+  onOpenAgent,
   onOpenFeedback,
 }: MainTabsProps) {
   const theme = useAppTheme();
@@ -104,6 +109,8 @@ function MainTabs({
             onOpenEvent={onOpenEvent}
             // 日历页的检索会跨到待办，所以这里也要能直接打开待办编辑页（spec §4.1.7）
             onOpenTask={onOpenTask}
+            onOpenOrgEvent={onOpenOrgEvent}
+            onOpenAgent={onOpenAgent}
           />
         )}
       </Tabs.Screen>
@@ -132,6 +139,7 @@ type AppStackParamList = {
   EventPicker: undefined;
   Feedback: undefined;
   OrgAccounts: undefined;
+  AgentChat: { photoUrl?: string } | undefined;
 };
 
 const AppStack = createNativeStackNavigator<AppStackParamList>();
@@ -153,6 +161,7 @@ function MainStack() {
     event: null,
   });
   const today = useMemo(() => localDateKey(new Date().toISOString(), APP_TIMEZONE), []);
+  const { setActiveOrgIdentityId, setOrgFocusDateKey } = useAppSessionState();
 
   return (
     <AppStack.Navigator screenOptions={{ headerShown: false }}>
@@ -178,7 +187,14 @@ function MainStack() {
               navigation.navigate('TaskEditor', { taskId });
             }}
             onOpenOrgAccounts={() => navigation.navigate('OrgAccounts')}
+            // 检索命中的组织日程：切到那个组织、定位到那天、跳到组织 tab
+            onOpenOrgEvent={(identityId, dateKey) => {
+              setActiveOrgIdentityId(identityId);
+              setOrgFocusDateKey(dateKey);
+              navigation.navigate('Main', { screen: 'OrgEvents' });
+            }}
             onOpenFeedback={() => navigation.navigate('Feedback')}
+            onOpenAgent={(payload) => navigation.navigate('AgentChat', payload ?? {})}
           />
         )}
       </AppStack.Screen>
@@ -242,6 +258,15 @@ function MainStack() {
 
       <AppStack.Screen name="OrgAccounts">
         {({ navigation }) => <OrgAccountsScreen onBack={() => navigation.goBack()} />}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="AgentChat">
+        {({ navigation, route }) => (
+          <AgentChatScreen
+            photoUrl={route.params?.photoUrl ?? null}
+            onBack={() => navigation.goBack()}
+          />
+        )}
       </AppStack.Screen>
     </AppStack.Navigator>
   );

@@ -340,7 +340,12 @@ def search(
     session: Session = Depends(get_session),
 ) -> dict:
     """跨日程与待办的关键字检索，不受当前月份限制（spec §4.1.7）。"""
-    return envelope(SearchService(session).search(principal.identity_id, keyword, types, limit))
+    # 个人数据按身份查，组织日程按账号查（一个人可以绑多个组织）
+    return envelope(
+        SearchService(session).search(
+            principal.identity_id, principal.account_id, keyword, types, limit
+        )
+    )
 
 
 @router.get("/holidays")

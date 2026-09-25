@@ -11,7 +11,10 @@ import { APP_TIMEZONE } from './calendar';
  */
 
 export function resultTypeLabel(type: SearchResultItem['type']): string {
-  return type === 'TASK' ? '待办' : '日程';
+  if (type === 'TASK') {
+    return '待办';
+  }
+  return type === 'ORG_EVENT' ? '组织日程' : '日程';
 }
 
 /** 展示用时区：优先取条目自己的（日程可能跨时区），否则用 App 统一时区。 */
@@ -48,6 +51,11 @@ export function resultSubtitle(item: SearchResultItem, fallback: string = APP_TI
     return '时间缺失';
   }
   const range = formatTimeRange(item.startAt, item.endAt, Boolean(item.allDay), timeZone);
+  // 组织日程标明来源：同一条结果流里混着多个组织的日程，不标就分不清是哪个组织的
+  if (item.type === 'ORG_EVENT') {
+    const org = item.orgName ? `${item.orgName} · ` : '';
+    return `${org}${range}${item.locationName ? ` · ${item.locationName}` : ''}`;
+  }
   return item.locationName ? `${range} · ${item.locationName}` : range;
 }
 
@@ -70,7 +78,8 @@ export function resultBadges(item: SearchResultItem): string[] {
  * 打开时同时带上 occurrenceDate，才落在「这一次」而不是整条序列上。
  */
 export function resultDateKey(item: SearchResultItem, fallback: string = APP_TIMEZONE): string | null {
-  if (item.type !== 'EVENT' || !item.startAt) {
+  // 组织日程同样按开始时间定位日期（点开后跳到那个组织的对应日期）
+  if (item.type === 'TASK' || !item.startAt) {
     return null;
   }
   return localDateKey(item.startAt, resultTimeZone(item, fallback));

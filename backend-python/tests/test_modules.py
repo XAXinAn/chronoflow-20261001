@@ -1019,3 +1019,54 @@ def test_admin_can_unbind_member_account(client, db) -> None:
     assert unbound["data"]["bound"] is False
     assert unbound["data"]["memberKey"] == owner_key
     assert client.get("/api/v1/org-accounts", headers=auth(owner_tokens)).json()["data"] == []
+
+
+def dispatch_to_all(client, headers: dict, title: str) -> int:
+    """组织管理员把一条日程下发给全组织，返回 eventId。"""
+    response = client.post(
+        "/api/v1/org-admin/events",
+        json={
+            "title": title,
+            "startAt": "2026-10-08T09:00:00+08:00",
+            "endAt": "2026-10-08T11:00:00+08:00",
+            "scopeType": "ALL",
+        },
+        headers=headers,
+    ).json()
+    assert response["code"] == 0, response
+    return response["data"]["eventId"]
+
+
+def test_search_covers_org_events_across_bound_organizations(client, db) -> None:
+    """检索覆盖「我绑定的所有组织」的组织日程；撤回的下发不再出现（spec §4.1.7）。"""
+    admin = admin_login(client)
+    first_org = create_org(client, admin, "PYSRCHA", "py_srcha_admin")
+    first_root = seed_root_department(db, first_org)
+    first_key = seed_org_member(db, first_org, first_root, "13900002501")
+    tokens = register(client, "13900002501")
+    first_headers = claim_org_account(client, tokens, first_org, first_key)
+
+    # 第二个组织的成员用**同一个个人账号**认领：一个人可以绑多个组织
+    second_org = create_org(client, admin, "PYSRCHB", "py_srchb_admin")
+    second_root = seed_root_department(db, second_org)
+    second_key = seed_org_member(db, second_org, second_root, "13900002502")
+    second_headers = claim_org_account(client, tokens, second_org, second_key)
+
+    dispatch_to_all(client, first_headers, "季度技术评审会")
+    second_event = dispatch_to_all(client, second_headers, "评审会材料准备")
+
+    # 用**个人令牌**搜：要能搜到所有已绑定组织的日程，不必先切组织
+    hits = search(client, tokens, "评审会")
+    assert {item["type"] for item in hits} == {"ORG_EVENT"}
+    assert {item["orgName"] for item in hits} == {"组织PYSRCHA", "组织PYSRCHB"}
+    assert all(item["identityId"] for item in hits), "组织日程要带回身份，App 才能切到对应组织"
+
+    # 撤回第二条下发：它不该再出现在检索结果里（否则点开是空的）
+    assert (
+        client.post(
+            f"/api/v1/org-admin/events/{second_event}/revoke", headers=second_headers
+        ).json()["code"]
+        == 0
+    )
+    after = search(client, tokens, "评审会")
+    assert [item["orgName"] for item in after] == ["组织PYSRCHA"]

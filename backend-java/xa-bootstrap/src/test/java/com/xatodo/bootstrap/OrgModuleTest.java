@@ -85,6 +85,30 @@ class OrgModuleTest {
     }
 
     @Test
+    @DisplayName("检索覆盖所有已绑定组织的组织日程，撤回的下发不再出现")
+    void searchCoversOrgEventsAcrossBoundOrganizations() throws Exception {
+        Fixture first = seedOrg("SRCHA", "13700001401");
+        // 第二个组织的成员用**同一个个人账号**认领：一个人可以绑多个组织
+        UnclaimedOrg second = seedUnclaimedOrg("SRCHB", "SB002");
+        String secondToken = claimWith(second.orgCode(), second.memberKey(), first.ownerPersonalToken());
+
+        dispatchToAll(first.ownerToken(), "季度技术评审会");
+        long eventInSecond = dispatchToAll(secondToken, "评审会材料准备");
+
+        // 用**个人令牌**搜：个人身份要能搜到「我绑定的所有组织」的日程，不必先切组织
+        JsonNode hits = searchByKeyword(first.ownerPersonalToken(), "评审会");
+        assertThat(hits).hasSize(2);
+        assertThat(orgNamesOf(hits)).containsExactlyInAnyOrder("测试组织SRCHA", "测试组织SRCHB");
+        hits.forEach(item -> assertThat(item.path("type").asText()).isEqualTo("ORG_EVENT"));
+
+        // 撤回第二条下发：它不该再出现在检索结果里（否则点开是空的）
+        postJson("/api/v1/org-admin/events/" + eventInSecond + "/revoke", secondToken, "{}");
+        JsonNode afterRevoke = searchByKeyword(first.ownerPersonalToken(), "评审会");
+        assertThat(afterRevoke).hasSize(1);
+        assertThat(afterRevoke.get(0).path("orgName").asText()).isEqualTo("测试组织SRCHA");
+    }
+
+    @Test
     @DisplayName("同一账号在同一组织只能绑一个成员账号：再认领别的成员会被明确拒绝")
     void onePersonalAccountBindsOneMemberPerOrg() throws Exception {
         Fixture fixture = seedOrg("SAME", "13700001301");
@@ -442,12 +466,23 @@ class OrgModuleTest {
     private record Claim(String personalToken, String orgToken) {
     }
 
+    /** 只播种一个组织 + 根部门 + 未认领的成员，不做认领（认领要用指定的个人令牌）。 */
+    private record UnclaimedOrg(long orgId, String orgCode, long rootDepartmentId, String memberKey) {
+    }
+
     /**
      * 造一个组织 + 根部门 + **未被认领的拥有者成员**，再用拥有者的凭据认领组织账号。
      *
      * <p>「手机号」在这个测试类里同时充当成员唯一识别 ID（学号/工号）——测试里没必要再造一批编号。
      */
     private Fixture seedOrg(String suffix, String ownerMemberKey) throws Exception {
+        UnclaimedOrg org = seedUnclaimedOrg(suffix, ownerMemberKey);
+        Claim claim = claimOrgAccountWithTokens(org.orgCode(), ownerMemberKey, ownerMemberKey);
+        return new Fixture(org.orgId(), org.orgCode(), org.rootDepartmentId(), claim.orgToken(),
+                claim.personalToken());
+    }
+
+    private UnclaimedOrg seedUnclaimedOrg(String suffix, String memberKey) {
         Long orgId = jdbcTemplate.queryForObject(
                 "INSERT INTO organization (name, code) VALUES (?, ?) RETURNING id",
                 Long.class, "测试组织" + suffix, "ORG" + suffix);
@@ -459,11 +494,9 @@ class OrgModuleTest {
         jdbcTemplate.update(
                 "INSERT INTO org_member (org_id, department_id, member_key, real_name, org_role, status) "
                         + "VALUES (?, ?, ?, '拥有者', 'OWNER', 'ACTIVE')",
-                orgId, rootId, ownerMemberKey);
+                orgId, rootId, memberKey);
 
-        String orgCode = "ORG" + suffix;
-        Claim claim = claimOrgAccountWithTokens(orgCode, ownerMemberKey, ownerMemberKey);
-        return new Fixture(orgId, orgCode, rootId, claim.orgToken(), claim.personalToken());
+        return new UnclaimedOrg(orgId, "ORG" + suffix, rootId, memberKey);
     }
 
     /** 用手机号注册个人账号，返回个人身份的令牌。 */
@@ -493,6 +526,21 @@ class OrgModuleTest {
      */
     private String claimOrgAccount(String orgCode, String memberKey, String phone) throws Exception {
         return claimOrgAccountWithTokens(orgCode, memberKey, phone).orgToken();
+    }
+
+    /** 用**已有的个人令牌**认领（一个人绑多个组织时用得到）。 */
+    private String claimWith(String orgCode, String memberKey, String personalToken) throws Exception {
+        return postJson("/api/v1/org-accounts/login?deviceId=dev", personalToken,
+                "{\"org\":\"" + orgCode + "\",\"memberKey\":\"" + memberKey + "\"}")
+                .path("data").path("accessToken").asText();
+    }
+
+    /** 组织管理员把一条日程下发给全组织，返回 eventId。 */
+    private long dispatchToAll(String orgToken, String title) throws Exception {
+        return postJson("/api/v1/org-admin/events", orgToken,
+                "{\"title\":\"" + title + "\",\"startAt\":\"2026-10-08T09:00:00+08:00\","
+                        + "\"endAt\":\"2026-10-08T11:00:00+08:00\",\"scopeType\":\"ALL\"}")
+                .path("data").path("eventId").asLong();
     }
 
     /** 认领并同时拿到个人令牌（用于验证「同一账号在同一组织只能绑一个成员」这类规则）。 */
@@ -627,6 +675,25 @@ class OrgModuleTest {
         String response = mockMvc.perform(builder).andExpect(status().isOk()).andReturn()
                 .getResponse().getContentAsString(StandardCharsets.UTF_8);
         return objectMapper.readTree(response);
+    }
+
+    /**
+     * 关键字检索。关键字用 {@code .param()} 传，不走 URL 模板——
+     * 中文塞进 URL 会被编码成不可预期的形式，那测的就不是服务端行为。
+     */
+    private JsonNode searchByKeyword(String token, String keyword) throws Exception {
+        MockHttpServletRequestBuilder builder = get("/api/v1/search")
+                .param("keyword", keyword)
+                .header("Authorization", "Bearer " + token);
+        JsonNode json = getJson(builder);
+        assertThat(json.path("code").asInt()).isZero();
+        return json.path("data");
+    }
+
+    private java.util.List<String> orgNamesOf(JsonNode items) {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        items.forEach(item -> names.add(item.path("orgName").asText()));
+        return names;
     }
 
     private JsonNode getJson(MockHttpServletRequestBuilder builder) throws Exception {

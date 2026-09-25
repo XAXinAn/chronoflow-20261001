@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import type { EventDetail } from '../api/types';
@@ -115,29 +115,6 @@ export function EventEditorScreen({
 
   const patch = (next: Partial<EventDraft>) => setDraft((current) => ({ ...current, ...next }));
 
-  const dirty = useMemo(() => {
-    if (isEdit) {
-      // 编辑态没法简单比对（详情还没回来时 draft 是空的），保守地认为有改动
-      return true;
-    }
-    const base = emptyDraft();
-    return (
-      JSON.stringify({ ...draft, place: draft.place?.name ?? null })
-      !== JSON.stringify({ ...base, place: null })
-    );
-  }, [draft, isEdit]);
-
-  const requestCancel = () => {
-    if (!dirty) {
-      onCancel();
-      return;
-    }
-    Alert.alert('放弃未保存的日程？', '返回后本次填写的内容不会保留。', [
-      { text: '继续编辑', style: 'cancel' },
-      { text: '放弃', style: 'destructive', onPress: onCancel },
-    ]);
-  };
-
   const isRecurring = Boolean(detail?.rrule);
 
   const persist = async (scope: 'THIS' | 'ALL') => {
@@ -225,7 +202,8 @@ export function EventEditorScreen({
     <Screen>
       <EditorHeader
         title={isEdit ? '编辑日程' : '新建日程'}
-        onCancel={requestCancel}
+        // 取消就是取消：不再弹「放弃未保存的修改？」——用户已经明确表达要退出了
+        onCancel={onCancel}
         onSave={() => void save()}
         saving={saving}
       />

@@ -26,6 +26,8 @@ export function OrgTabScreen({ onOpenAccounts }: { onOpenAccounts: () => void })
     refreshOrgAccounts,
     claimOrgAccount,
     orgApi,
+    orgFocusDateKey,
+    setOrgFocusDateKey,
   } = useAppSessionState();
   const [error, setError] = useState<string | null>(null);
 
@@ -90,6 +92,12 @@ export function OrgTabScreen({ onOpenAccounts }: { onOpenAccounts: () => void })
   }
 
   return (
-    <OrgEventsScreen api={api} orgName={active.orgName} onOpenAccounts={onOpenAccounts} />
+    <OrgEventsScreen
+      api={api}
+      orgName={active.orgName}
+      onOpenAccounts={onOpenAccounts}
+      focusDateKey={orgFocusDateKey}
+      onFocusApplied={() => setOrgFocusDateKey(null)}
+    />
   );
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as ImagePicker from 'expo-image-picker';
 import {
   ActivityIndicator,
   Pressable,
@@ -48,10 +49,16 @@ export function AgendaScreen({
   onCreateEvent,
   onOpenEvent,
   onOpenTask,
+  onOpenOrgEvent,
+  onOpenAgent,
 }: {
   onCreateEvent: (dateKey: string) => void;
   onOpenEvent: (eventId: number, dateKey: string, occurrenceDate: string | null) => void;
   onOpenTask: (taskId: number) => void;
+  /** 组织日程结果：切到那个组织的视图并选中那天（只读，进不了个人编辑页） */
+  onOpenOrgEvent: (identityId: number, dateKey: string) => void;
+  /** 智能助手入口（spec §11 阶段三预留） */
+  onOpenAgent: (payload?: { photoUrl?: string }) => void;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -75,6 +82,7 @@ export function AgendaScreen({
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [jumpOpen, setJumpOpen] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
   /** 滚轮里的草稿日期：滚动过程不立刻跳，点「确定」才落到日历上 */
   const [jumpDraft, setJumpDraft] = useState(selectedDateKey);
 
@@ -185,8 +193,42 @@ export function AgendaScreen({
       onOpenTask(item.id);
       return;
     }
+    if (item.type === 'ORG_EVENT') {
+      if (item.identityId != null) {
+        onOpenOrgEvent(item.identityId, resultDateKey(item) ?? selectedDateKey);
+      }
+      return;
+    }
     const dateKey = resultDateKey(item) ?? selectedDateKey;
     onOpenEvent(item.id, dateKey, item.occurrenceDate ?? null);
+  };
+
+  /**
+   * 拍照 → 上传 → 交给小安（spec §11 阶段三）。
+   *
+   * <p>照片先走已经建好的上传通道存下来；识别等模型接入。
+   * 所以这里的失败提示只可能是「相机权限 / 上传失败」，不会假装识别成功。
+   */
+  const shootPhoto = async () => {
+    setError(null);
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      setError('需要相机权限才能拍照');
+      return;
+    }
+    const shot = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    if (shot.canceled || shot.assets.length === 0) {
+      return;
+    }
+    setPhotoBusy(true);
+    try {
+      const uploaded = await api.uploadImage(shot.assets[0].uri);
+      onOpenAgent({ photoUrl: uploaded.url });
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : '照片上传失败');
+    } finally {
+      setPhotoBusy(false);
+    }
   };
 
   const selectedHoliday = holidayName(holidays, selectedDateKey);
@@ -221,6 +263,24 @@ export function AgendaScreen({
             </Pressable>
           ) : null}
         </View>
+
+        {/* 智能助手入口：紧挨搜索框（spec §11 阶段三的预留位） */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="智能助手"
+          onPress={() => onOpenAgent()}
+          style={({ pressed }) => [
+            styles.agentEntry,
+            {
+              backgroundColor: theme.color.surfaceRaised,
+              borderColor: theme.color.border,
+              borderRadius: theme.radius.card,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Ionicons name="sparkles-outline" size={18} color={theme.color.textPrimary} />
+        </Pressable>
       </View>
 
       {searchActive ? (
@@ -298,6 +358,7 @@ export function AgendaScreen({
             holidayMarks={holidayMarks}
             onSelectDate={setSelectedDateKey}
             onChangeMonth={changeMonth}
+            onToday={() => jumpToDate(today)}
           />
 
           <View style={[styles.divider, { backgroundColor: theme.color.border }]} />
@@ -403,6 +464,27 @@ export function AgendaScreen({
 
       {!searchActive ? (
         <>
+          {/* 拍照：交给小安识别（模型未接入，照片先存下来） */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="拍照"
+            onPress={() => void shootPhoto()}
+            style={({ pressed }) => [
+              styles.cameraFab,
+              {
+                backgroundColor: theme.color.surfaceRaised,
+                borderColor: theme.color.border,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+          >
+            {photoBusy ? (
+              <ActivityIndicator color={theme.color.textPrimary} />
+            ) : (
+              <Ionicons name="camera-outline" size={24} color={theme.color.textPrimary} />
+            )}
+          </Pressable>
+
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="跳到指定日期"
@@ -449,8 +531,22 @@ export function AgendaScreen({
 }
 
 const styles = StyleSheet.create({
-  searchBar: { paddingHorizontal: 16, paddingBottom: 8 },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  agentEntry: {
+    width: 40,
+    height: 40,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   searchField: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -490,6 +586,18 @@ const styles = StyleSheet.create({
     // 位于新建按钮上方，留出 12px 间隔
     bottom: 24 + 56 + 12,
     // 与新建按钮同尺寸：两个悬浮按钮一大一小会显得是没对齐的失误
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraFab: {
+    position: 'absolute',
+    right: 20,
+    // 再往上排一个：与「跳到指定日期」同样间隔 12px
+    bottom: 24 + (56 + 12) * 2,
     width: 56,
     height: 56,
     borderRadius: 28,

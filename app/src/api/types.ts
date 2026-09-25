@@ -167,7 +167,8 @@ export type ReceiptStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'COMPLETED';
  * 所以这里的可选字段一律兼容 `undefined`。
  */
 export interface SearchResultItem {
-  type: 'EVENT' | 'TASK';
+  /** ORG_EVENT = 组织下发给我的组织日程（只读，点开跳进所属组织） */
+  type: 'EVENT' | 'TASK' | 'ORG_EVENT';
   id: number;
   title: string;
   /** 日程开始时间；重复日程给的是最近一次实例 */
@@ -184,6 +185,10 @@ export interface SearchResultItem {
   recurring?: boolean | null;
   /** 命中重复实例的日期；点进去应打开「这一次」而不是整条序列 */
   occurrenceDate?: string | null;
+  /** 组织日程所属的组织身份；个人条目为 null。App 用它切到对应组织视图 */
+  identityId?: number | null;
+  orgId?: number | null;
+  orgName?: string | null;
 }
 
 /** 节假日与调休中的一天（spec §5.11）。 */

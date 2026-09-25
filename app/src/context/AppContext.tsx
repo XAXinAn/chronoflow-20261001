@@ -25,6 +25,9 @@ interface AppContextValue {
   /** 组织 tab 当前展示哪一个组织；null 表示还没进入任何组织视图 */
   activeOrgIdentityId: number | null;
   setActiveOrgIdentityId: (identityId: number | null) => void;
+  /** 从检索结果跳进组织视图时要定位的日期；消费后由组织页清空 */
+  orgFocusDateKey: string | null;
+  setOrgFocusDateKey: (dateKey: string | null) => void;
   /** 从服务端刷新「我的组织账号」列表（保留本地令牌） */
   refreshOrgAccounts: () => Promise<StoredOrgAccount[]>;
   /** 认领组织账号：登录成功即绑定成功，并把令牌存进登录记录 */
@@ -54,6 +57,7 @@ export function AppProvider({
   const [session, setSession] = useState<StoredSession | null>(null);
   const [orgAccounts, setOrgAccounts] = useState<StoredOrgAccount[]>([]);
   const [activeOrgIdentityId, setActiveOrgIdentityId] = useState<number | null>(null);
+  const [orgFocusDateKey, setOrgFocusDateKey] = useState<string | null>(null);
   // 每个组织账号一个客户端：令牌各自独立，互不影响（不同组织的视图必须隔离）
   const orgClients = useRef(new Map<number, { client: ApiClient; api: Endpoints }>());
 
@@ -175,6 +179,8 @@ export function AppProvider({
       orgAccounts,
       activeOrgIdentityId,
       setActiveOrgIdentityId,
+      orgFocusDateKey,
+      setOrgFocusDateKey,
       refreshOrgAccounts,
       claimOrgAccount,
       unlinkOrgAccount,
@@ -205,7 +211,7 @@ export function AppProvider({
         setSession(null);
       },
     }),
-    [theme, scheme, runtime, session, orgAccounts, activeOrgIdentityId,
+    [theme, scheme, runtime, session, orgAccounts, activeOrgIdentityId, orgFocusDateKey,
      refreshOrgAccounts, claimOrgAccount, unlinkOrgAccount, orgApi, persist, toggleScheme],
   );
 
@@ -231,12 +237,12 @@ export function useAppScheme(): ColorScheme {
 export function useAppSessionState() {
   const {
     session, setSession, toggleScheme, applyTokenResponse, signOut,
-    orgAccounts, activeOrgIdentityId, setActiveOrgIdentityId,
+    orgAccounts, activeOrgIdentityId, setActiveOrgIdentityId, orgFocusDateKey, setOrgFocusDateKey,
     refreshOrgAccounts, claimOrgAccount, unlinkOrgAccount, orgApi,
   } = useAppContext();
   return {
     session, setSession, toggleScheme, applyTokenResponse, signOut,
-    orgAccounts, activeOrgIdentityId, setActiveOrgIdentityId,
+    orgAccounts, activeOrgIdentityId, setActiveOrgIdentityId, orgFocusDateKey, setOrgFocusDateKey,
     refreshOrgAccounts, claimOrgAccount, unlinkOrgAccount, orgApi,
   };
 }
