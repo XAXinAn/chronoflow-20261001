@@ -12,6 +12,7 @@ from ..deps import current_identity
 from ..errors import envelope
 from ..security import IdentityPrincipal
 from ..services.org import OrgService
+from ..wiring import get_refresh_store
 
 router = APIRouter(prefix="/api/v1", tags=["org"])
 
@@ -32,10 +33,11 @@ class ManagerGrant(BaseModel):
 
 
 class MemberCreate(BaseModel):
-    phone: str
+    """新增成员：**只需要成员唯一识别 ID**（spec §3.1）；手机号、密码都不需要。"""
+
+    memberKey: str
     realName: str
     departmentId: int
-    memberNo: str | None = None
     jobTitle: str | None = None
     orgRole: str | None = None
 
@@ -43,7 +45,7 @@ class MemberCreate(BaseModel):
 class MemberUpdate(BaseModel):
     realName: str | None = None
     departmentId: int | None = None
-    memberNo: str | None = None
+    memberKey: str | None = None
     jobTitle: str | None = None
     orgRole: str | None = None
     status: str | None = None
@@ -83,7 +85,8 @@ class ReceiptRequest(BaseModel):
 
 
 def _service(session: Session = Depends(get_session)) -> OrgService:
-    return OrgService(session)
+    # 注入刷新令牌存储：解绑组织账号时要吊销该身份的会话（spec §3.2）
+    return OrgService(session, get_refresh_store())
 
 
 def _member(principal: IdentityPrincipal, service: OrgService) -> dict:
@@ -235,6 +238,17 @@ def admin_update_member(
 ) -> dict:
     member = _member(principal, service)
     return envelope(service.update_member(member, id, payload.model_dump()))
+
+
+@router.post("/org-admin/members/{id}/unbind")
+def admin_unbind_member(
+    id: int,
+    principal: IdentityPrincipal = Depends(current_identity),
+    service=Depends(_service),
+) -> dict:
+    """解绑成员的组织账号（spec §3.2 / §6.3）：成员换号或被冒领后的恢复路径。"""
+    member = _member(principal, service)
+    return envelope(service.unbind_member(member, id))
 
 
 @router.post("/org-admin/members/import")

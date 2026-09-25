@@ -729,46 +729,38 @@ def seed_root_department(db, org_id: int) -> int:
     return root
 
 
-def seed_org_member(db, org_id: int, root: int, phone: str, role: str = "OWNER") -> int:
-    account = db.execute("INSERT INTO account (phone) VALUES (%s) RETURNING id", (phone,)).fetchone()[0]
-    identity = db.execute(
-        "INSERT INTO identity (account_id, identity_type, org_id, nickname)"
-        " VALUES (%s, 'ORG_MEMBER', %s, %s) RETURNING id",
-        (account, org_id, phone),
-    ).fetchone()[0]
-    db.execute(
-        "INSERT INTO org_member (org_id, identity_id, department_id, real_name, org_role, member_no)"
-        " VALUES (%s, %s, %s, %s, %s, %s)",
-        (org_id, identity, root, f"成员{phone[-4:]}", role, f"M{phone[-4:]}"),
+def seed_org_member(db, org_id: int, root: int, phone: str, role: str = "OWNER") -> str:
+    """造一条「管理员刚导入、还没人认领」的成员记录（spec §3.1），返回成员唯一识别 ID。
+
+    唯一识别 ID 直接用手机号后 4 位拼一个：测试里既能对上人，也能当学号/工号用。
+    注意这里**不建账号、不建身份**——身份要等成员自己认领组织账号时才产生。
+    """
+    member_key = f"M{phone[-4:]}"
+    query = (
+        "INSERT INTO org_member (org_id, department_id, member_key, real_name, org_role, status)"
+        " VALUES (%s, %s, %s, %s, %s, 'ACTIVE')"
     )
-    return identity
+    db.execute(query, (org_id, root, member_key, f"成员{phone[-4:]}", role))
+    return member_key
 
 
-def login_org_identity(client, db, org_id: int, phone: str, identity: int) -> dict:
-    code = send_code(client, phone)
-    select_token = client.post(
-        "/api/v1/auth/login/sms", json={"phone": phone, "code": code}
-    ).json()["data"]["selectToken"]
-    selected = client.post(
-        "/api/v1/auth/identity/select",
-        json={"selectToken": select_token, "identityId": identity, "deviceId": "d"},
+def claim_org_account(client, tokens: dict, org_id: int, member_key: str) -> dict:
+    """用「组织唯一 ID + 成员唯一识别 ID」认领组织账号，返回该组织身份的授权头（spec §3.2）。"""
+    linked = client.post(
+        "/api/v1/org-accounts/login",
+        params={"deviceId": "device-org"},
+        json={"org": str(org_id), "memberKey": member_key},
+        headers=auth(tokens),
     ).json()
-    assert selected["code"] == 0, selected
-    return {"Authorization": f"Bearer {selected['data']['accessToken']}"}
+    assert linked["code"] == 0, linked
+    return {"Authorization": f"Bearer {linked['data']['accessToken']}"}
 
 
-def find_identity(db, org_id: int, phone: str) -> int:
-    return db.execute(
-        "SELECT id FROM identity WHERE account_id = (SELECT id FROM account WHERE phone = %s)"
-        " AND org_id = %s",
-        (phone, org_id),
-    ).fetchone()[0]
-
-
-def add_member(client, headers: dict, phone: str, name: str, department_id: int) -> int:
+def add_member(client, headers: dict, member_key: str, name: str, department_id: int) -> int:
+    """新增成员：只写成员唯一识别 ID（spec §3.1）。"""
     response = client.post(
         "/api/v1/org-admin/members",
-        json={"phone": phone, "realName": name, "departmentId": department_id},
+        json={"memberKey": member_key, "realName": name, "departmentId": department_id},
         headers=headers,
     ).json()
     assert response["code"] == 0, response
@@ -778,8 +770,8 @@ def add_member(client, headers: dict, phone: str, name: str, department_id: int)
 def test_department_level_limit(client, db) -> None:
     org_id = create_org(client, admin_login(client), "PYLVL", "py_lvl_admin")
     root = seed_root_department(db, org_id)
-    identity = seed_org_member(db, org_id, root, "13900002010")
-    headers = login_org_identity(client, db, org_id, "13900002010", identity)
+    member_key = seed_org_member(db, org_id, root, "13900002010")
+    headers = claim_org_account(client, register(client, "13900002010"), org_id, member_key)
 
     parent = root
     for level in range(2, 6):
@@ -802,8 +794,8 @@ def test_department_level_limit(client, db) -> None:
 def test_department_manager_scope_is_recursive(client, db) -> None:
     org_id = create_org(client, admin_login(client), "PYSCOPE", "py_scope_admin")
     root = seed_root_department(db, org_id)
-    owner_identity = seed_org_member(db, org_id, root, "13900002030")
-    headers = login_org_identity(client, db, org_id, "13900002030", owner_identity)
+    owner_key = seed_org_member(db, org_id, root, "13900002030")
+    headers = claim_org_account(client, register(client, "13900002030"), org_id, owner_key)
 
     def make_department(parent: int, name: str) -> int:
         return client.post(
@@ -825,9 +817,7 @@ def test_department_manager_scope_is_recursive(client, db) -> None:
     add_member(client, headers, "13900002032", "后端同学", backend)
     add_member(client, headers, "13900002033", "市场同学", market)
 
-    tech_headers = login_org_identity(
-        client, db, org_id, "13900002031", find_identity(db, org_id, "13900002031")
-    )
+    tech_headers = claim_org_account(client, register(client, "13900002031"), org_id, "13900002031")
     current = client.get("/api/v1/org/current", headers=tech_headers).json()["data"]
     assert current["orgAdmin"] is False
     # 权限范围 = 技术中心 + 后端组，不含市场部
@@ -858,8 +848,8 @@ def test_department_manager_scope_is_recursive(client, db) -> None:
 def test_dispatch_snapshot_excludes_new_members(client, db) -> None:
     org_id = create_org(client, admin_login(client), "PYSNAP", "py_snap_admin")
     root = seed_root_department(db, org_id)
-    owner_identity = seed_org_member(db, org_id, root, "13900002040")
-    headers = login_org_identity(client, db, org_id, "13900002040", owner_identity)
+    owner_key = seed_org_member(db, org_id, root, "13900002040")
+    headers = claim_org_account(client, register(client, "13900002040"), org_id, owner_key)
 
     add_member(client, headers, "13900002041", "老成员", root)
     dispatched = client.post(
@@ -878,15 +868,11 @@ def test_dispatch_snapshot_excludes_new_members(client, db) -> None:
     # 下发之后加入的新成员不应补收历史日程
     add_member(client, headers, "13900002042", "新成员", root)
     window = {"start": "2026-10-01T00:00:00+08:00", "end": "2026-11-01T00:00:00+08:00"}
-    new_headers = login_org_identity(
-        client, db, org_id, "13900002042", find_identity(db, org_id, "13900002042")
-    )
+    new_headers = claim_org_account(client, register(client, "13900002042"), org_id, "13900002042")
     assert client.get("/api/v1/org/events", params=window, headers=new_headers).json()["data"] == []
 
     # 老成员能看到并提交回执
-    old_headers = login_org_identity(
-        client, db, org_id, "13900002041", find_identity(db, org_id, "13900002041")
-    )
+    old_headers = claim_org_account(client, register(client, "13900002041"), org_id, "13900002041")
     old_events = client.get("/api/v1/org/events", params=window, headers=old_headers).json()["data"]
     assert len(old_events) == 1
     receipt = client.post(
@@ -896,3 +882,129 @@ def test_dispatch_snapshot_excludes_new_members(client, db) -> None:
     ).json()
     assert receipt["code"] == 0, receipt
     assert receipt["data"]["receiptStatus"] == "ACCEPTED"
+
+
+def test_org_account_claim_list_and_unlink(client, db) -> None:
+    """组织账号的认领 / 列表 / 解绑（spec §3.1 / §3.2 / §4.2.5）。"""
+    org_id = create_org(client, admin_login(client), "PYCLAIM", "py_claim_admin")
+    root = seed_root_department(db, org_id)
+    member_key = seed_org_member(db, org_id, root, "13900002050")
+    tokens = register(client, "13900002050")
+
+    # 认领前：列表为空，成员记录还没有组织身份（身份由认领产生，不由管理员预建）
+    assert client.get("/api/v1/org-accounts", headers=auth(tokens)).json()["data"] == []
+    assert (
+        db.execute(
+            "SELECT identity_id FROM org_member WHERE org_id = %s AND member_key = %s",
+            (org_id, member_key),
+        ).fetchone()[0]
+        is None
+    )
+
+    # 用组织编码认领（数字 ID 也认，见 Java 侧对齐的实现）
+    linked = client.post(
+        "/api/v1/org-accounts/login",
+        params={"deviceId": "device-1"},
+        json={"org": "PYCLAIM", "memberKey": member_key},
+        headers=auth(tokens),
+    ).json()
+    assert linked["code"] == 0, linked
+    account = linked["data"]["account"]
+    assert account["orgCode"] == "PYCLAIM"
+    assert account["memberKey"] == member_key
+    org_headers = {"Authorization": f"Bearer {linked['data']['accessToken']}"}
+    assert client.get("/api/v1/org/current", headers=org_headers).json()["code"] == 0
+
+    listed = client.get("/api/v1/org-accounts", headers=auth(tokens)).json()["data"]
+    assert [item["identityId"] for item in listed] == [account["identityId"]]
+    assert listed[0]["lastLoginAt"] is not None
+
+    # 重复认领是幂等的：不产生第二条身份
+    again = client.post(
+        "/api/v1/org-accounts/login",
+        params={"deviceId": "device-1"},
+        json={"org": "PYCLAIM", "memberKey": member_key},
+        headers=auth(tokens),
+    ).json()
+    assert again["code"] == 0
+    assert again["data"]["account"]["identityId"] == account["identityId"]
+    assert (
+        db.execute(
+            "SELECT count(*) FROM identity WHERE account_id ="
+            " (SELECT account_id FROM identity WHERE id = %s) AND org_id = %s",
+            (account["identityId"], org_id),
+        ).fetchone()[0]
+        == 1
+    )
+
+    # 已被认领的组织账号：别的个人账号认领会被拒（否则报出学号就能顶掉别人）
+    other = register(client, "13900002051")
+    denied = client.post(
+        "/api/v1/org-accounts/login",
+        params={"deviceId": "device-2"},
+        json={"org": str(org_id), "memberKey": member_key},
+        headers=auth(other),
+    ).json()
+    assert denied["code"] == 20003
+
+    # 但同组织里的另一个成员照样能认领：绑定是按成员隔离的
+    # （角色给 MEMBER：一个组织只能有一个 OWNER，那是唯一约束）
+    other_key = seed_org_member(db, org_id, root, "13900002052", role="MEMBER")
+    assert (
+        client.post(
+            "/api/v1/org-accounts/login",
+            params={"deviceId": "device-2"},
+            json={"org": str(org_id), "memberKey": other_key},
+            headers=auth(other),
+        ).json()["code"]
+        == 0
+    )
+    assert len(client.get("/api/v1/org-accounts", headers=auth(other)).json()["data"]) == 1
+
+    # 解绑：登录记录消失、组织视图不可用、成员记录保留且回到未认领状态
+    assert (
+        client.delete(
+            f"/api/v1/org-accounts/{account['identityId']}", headers=auth(tokens)
+        ).json()["code"]
+        == 0
+    )
+    assert client.get("/api/v1/org-accounts", headers=auth(tokens)).json()["data"] == []
+    assert client.get("/api/v1/org/current", headers=org_headers).json()["code"] != 0
+    assert (
+        db.execute(
+            "SELECT identity_id FROM org_member WHERE org_id = %s AND member_key = %s",
+            (org_id, member_key),
+        ).fetchone()[0]
+        is None
+    )
+
+    # 解绑后可以用同样的凭据重新认领（复用原身份，不会撞唯一键）
+    reclaimed = client.post(
+        "/api/v1/org-accounts/login",
+        params={"deviceId": "device-1"},
+        json={"org": "PYCLAIM", "memberKey": member_key},
+        headers=auth(tokens),
+    ).json()
+    assert reclaimed["code"] == 0
+    assert reclaimed["data"]["account"]["identityId"] == account["identityId"]
+
+
+def test_admin_can_unbind_member_account(client, db) -> None:
+    """组织管理员解绑成员的组织账号：成员换号或被冒领后的恢复路径（spec §6.3）。"""
+    org_id = create_org(client, admin_login(client), "PYADMUNB", "py_admunb_admin")
+    root = seed_root_department(db, org_id)
+    owner_key = seed_org_member(db, org_id, root, "13900002060")
+    owner_tokens = register(client, "13900002060")
+    owner_headers = claim_org_account(client, owner_tokens, org_id, owner_key)
+    member_id = db.execute(
+        "SELECT id FROM org_member WHERE org_id = %s AND member_key = %s", (org_id, owner_key)
+    ).fetchone()[0]
+
+    unbound = client.post(
+        f"/api/v1/org-admin/members/{member_id}/unbind", headers=owner_headers
+    ).json()
+
+    assert unbound["code"] == 0, unbound
+    assert unbound["data"]["bound"] is False
+    assert unbound["data"]["memberKey"] == owner_key
+    assert client.get("/api/v1/org-accounts", headers=auth(owner_tokens)).json()["data"] == []

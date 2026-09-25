@@ -55,7 +55,7 @@ public class AuthService {
      * 手机号 + 密码登录。走与短信登录完全相同的身份列表流程，
      * 便于账号同时拥有个人身份与多个组织身份时统一选择（spec §3.3）。
      */
-    public SmsLoginResponse loginByPassword(String phone, String password) {
+    public SmsLoginResponse loginByPassword(String phone, String password, String deviceId) {
         Account account = accountMapper.selectOne(
                 new LambdaQueryWrapper<Account>().eq(Account::getPhone, phone));
         if (account == null || account.getPasswordHash() == null) {
@@ -67,14 +67,14 @@ public class AuthService {
         if (!passwordEncoder.matches(password, account.getPasswordHash())) {
             throw BizException.of(ErrorCode.PASSWORD_MISMATCH, "手机号或密码不正确");
         }
-        return issueLoginChallenge(account);
+        return issueLoginChallenge(account, deviceId);
     }
 
     /**
      * 手机号 + 验证码登录。注册与登录合一：手机号首次登录时自动创建账号。
      */
     @Transactional
-    public SmsLoginResponse loginBySms(String phone, String code) {
+    public SmsLoginResponse loginBySms(String phone, String code, String deviceId) {
         verificationCodeService.verify(phone, code);
 
         Account account = accountMapper.selectOne(
@@ -89,22 +89,27 @@ public class AuthService {
             accountMapper.updateById(account);
         }
 
-        return issueLoginChallenge(account);
+        return issueLoginChallenge(account, deviceId);
     }
 
     /**
-     * 登录成功后的统一分支：无身份则下发注册令牌，有身份则下发选择身份令牌。
+     * 登录成功后的统一分支（spec §3.2）：**只认个人身份**。
+     *
+     * <p>没有个人身份就下发注册令牌引导创建；有就直接签发它的令牌对。
+     * 组织身份不参与登录——它只能通过「登录组织账号」产生（§4.2.5），
+     * 因此登录页永远不会有「选身份」这一步。
      */
-    private SmsLoginResponse issueLoginChallenge(Account account) {
-        List<IdentityView> identities = identityMapper.selectIdentityViews(account.getId());
-        if (identities.isEmpty()) {
+    private SmsLoginResponse issueLoginChallenge(Account account, String deviceId) {
+        Identity personal = identityMapper.selectOne(new LambdaQueryWrapper<Identity>()
+                .eq(Identity::getAccountId, account.getId())
+                .eq(Identity::getIdentityType, Identity.TYPE_PERSONAL)
+                .last("LIMIT 1"));
+        if (personal == null) {
             String registerToken = tokenService.issueScopedToken(
                     account.getId(), TokenScope.REGISTER, tokenService.properties().getRegisterTokenTtl());
-            return new SmsLoginResponse(true, registerToken, false, null, List.of());
+            return SmsLoginResponse.register(registerToken);
         }
-        String selectToken = tokenService.issueScopedToken(
-                account.getId(), TokenScope.IDENTITY_SELECT, tokenService.properties().getSelectTokenTtl());
-        return new SmsLoginResponse(false, null, true, selectToken, identities);
+        return SmsLoginResponse.loggedIn(selectIdentity(account.getId(), personal.getId(), deviceId));
     }
 
     /**

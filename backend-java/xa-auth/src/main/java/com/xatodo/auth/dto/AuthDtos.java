@@ -32,17 +32,30 @@ public final class AuthDtos {
             @NotBlank(message = "手机号不能为空")
             @Pattern(regexp = PHONE_PATTERN, message = "手机号格式不正确")
             String phone,
-            @NotBlank(message = "验证码不能为空") String code) {
+            @NotBlank(message = "验证码不能为空") String code,
+            /** 设备标识：令牌与设备绑定（单身份最多 5 台，spec §3.5） */
+            @NotBlank(message = "deviceId 不能为空") String deviceId) {
     }
 
     /**
-     * 登录结果：首次登录需要创建个人身份；已有身份则需要选择。
+     * 登录结果（spec §3.2）：**App 只登录个人账号**。
+     *
+     * <ul>
+     *   <li>还没有个人身份 → `needRegister=true` + `registerToken`，引导创建个人身份；</li>
+     *   <li>已有个人身份 → 直接给出该身份的令牌对（`session`），不再有「选身份」这一步。</li>
+     * </ul>
      */
     public record SmsLoginResponse(boolean needRegister,
                                    String registerToken,
-                                   boolean needSelectIdentity,
-                                   String selectToken,
-                                   List<IdentityView> identities) {
+                                   TokenResponse session) {
+
+        public static SmsLoginResponse register(String registerToken) {
+            return new SmsLoginResponse(true, registerToken, null);
+        }
+
+        public static SmsLoginResponse loggedIn(TokenResponse session) {
+            return new SmsLoginResponse(false, null, session);
+        }
     }
 
     public record IdentitySelectRequest(
@@ -102,7 +115,8 @@ public final class AuthDtos {
     public record PasswordLoginRequest(
             @NotBlank(message = "手机号不能为空")
             @Pattern(regexp = PHONE_PATTERN, message = "手机号格式不正确") String phone,
-            @NotBlank(message = "密码不能为空") String password) {
+            @NotBlank(message = "密码不能为空") String password,
+            @NotBlank(message = "deviceId 不能为空") String deviceId) {
     }
 
     public record NotificationPrefsRequest(

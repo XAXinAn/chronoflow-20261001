@@ -24,11 +24,14 @@ class SendSmsCodeRequest(BaseModel):
 class SmsLoginRequest(BaseModel):
     phone: str = Field(pattern=PHONE_PATTERN)
     code: str = Field(min_length=1)
+    # 令牌与设备绑定（单身份最多 5 台，spec §3.5）：登录直接签发令牌，所以要带设备标识
+    deviceId: str = Field(min_length=1)
 
 
 class PasswordLoginRequest(BaseModel):
     phone: str = Field(pattern=PHONE_PATTERN)
     password: str = Field(min_length=1)
+    deviceId: str = Field(min_length=1)
 
 
 class IdentitySelectRequest(BaseModel):
@@ -72,14 +75,14 @@ def send_sms_code(
 
 @router.post("/auth/login/sms")
 def login_by_sms(payload: SmsLoginRequest, service: AuthService = Depends(get_auth_service)) -> dict:
-    return envelope(service.login_by_sms(payload.phone, payload.code))
+    return envelope(service.login_by_sms(payload.phone, payload.code, payload.deviceId))
 
 
 @router.post("/auth/login/password")
 def login_by_password(
     payload: PasswordLoginRequest, service: AuthService = Depends(get_auth_service)
 ) -> dict:
-    return envelope(service.login_by_password(payload.phone, payload.password))
+    return envelope(service.login_by_password(payload.phone, payload.password, payload.deviceId))
 
 
 @router.post("/auth/identity/select")

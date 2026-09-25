@@ -173,8 +173,9 @@ class BackendFoundationTest {
     private long insertMember(long orgId, long departmentId, String phone, String realName, String role) {
         long identityId = createOrgIdentity(phone, orgId);
         return jdbcTemplate.queryForObject(
-                "INSERT INTO org_member (org_id, identity_id, department_id, real_name, org_role) "
-                        + "VALUES (?, ?, ?, ?, ?) RETURNING id",
-                Long.class, orgId, identityId, departmentId, realName, role);
+                // member_key 是成员唯一识别 ID（必填）：这里用手机号兜一个，测试只关心唯一性
+                "INSERT INTO org_member (org_id, identity_id, department_id, member_key, real_name,"
+                        + " org_role, status) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE') RETURNING id",
+                Long.class, orgId, identityId, departmentId, phone, realName, role);
     }
 }

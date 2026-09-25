@@ -230,21 +230,16 @@ class AdminModuleTest {
                         + "\"adminUsername\":\"" + adminUsername + "\",\"adminPassword\":\"" + adminUsername + "123\"}");
         long orgId = created.path("data").path("id").asLong();
 
-        // 播种一个部门与组织成员，用于验证组织侧行为
+        // 播种一个部门与「未被认领的组织成员」，用于验证组织侧行为：
+        // 成员身份由本人认领组织账号时产生（spec §3.1 / §3.2）
         Long deptId = jdbcTemplate.queryForObject(
                 "INSERT INTO department (org_id, name, path, level) VALUES (?, '总部', '/0/', 1) RETURNING id",
                 Long.class, orgId);
         jdbcTemplate.update("UPDATE department SET path = '/' || id || '/' WHERE id = ?", deptId);
-        Long accountId = jdbcTemplate.queryForObject(
-                "INSERT INTO account (phone) VALUES (?) RETURNING id", Long.class, ownerPhone);
-        Long identityId = jdbcTemplate.queryForObject(
-                "INSERT INTO identity (account_id, identity_type, org_id, nickname) "
-                        + "VALUES (?, 'ORG_MEMBER', ?, ?) RETURNING id",
-                Long.class, accountId, orgId, ownerPhone);
         jdbcTemplate.update(
-                "INSERT INTO org_member (org_id, identity_id, department_id, real_name, org_role, member_no) "
-                        + "VALUES (?, ?, ?, '测试成员', 'OWNER', ?)",
-                orgId, identityId, deptId, "M" + ownerPhone.substring(7));
+                "INSERT INTO org_member (org_id, department_id, member_key, real_name, org_role, status) "
+                        + "VALUES (?, ?, ?, '测试成员', 'OWNER', 'ACTIVE')",
+                orgId, deptId, ownerPhone);
         return orgId;
     }
 
@@ -252,19 +247,27 @@ class AdminModuleTest {
         return loginOrgMemberWithTokens(phone, orgId).accessToken();
     }
 
+    /**
+     * 认领组织账号并拿该组织的令牌（spec §3.2）。
+     *
+     * <p>测试里手机号同时充当成员唯一识别 ID。
+     */
     private LoginResult loginOrgMemberWithTokens(String phone, long orgId) throws Exception {
         String code = postJson("/api/v1/auth/sms/code", null, "{\"phone\":\"" + phone + "\"}")
                 .path("data").path("debugCode").asText();
-        String selectToken = postJson("/api/v1/auth/login/sms", null,
-                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\"}")
-                .path("data").path("selectToken").asText();
-        long identityId = jdbcTemplate.queryForObject(
-                "SELECT id FROM identity WHERE account_id = (SELECT id FROM account WHERE phone = ?) "
-                        + "AND org_id = ?", Long.class, phone, orgId);
-        JsonNode selected = postJson("/api/v1/auth/identity/select", null,
-                "{\"selectToken\":\"" + selectToken + "\",\"identityId\":" + identityId + ",\"deviceId\":\"dev\"}");
-        return new LoginResult(selected.path("data").path("accessToken").asText(),
-                selected.path("data").path("refreshToken").asText());
+        String registerToken = postJson("/api/v1/auth/login/sms", null,
+                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\",\"deviceId\":\"dev\"}")
+                .path("data").path("registerToken").asText();
+        String personalToken = postJson("/api/v1/identities/personal", registerToken,
+                "{\"nickname\":\"成员" + phone.substring(phone.length() - 4) + "\",\"deviceId\":\"dev\"}")
+                .path("data").path("accessToken").asText();
+
+        String orgCode = jdbcTemplate.queryForObject(
+                "SELECT code FROM organization WHERE id = ?", String.class, orgId);
+        JsonNode claimed = postJson("/api/v1/org-accounts/login?deviceId=dev", personalToken,
+                "{\"org\":\"" + orgCode + "\",\"memberKey\":\"" + phone + "\"}");
+        return new LoginResult(claimed.path("data").path("accessToken").asText(),
+                claimed.path("data").path("refreshToken").asText());
     }
 
     private JsonNode getJson(String path, String token) throws Exception {

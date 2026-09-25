@@ -77,7 +77,7 @@ class AuthService:
         self._codes.clear_verify_failure(phone)
 
     # -------------------------------------------------------------- 登录
-    def login_by_sms(self, phone: str, code: str) -> dict:
+    def login_by_sms(self, phone: str, code: str, device_id: str | None) -> dict:
         self._verify_code(phone, code)
         account = self._session.scalar(select(Account).where(Account.phone == phone))
         if account is None:
@@ -95,9 +95,9 @@ class AuthService:
                 text("UPDATE account SET last_login_at = now() WHERE id = :id"), {"id": account.id}
             )
         self._session.commit()
-        return self._issue_login_challenge(account.id)
+        return self._issue_login_challenge(account.id, device_id)
 
-    def login_by_password(self, phone: str, password: str) -> dict:
+    def login_by_password(self, phone: str, password: str, device_id: str | None) -> dict:
         account = self._session.scalar(select(Account).where(Account.phone == phone))
         if account is None or not account.password_hash:
             raise ApiError(ErrorCode.PASSWORD_NOT_SET)
@@ -105,26 +105,27 @@ class AuthService:
             raise ApiError(ErrorCode.ACCOUNT_DISABLED)
         if not bcrypt.checkpw(password.encode(), account.password_hash.encode()):
             raise ApiError(ErrorCode.PASSWORD_MISMATCH, "手机号或密码不正确")
-        return self._issue_login_challenge(account.id)
+        return self._issue_login_challenge(account.id, device_id)
 
-    def _issue_login_challenge(self, account_id: int) -> dict:
-        identities = self.list_identity_views(account_id)
-        if not identities:
+    def _issue_login_challenge(self, account_id: int, device_id: str | None) -> dict:
+        """登录成功后的统一分支（spec §3.2）：**只认个人身份**。
+
+        没有个人身份就下发注册令牌引导创建；有就直接签发它的令牌对。
+        组织身份不参与登录——它只能通过「登录组织账号」产生（§4.2.5），
+        因此登录页永远不会有「选身份」这一步。
+        """
+        personal = self._session.scalar(
+            select(Identity).where(
+                Identity.account_id == account_id, Identity.identity_type == "PERSONAL"
+            )
+        )
+        if personal is None:
             token = issue_scoped_token(account_id, TokenScope.REGISTER, settings.register_token_ttl)
-            return {
-                "needRegister": True,
-                "registerToken": token,
-                "needSelectIdentity": False,
-                "selectToken": None,
-                "identities": [],
-            }
-        token = issue_scoped_token(account_id, TokenScope.IDENTITY_SELECT, settings.select_token_ttl)
+            return {"needRegister": True, "registerToken": token, "session": None}
         return {
             "needRegister": False,
             "registerToken": None,
-            "needSelectIdentity": True,
-            "selectToken": token,
-            "identities": identities,
+            "session": self.select_identity(account_id, personal.id, device_id),
         }
 
     # -------------------------------------------------------------- 身份
@@ -134,7 +135,7 @@ class AuthService:
                 """
                 SELECT i.id AS identity_id, i.identity_type, i.nickname, i.avatar_url, i.timezone,
                        o.id AS org_id, o.name AS org_name, o.logo_url AS org_logo_url,
-                       d.name AS department_name, m.member_no, m.org_role
+                       d.name AS department_name, m.member_key, m.org_role
                 FROM identity i
                   LEFT JOIN organization o ON o.id = i.org_id AND o.deleted_at IS NULL
                   LEFT JOIN org_member m

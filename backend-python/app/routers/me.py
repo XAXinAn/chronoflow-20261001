@@ -97,7 +97,7 @@ _CAMEL_KEYS = {
     "org_id": "orgId",
     "org_name": "orgName",
     "department_name": "departmentName",
-    "member_no": "memberNo",
+    "member_key": "memberKey",
     "org_role": "orgRole",
 }
 

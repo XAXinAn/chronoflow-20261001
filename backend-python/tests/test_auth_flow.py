@@ -13,7 +13,10 @@ def send_code(client, phone: str) -> str:
 
 def register(client, phone: str, nickname: str = "测试用户") -> dict:
     code = send_code(client, phone)
-    login = client.post("/api/v1/auth/login/sms", json={"phone": phone, "code": code}).json()
+    # 登录必须带 deviceId：令牌与设备绑定（spec §3.5）
+    login = client.post(
+        "/api/v1/auth/login/sms", json={"phone": phone, "code": code, "deviceId": "device-1"}
+    ).json()
     assert login["data"]["needRegister"] is True, login
     register_token = login["data"]["registerToken"]
     created = client.post(
@@ -53,7 +56,7 @@ def test_register_token_cannot_access_business_api(client) -> None:
     phone = "13900001002"
     code = send_code(client, phone)
     register_token = client.post(
-        "/api/v1/auth/login/sms", json={"phone": phone, "code": code}
+        "/api/v1/auth/login/sms", json={"phone": phone, "code": code, "deviceId": "device-1"}
     ).json()["data"]["registerToken"]
     response = client.get("/api/v1/me", headers={"Authorization": f"Bearer {register_token}"})
     assert response.status_code == 401
@@ -70,7 +73,9 @@ def test_sms_send_is_rate_limited(client) -> None:
 def test_wrong_code_rejected(client) -> None:
     phone = "13900001004"
     send_code(client, phone)
-    wrong = client.post("/api/v1/auth/login/sms", json={"phone": phone, "code": "000000"}).json()
+    wrong = client.post(
+        "/api/v1/auth/login/sms", json={"phone": phone, "code": "000000", "deviceId": "device-1"}
+    ).json()
     assert wrong["code"] == 20006
 
 
@@ -102,9 +107,13 @@ def test_password_set_and_login(client) -> None:
         "/api/v1/me/password", json={"newPassword": "mySecret123"}, headers=headers
     ).json()["code"] == 0
     login = client.post(
-        "/api/v1/auth/login/password", json={"phone": "13900001007", "password": "mySecret123"}
+        "/api/v1/auth/login/password",
+        json={"phone": "13900001007", "password": "mySecret123", "deviceId": "device-2"},
     ).json()
-    assert login["data"]["needSelectIdentity"] is True
+    # 登录只认个人身份：直接给出个人身份的令牌对，不再有选身份这一步（spec §3.2）
+    assert login["data"]["needRegister"] is False
+    assert login["data"]["session"]["identity"]["identityType"] == "PERSONAL"
+    assert login["data"]["session"]["accessToken"]
     # 已有密码后，不带原密码再改密应被拒绝
     rejected = client.put(
         "/api/v1/me/password", json={"newPassword": "anotherPass123"}, headers=headers

@@ -129,6 +129,17 @@ public class OrgAdminController {
         return ApiResponse.ok(orgMemberService.update(actor, id, request));
     }
 
+    /**
+     * 解绑成员的组织账号（spec §3.2 / §6.3）。
+     *
+     * <p>成员换个人账号、或账号被他人冒领时，靠它把认领关系清掉；成员记录本身保留。
+     */
+    @PostMapping("/members/{id}/unbind")
+    public ApiResponse<OrgMemberResponse> unbindMember(@PathVariable Long id) {
+        OrgMember actor = currentMember();
+        return ApiResponse.ok(orgMemberService.unbind(actor, id));
+    }
+
     // -------------------------------------------------------------- 组织日程
 
     @PostMapping("/events")

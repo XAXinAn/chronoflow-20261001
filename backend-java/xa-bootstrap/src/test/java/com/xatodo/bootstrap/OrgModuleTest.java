@@ -134,7 +134,7 @@ class OrgModuleTest {
         createMember(fixture, "13700001105", "后端同学", backendId);
         createMember(fixture, "13700001106", "市场同学", marketId);
 
-        String techAdminToken = loginOrgMember("13700001104");
+        String techAdminToken = claimOrgAccount(fixture.orgCode(), "13700001104");
         JsonNode current = getJson("/api/v1/org/current", techAdminToken);
         assertThat(current.path("data").path("orgAdmin").asBoolean()).isFalse();
         assertThat(current.path("data").path("manageableDepartmentIds"))
@@ -165,7 +165,7 @@ class OrgModuleTest {
         long deptId = createDepartment(fixture, fixture.rootDepartmentId(), "研发部");
         long deptAdminMemberId = createMember(fixture, "13700001108", "研发负责人", deptId);
         grantManager(fixture, deptId, deptAdminMemberId);
-        String deptAdminToken = loginOrgMember("13700001108");
+        String deptAdminToken = claimOrgAccount(fixture.orgCode(), "13700001108");
 
         mockMvc.perform(post("/api/v1/org-admin/events")
                         .header("Authorization", "Bearer " + deptAdminToken)
@@ -194,7 +194,7 @@ class OrgModuleTest {
         assertThat(eventId).isPositive();
         assertThat(dispatched.path("data").path("receiptStatus").isMissingNode()).isTrue();
 
-        String memberToken = loginOrgMember("13700001110");
+        String memberToken = claimOrgAccount(fixture.orgCode(), "13700001110");
         JsonNode events = rangeQuery("/api/v1/org/events", memberToken);
         assertThat(events.path("data")).hasSize(1);
         assertThat(events.path("data").get(0).path("title").asText()).isEqualTo("产品评审");
@@ -220,7 +220,7 @@ class OrgModuleTest {
         createMember(fixture, "13700001113", "A部同学", deptA);
         createMember(fixture, "13700001114", "B部同学", deptB);
 
-        String memberToken = loginOrgMember("13700001113");
+        String memberToken = claimOrgAccount(fixture.orgCode(), "13700001113");
 
         mockMvc.perform(post("/api/v1/org-admin/events")
                         .header("Authorization", "Bearer " + memberToken)
@@ -261,12 +261,12 @@ class OrgModuleTest {
                 dispatchBody("历史全员会", "ALL", null, true, null));
 
         createMember(fixture, "13700001117", "新成员", fixture.rootDepartmentId());
-        String newMemberToken = loginOrgMember("13700001117");
+        String newMemberToken = claimOrgAccount(fixture.orgCode(), "13700001117");
 
         JsonNode newMemberEvents = rangeQuery("/api/v1/org/events", newMemberToken);
         assertThat(newMemberEvents.path("data")).isEmpty();
 
-        String oldMemberToken = loginOrgMember("13700001116");
+        String oldMemberToken = claimOrgAccount(fixture.orgCode(), "13700001116");
         assertThat(rangeQuery("/api/v1/org/events", oldMemberToken).path("data")).hasSize(1);
     }
 
@@ -288,7 +288,7 @@ class OrgModuleTest {
         JsonNode second = postJson("/api/v1/org-admin/events", fixture.ownerToken(),
                 dispatchBody("运营例会2", "DEPARTMENT", deptId, true, null));
         long secondEventId = second.path("data").path("eventId").asLong();
-        String memberToken = loginOrgMember("13700001119");
+        String memberToken = claimOrgAccount(fixture.orgCode(), "13700001119");
         postJson("/api/v1/org/events/" + secondEventId + "/receipt", memberToken,
                 "{\"status\":\"DECLINED\",\"remark\":\"有冲突\"}");
 
@@ -304,11 +304,11 @@ class OrgModuleTest {
     void importMembersFromCsvWithPartialFailure() throws Exception {
         Fixture fixture = seedOrg("IMP", "13700001201");
 
-        String csv = "姓名,手机号,邮箱,工号,部门路径,角色\n"
-                + "张三,13700001202,zhangsan@example.com,E2201,总部,MEMBER\n"
-                + "李四,13700001203,,E2202,总部,\n"
-                + "王五,bad-phone,,E2203,总部,\n"
-                + "赵六,13700001202,,E2204,总部,\n";
+        String csv = "姓名,成员唯一识别 ID（学号/工号）,部门路径,角色\n"
+                + "张三,S2201,总部,MEMBER\n"
+                + "李四,S2202,总部,\n"
+                + "王五,,总部,\n"
+                + "赵六,S2201,总部,\n";
 
         JsonNode started = uploadMembers(fixture.ownerToken(), "members.csv", csv, false);
         long batchId = started.path("data").path("batchId").asLong();
@@ -322,12 +322,13 @@ class OrgModuleTest {
         JsonNode rows = finished.path("data").path("rows");
         assertThat(rows).hasSize(4);
         assertThat(rows.get(2).path("status").asText()).isEqualTo("FAILED");
-        assertThat(rows.get(2).path("errorMessage").asText()).contains("手机号格式不正确");
+        // 唯一识别 ID 是组织账号的登录凭据，缺了这行没有意义
+        assertThat(rows.get(2).path("errorMessage").asText()).contains("唯一识别 ID");
         assertThat(rows.get(3).path("status").asText()).isEqualTo("FAILED");
-        assertThat(rows.get(3).path("errorMessage").asText()).contains("已是本组织成员");
+        assertThat(rows.get(3).path("errorMessage").asText()).contains("已经是本组织成员");
 
-        // 成功行的成员可以正常登录并读到自己的组织身份
-        String importedToken = loginOrgMember("13700001202");
+        // 成功行的成员可以认领组织账号并读到自己的组织身份
+        String importedToken = claimOrgAccount(fixture.orgCode(), "S2201", "13700001202");
         assertThat(getJson("/api/v1/org/current", importedToken)
                 .path("data").path("realName").asText()).isEqualTo("张三");
 
@@ -343,8 +344,8 @@ class OrgModuleTest {
     void importAutoCreatesDepartmentPath() throws Exception {
         Fixture fixture = seedOrg("AUTO", "13700001211");
 
-        String csv = "姓名,手机号,邮箱,工号,部门路径,角色\n"
-                + "钱七,13700001212,,E2212,技术中心/后端组,MEMBER\n";
+        String csv = "姓名,成员唯一识别 ID（学号/工号）,部门路径,角色\n"
+                + "钱七,S2212,技术中心/后端组,MEMBER\n";
 
         long batchId = uploadMembers(fixture.ownerToken(), "auto.csv", csv, true)
                 .path("data").path("batchId").asLong();
@@ -363,8 +364,8 @@ class OrgModuleTest {
         assertThat(findByName(tree.path("data"), "总部")).isNotNull();
 
         // 未勾选开关时，路径不存在应逐行失败而不是静默建部门
-        String csv2 = "姓名,手机号,邮箱,工号,部门路径,角色\n"
-                + "孙八,13700001213,,E2213,不存在的部门/子部门,MEMBER\n";
+        String csv2 = "姓名,成员唯一识别 ID（学号/工号）,部门路径,角色\n"
+                + "孙八,S2213,不存在的部门/子部门,MEMBER\n";
         long batchId2 = uploadMembers(fixture.ownerToken(), "nofail.csv", csv2, false)
                 .path("data").path("batchId").asLong();
         JsonNode finished2 = awaitImport(fixture.ownerToken(), batchId2);
@@ -395,7 +396,7 @@ class OrgModuleTest {
         Fixture fixture = seedOrg("EDIT", "13700001231");
         long deptId = createDepartment(fixture, fixture.rootDepartmentId(), "编辑部");
         createMember(fixture, "13700001232", "编辑同学", deptId);
-        String memberToken = loginOrgMember("13700001232");
+        String memberToken = claimOrgAccount(fixture.orgCode(), "13700001232");
 
         long eventId = postJson("/api/v1/org-admin/events", fixture.ownerToken(),
                 dispatchBody("初版标题", "DEPARTMENT", deptId, true, null))
@@ -418,10 +419,15 @@ class OrgModuleTest {
 
     // ---------------------------------------------------------------- fixtures
 
-    private record Fixture(long orgId, long rootDepartmentId, String ownerToken) {
+    private record Fixture(long orgId, String orgCode, long rootDepartmentId, String ownerToken) {
     }
 
-    private Fixture seedOrg(String suffix, String ownerPhone) throws Exception {
+    /**
+     * 造一个组织 + 根部门 + **未被认领的拥有者成员**，再用拥有者的凭据认领组织账号。
+     *
+     * <p>「手机号」在这个测试类里同时充当成员唯一识别 ID（学号/工号）——测试里没必要再造一批编号。
+     */
+    private Fixture seedOrg(String suffix, String ownerMemberKey) throws Exception {
         Long orgId = jdbcTemplate.queryForObject(
                 "INSERT INTO organization (name, code) VALUES (?, ?) RETURNING id",
                 Long.class, "测试组织" + suffix, "ORG" + suffix);
@@ -429,47 +435,45 @@ class OrgModuleTest {
                 "INSERT INTO department (org_id, name, path, level) VALUES (?, '总部', '/0/', 1) RETURNING id",
                 Long.class, orgId);
         jdbcTemplate.update("UPDATE department SET path = '/' || id || '/' WHERE id = ?", rootId);
-
-        Long accountId = jdbcTemplate.queryForObject(
-                "INSERT INTO account (phone) VALUES (?) RETURNING id", Long.class, ownerPhone);
-        Long identityId = jdbcTemplate.queryForObject(
-                "INSERT INTO identity (account_id, identity_type, org_id, nickname) "
-                        + "VALUES (?, 'ORG_MEMBER', ?, '拥有者') RETURNING id",
-                Long.class, accountId, orgId);
+        // 管理员导入成员：只写成员唯一识别 ID（spec §3.1），身份等认领时才产生
         jdbcTemplate.update(
-                "INSERT INTO org_member (org_id, identity_id, department_id, real_name, org_role, member_no) "
-                        + "VALUES (?, ?, ?, '拥有者', 'OWNER', ?)",
-                orgId, identityId, rootId, "OWNER" + suffix);
+                "INSERT INTO org_member (org_id, department_id, member_key, real_name, org_role, status) "
+                        + "VALUES (?, ?, ?, '拥有者', 'OWNER', 'ACTIVE')",
+                orgId, rootId, ownerMemberKey);
 
-        return new Fixture(orgId, rootId, loginOrgMember(ownerPhone, identityId));
+        String orgCode = "ORG" + suffix;
+        return new Fixture(orgId, orgCode, rootId, claimOrgAccount(orgCode, ownerMemberKey));
     }
 
-    private String loginOrgMember(String phone) throws Exception {
+    /** 用手机号注册个人账号，返回个人身份的令牌。 */
+    private String registerPersonalAccount(String phone) throws Exception {
         String code = postJson("/api/v1/auth/sms/code", null, "{\"phone\":\"" + phone + "\"}")
                 .path("data").path("debugCode").asText();
-        String selectToken = postJson("/api/v1/auth/login/sms", null,
-                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\"}")
-                .path("data").path("selectToken").asText();
-        assertThat(selectToken).isNotBlank();
-
-        long identityId = jdbcTemplate.queryForObject(
-                "SELECT id FROM identity WHERE account_id = (SELECT id FROM account WHERE phone = ?) "
-                        + "AND identity_type = 'ORG_MEMBER'", Long.class, phone);
-        return postJson("/api/v1/auth/identity/select", null,
-                "{\"selectToken\":\"" + selectToken + "\",\"identityId\":" + identityId
-                        + ",\"deviceId\":\"dev\"}")
+        String registerToken = postJson("/api/v1/auth/login/sms", null,
+                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\",\"deviceId\":\"dev\"}")
+                .path("data").path("registerToken").asText();
+        return postJson("/api/v1/identities/personal", registerToken,
+                "{\"nickname\":\"用户" + phone.substring(phone.length() - 4) + "\",\"deviceId\":\"dev\"}")
                 .path("data").path("accessToken").asText();
     }
 
-    private String loginOrgMember(String phone, long identityId) throws Exception {
-        String code = postJson("/api/v1/auth/sms/code", null, "{\"phone\":\"" + phone + "\"}")
-                .path("data").path("debugCode").asText();
-        String selectToken = postJson("/api/v1/auth/login/sms", null,
-                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\"}")
-                .path("data").path("selectToken").asText();
-        return postJson("/api/v1/auth/identity/select", null,
-                "{\"selectToken\":\"" + selectToken + "\",\"identityId\":" + identityId
-                        + ",\"deviceId\":\"dev\"}")
+    /**
+     * 认领组织账号并拿该组织的令牌（spec §3.2）：登录动作本身就是绑定动作。
+     *
+     * @param phone 兼作成员唯一识别 ID（见 seedOrg 的说明）
+     */
+    private String claimOrgAccount(String orgCode, String memberKey) throws Exception {
+        return claimOrgAccount(orgCode, memberKey, memberKey);
+    }
+
+    /**
+     * @param memberKey 成员唯一识别 ID（学号/工号）——导入用例里它不再是手机号
+     * @param phone     认领者自己的个人账号手机号
+     */
+    private String claimOrgAccount(String orgCode, String memberKey, String phone) throws Exception {
+        String personalToken = registerPersonalAccount(phone);
+        return postJson("/api/v1/org-accounts/login?deviceId=dev", personalToken,
+                "{\"org\":\"" + orgCode + "\",\"memberKey\":\"" + memberKey + "\"}")
                 .path("data").path("accessToken").asText();
     }
 
@@ -479,10 +483,10 @@ class OrgModuleTest {
                 .path("data").path("id").asLong();
     }
 
-    private long createMember(Fixture fixture, String phone, String realName, long departmentId) throws Exception {
+    private long createMember(Fixture fixture, String memberKey, String realName, long departmentId) throws Exception {
         return postJson("/api/v1/org-admin/members", fixture.ownerToken(),
-                "{\"phone\":\"" + phone + "\",\"realName\":\"" + realName + "\","
-                        + "\"departmentId\":" + departmentId + ",\"memberNo\":\"E" + phone.substring(7) + "\"}")
+                "{\"memberKey\":\"" + memberKey + "\",\"realName\":\"" + realName + "\","
+                        + "\"departmentId\":" + departmentId + "}")
                 .path("data").path("id").asLong();
     }
 

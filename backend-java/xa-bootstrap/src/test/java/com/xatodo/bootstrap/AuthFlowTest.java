@@ -104,7 +104,7 @@ class AuthFlowTest {
         String code = requestSmsCode(phone);
 
         JsonNode login = postJson("/api/v1/auth/login/sms",
-                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\"}");
+                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\",\"deviceId\":\"device-1\"}");
         assertThat(login.path("data").path("needRegister").asBoolean()).isTrue();
         String registerToken = login.path("data").path("registerToken").asText();
         assertThat(registerToken).isNotBlank();
@@ -131,7 +131,7 @@ class AuthFlowTest {
         String phone = "13800000107";
         String code = requestSmsCode(phone);
         String registerToken = postJson("/api/v1/auth/login/sms",
-                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\"}")
+                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\",\"deviceId\":\"device-1\"}")
                 .path("data").path("registerToken").asText();
 
         mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + registerToken))
@@ -160,7 +160,7 @@ class AuthFlowTest {
 
         mockMvc.perform(post("/api/v1/auth/login/sms")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"phone\":\"" + phone + "\",\"code\":\"000000\"}"))
+                        .content("{\"phone\":\"" + phone + "\",\"code\":\"000000\",\"deviceId\":\"device-1\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(20006));
 
@@ -170,50 +170,48 @@ class AuthFlowTest {
     }
 
     @Test
-    @DisplayName("同一账号持有个人与组织身份时，登录返回身份列表并可切换到组织身份")
-    void switchBetweenPersonalAndOrgIdentity() throws Exception {
+    @DisplayName("登录只认个人账号；组织身份靠「认领组织账号」产生（spec §3.1 / §3.2）")
+    void loginReturnsPersonalSessionAndOrgIdentityComesFromClaiming() throws Exception {
         String phone = "13800000104";
-        String code = requestSmsCode(phone);
-        String registerToken = postJson("/api/v1/auth/login/sms",
-                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\"}")
-                .path("data").path("registerToken").asText();
-        JsonNode personal = postJsonWithBearer("/api/v1/identities/personal", registerToken,
-                "{\"nickname\":\"双身份用户\",\"deviceId\":\"device-1\"}");
-        long accountId = personal.path("data").path("identity").path("accountId").asLong();
-        long personalIdentityId = personal.path("data").path("identity").path("identityId").asLong();
+        JsonNode personal = registerAccountWithPersonalIdentity(phone, "双身份用户");
+        String personalToken = personal.path("data").path("accessToken").asText();
 
-        long orgIdentityId = seedOrgIdentity(accountId, "XAKJ104");
-
-        // 再次登录：复用同一账号，直接向 Redis 注入验证码以避开 60 秒发送频控
-        injectCode(phone, "123456");
-        JsonNode login = postJson("/api/v1/auth/login/sms",
-                "{\"phone\":\"" + phone + "\",\"code\":\"123456\"}");
-        assertThat(login.path("data").path("needSelectIdentity").asBoolean()).isTrue();
-        assertThat(login.path("data").path("identities")).hasSize(2);
-        String selectToken = login.path("data").path("selectToken").asText();
-
-        JsonNode switched = postJson("/api/v1/auth/identity/select",
-                "{\"selectToken\":\"" + selectToken + "\",\"identityId\":" + orgIdentityId
-                        + ",\"deviceId\":\"device-1\"}");
-        assertThat(switched.path("data").path("identity").path("orgId").asLong()).isPositive();
-        String orgAccessToken = switched.path("data").path("accessToken").asText();
+        // 管理员先导入成员记录（未认领），成员自己用「组织唯一 ID + 成员标识」认领
+        seedOrgWithUnclaimedMember("XAKJ104", "S1001");
+        JsonNode claimed = postJsonWithBearer("/api/v1/org-accounts/login?deviceId=device-1", personalToken,
+                "{\"org\":\"XAKJ104\",\"memberKey\":\"S1001\"}");
+        assertThat(claimed.path("data").path("account").path("orgName").asText()).isEqualTo("心安科技");
+        String orgAccessToken = claimed.path("data").path("accessToken").asText();
 
         mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + orgAccessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.identityType").value("ORG_MEMBER"))
                 .andExpect(jsonPath("$.data.orgName").value("心安科技"));
 
-        // 切换到不属于本账号的身份必须被拒绝
+        // 再次登录：依旧只登录个人账号，不再有「选身份」这一步
+        injectCode(phone, "123456");
+        JsonNode login = postJson("/api/v1/auth/login/sms",
+                "{\"phone\":\"" + phone + "\",\"code\":\"123456\",\"deviceId\":\"device-2\"}");
+        assertThat(login.path("data").path("needRegister").asBoolean()).isFalse();
+        assertThat(login.path("data").path("session").path("identity").path("identityType").asText())
+                .isEqualTo("PERSONAL");
+        assertThat(login.path("data").path("selectToken").isMissingNode())
+                .as("已经不再需要 selectToken").isTrue();
+
+        // 认领过的组织账号出现在「我的组织账号」里
+        JsonNode accounts = getJsonWithBearer("/api/v1/org-accounts", personalToken);
+        assertThat(accounts.path("data")).hasSize(1);
+        assertThat(accounts.path("data").get(0).path("memberKey").asText()).isEqualTo("S1001");
+
+        // 切换到不属于本账号的身份仍然必须被拒绝
         long otherIdentityId = seedForeignIdentity();
         mockMvc.perform(post("/api/v1/auth/identity/switch")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\""
-                                + switched.path("data").path("refreshToken").asText()
+                                + personal.path("data").path("refreshToken").asText()
                                 + "\",\"targetIdentityId\":" + otherIdentityId + "}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(20009));
-
-        assertThat(personalIdentityId).isPositive();
     }
 
     @Test
@@ -309,17 +307,12 @@ class AuthFlowTest {
                 .path("data").path("refreshToken").asText();
         // 重新登录拿一个带 deviceId 的会话，便于验证设备列表
         injectCode(phone, "246810");
-        String selectToken = postJson("/api/v1/auth/login/sms",
-                "{\"phone\":\"" + phone + "\",\"code\":\"246810\"}")
-                .path("data").path("selectToken").asText();
-        long identityId = jdbcTemplate.queryForObject(
-                "SELECT id FROM identity WHERE account_id = (SELECT id FROM account WHERE phone = ?) "
-                        + "AND identity_type = 'PERSONAL'", Long.class, phone);
-        JsonNode session = postJson("/api/v1/auth/identity/select",
-                "{\"selectToken\":\"" + selectToken + "\",\"identityId\":" + identityId
-                        + ",\"deviceId\":\"device-A\"}");
-        String accessToken = session.path("data").path("accessToken").asText();
-        String sessionRefreshToken = session.path("data").path("refreshToken").asText();
+        // 登录直接签发个人身份的令牌（spec §3.2），deviceId 就是这台设备
+        JsonNode session = postJson("/api/v1/auth/login/sms",
+                "{\"phone\":\"" + phone + "\",\"code\":\"246810\",\"deviceId\":\"device-A\"}")
+                .path("data").path("session");
+        String accessToken = session.path("accessToken").asText();
+        String sessionRefreshToken = session.path("refreshToken").asText();
 
         // 修改资料
         JsonNode updated = patchJson("/api/v1/me", accessToken,
@@ -338,22 +331,25 @@ class AuthFlowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(10002));
 
-        // 用新密码登录（密码登录走与短信登录相同的身份列表流程）
+        // 用新密码登录：同样只认个人身份，直接给出个人身份的令牌对
         JsonNode passwordLogin = postJson("/api/v1/auth/login/password",
-                "{\"phone\":\"" + phone + "\",\"password\":\"mySecret123\"}");
-        assertThat(passwordLogin.path("data").path("needSelectIdentity").asBoolean()).isTrue();
-        assertThat(passwordLogin.path("data").path("identities")).hasSize(1);
+                "{\"phone\":\"" + phone + "\",\"password\":\"mySecret123\",\"deviceId\":\"device-A\"}");
+        assertThat(passwordLogin.path("data").path("needRegister").asBoolean()).isFalse();
+        assertThat(passwordLogin.path("data").path("session").path("identity").path("identityType").asText())
+                .isEqualTo("PERSONAL");
 
         // 错误密码返回 20011
         mockMvc.perform(post("/api/v1/auth/login/password")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"phone\":\"" + phone + "\",\"password\":\"wrong-password\"}"))
+                        .content("{\"phone\":\"" + phone + "\",\"password\":\"wrong-password\","
+                                + "\"deviceId\":\"device-A\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(20011));
 
         // 设备列表包含刚登录的设备
         JsonNode devices = getJsonWithBearer("/api/v1/me/devices", accessToken);
-        assertThat(devices.path("data")).hasSize(2);
+        // device-1（注册时）、device-A（短信登录 + 密码登录各一次）
+        assertThat(devices.path("data")).hasSize(3);
         assertThat(devices.path("data").get(0).path("deviceId").asText()).isNotBlank();
 
         // 踢出 device-A 后其刷新令牌立即失效
@@ -424,7 +420,7 @@ class AuthFlowTest {
     private JsonNode registerAccountWithPersonalIdentity(String phone, String nickname) throws Exception {
         String code = requestSmsCode(phone);
         String registerToken = postJson("/api/v1/auth/login/sms",
-                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\"}")
+                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\",\"deviceId\":\"device-1\"}")
                 .path("data").path("registerToken").asText();
         return postJsonWithBearer("/api/v1/identities/personal", registerToken,
                 "{\"nickname\":\"" + nickname + "\",\"deviceId\":\"device-1\"}");
@@ -461,26 +457,33 @@ class AuthFlowTest {
         return objectMapper.readTree(response);
     }
 
-    private long seedOrgIdentity(long accountId, String orgCode) {
+    /**
+     * 造一个「管理员刚导入、还没人认领」的成员（spec §3.1）。
+     *
+     * <p>刻意不建身份：身份要等成员自己用「组织唯一 ID + 成员标识」认领时才产生。
+     */
+    private void seedOrgWithUnclaimedMember(String orgCode, String memberKey) {
         Long orgId = jdbcTemplate.queryForObject(
                 "INSERT INTO organization (name, code) VALUES ('心安科技', ?) RETURNING id",
                 Long.class, orgCode);
         long departmentId = insertDepartment(orgId);
-        Long identityId = jdbcTemplate.queryForObject(
-                "INSERT INTO identity (account_id, identity_type, org_id, nickname) "
-                        + "VALUES (?, 'ORG_MEMBER', ?, '员工小张') RETURNING id",
-                Long.class, accountId, orgId);
         jdbcTemplate.update(
-                "INSERT INTO org_member (org_id, identity_id, department_id, real_name, org_role, member_no) "
-                        + "VALUES (?, ?, ?, '张三', 'MEMBER', ?)",
-                orgId, identityId, departmentId, "E" + orgCode);
-        return identityId;
+                "INSERT INTO org_member (org_id, department_id, member_key, real_name, org_role, status) "
+                        + "VALUES (?, ?, ?, '张三', 'MEMBER', 'ACTIVE')",
+                orgId, departmentId, memberKey);
     }
 
     private long seedForeignIdentity() {
         Long otherAccountId = jdbcTemplate.queryForObject(
                 "INSERT INTO account (phone) VALUES ('13900000200') RETURNING id", Long.class);
-        return seedOrgIdentity(otherAccountId, "XAKJ200");
+        Long orgId = jdbcTemplate.queryForObject(
+                "INSERT INTO organization (name, code) VALUES ('别人家的公司', 'XAKJ200') RETURNING id",
+                Long.class);
+        long departmentId = insertDepartment(orgId);
+        return jdbcTemplate.queryForObject(
+                "INSERT INTO identity (account_id, identity_type, org_id, nickname) "
+                        + "VALUES (?, 'ORG_MEMBER', ?, '别人的身份') RETURNING id",
+                Long.class, otherAccountId, orgId);
     }
 
     private long insertDepartment(Long orgId) {

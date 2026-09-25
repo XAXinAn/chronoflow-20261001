@@ -13,7 +13,7 @@
                o.name          AS org_name,
                o.logo_url      AS org_logo_url,
                d.name          AS department_name,
-               m.member_no     AS member_no,
+               m.member_key    AS member_key,
                m.org_role      AS org_role
         FROM identity i
                  LEFT JOIN organization o

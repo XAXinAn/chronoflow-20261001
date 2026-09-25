@@ -14,8 +14,10 @@ MAX_DEPARTMENT_LEVEL = 5
 
 
 class OrgService:
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, refresh_tokens=None):
         self._session = session
+        # 解绑组织账号要吊销该身份的会话；没注入时只做身份停用（旧调用点不必全改）
+        self._refresh_tokens = refresh_tokens
 
     # ------------------------------------------------------------ 权限
     def require_membership(self, principal) -> dict:
@@ -239,61 +241,48 @@ class OrgService:
         if role != "MEMBER":
             self.require_org_admin(member)
         created = self._create_member_row(
-            member["org_id"], department["id"], payload["phone"], payload["realName"],
-            payload.get("memberNo"), payload.get("email"), payload.get("jobTitle"), role,
+            member["org_id"], department["id"], payload["memberKey"], payload["realName"],
+            payload.get("jobTitle"), role,
         )
         self._session.commit()
         names = {d["id"]: d["name"] for d in self.all_departments(member["org_id"])}
         return _member_view(created, names, False)
 
     def _create_member_row(
-        self, org_id: int, department_id: int, phone: str, real_name: str,
-        member_no: str | None, email: str | None, job_title: str | None, role: str,
+        self, org_id: int, department_id: int, member_key: str, real_name: str,
+        job_title: str | None, role: str,
     ) -> dict:
-        account = self._session.execute(
-            text("SELECT * FROM account WHERE phone = :phone"), {"phone": phone}
-        ).mappings().first()
-        if account is None:
-            account = self._session.execute(
-                text("INSERT INTO account (phone, email, status) VALUES (:phone, :email, 'ACTIVE')"
-                     " RETURNING *"),
-                {"phone": phone, "email": email},
-            ).mappings().one()
-        elif email and not account["email"]:
-            self._session.execute(
-                text("UPDATE account SET email = :email WHERE id = :id"),
-                {"id": account["id"], "email": email},
-            )
-        existing = self._session.execute(
-            text("SELECT count(*) FROM identity WHERE account_id = :account_id AND org_id = :org_id"),
-            {"account_id": account["id"], "org_id": org_id},
-        ).scalar_one()
-        if existing:
-            raise ApiError(ErrorCode.MEMBER_ALREADY_EXISTS, "该手机号已是本组织成员")
-        identity = self._session.execute(
+        """创建成员：**只写成员唯一识别 ID**，不建账号、不建身份（spec §3.1）。
+
+        身份等成员自己用「组织唯一 ID + 唯一识别 ID」认领组织账号时产生。
+        """
+        key = (member_key or "").strip()
+        if not key:
+            raise ApiError(ErrorCode.PARAM_MISSING, "成员唯一识别 ID 不能为空")
+        duplicated = self._session.execute(
             text(
-                "INSERT INTO identity (account_id, identity_type, org_id, nickname, status)"
-                " VALUES (:account_id, 'ORG_MEMBER', :org_id, :nickname, 'ACTIVE') RETURNING id"
+                "SELECT count(*) FROM org_member WHERE org_id = :org_id AND member_key = :key"
             ),
-            {"account_id": account["id"], "org_id": org_id, "nickname": real_name},
+            {"org_id": org_id, "key": key},
         ).scalar_one()
+        if duplicated:
+            raise ApiError(ErrorCode.MEMBER_ALREADY_EXISTS, f"该唯一识别 ID 已经是本组织成员：{key}")
         row = self._session.execute(
             text(
-                "INSERT INTO org_member (org_id, identity_id, department_id, member_no, real_name,"
-                " org_role, job_title, status) VALUES (:org_id, :identity_id, :department_id,"
-                " :member_no, :real_name, :role, :job_title, 'ACTIVE') RETURNING *"
+                "INSERT INTO org_member (org_id, department_id, member_key, real_name,"
+                " org_role, job_title, status) VALUES (:org_id, :department_id,"
+                " :member_key, :real_name, :role, :job_title, 'ACTIVE') RETURNING *"
             ),
             {
                 "org_id": org_id,
-                "identity_id": identity,
                 "department_id": department_id,
-                "member_no": member_no or None,
+                "member_key": key,
                 "real_name": real_name,
                 "role": role,
                 "job_title": job_title,
             },
         ).mappings().one()
-        return {**dict(row), "identity_id": identity}
+        return dict(row)
 
     def update_member(self, member: dict, member_id: int, payload: dict) -> dict:
         target = self.require_member(member["org_id"], member_id)
@@ -315,7 +304,7 @@ class OrgService:
             text(
                 "UPDATE org_member SET real_name = COALESCE(:real_name, real_name),"
                 " department_id = COALESCE(:department_id, department_id),"
-                " member_no = COALESCE(:member_no, member_no),"
+                " member_key = COALESCE(:member_key, member_key),"
                 " job_title = COALESCE(:job_title, job_title),"
                 " org_role = COALESCE(:org_role, org_role), status = COALESCE(:status, status),"
                 " updated_at = now() WHERE id = :id RETURNING *"
@@ -324,13 +313,13 @@ class OrgService:
                 "id": member_id,
                 "real_name": payload.get("realName"),
                 "department_id": payload.get("departmentId"),
-                "member_no": payload.get("memberNo"),
+                "member_key": payload.get("memberKey"),
                 "job_title": payload.get("jobTitle"),
                 "org_role": payload.get("orgRole"),
                 "status": payload.get("status"),
             },
         ).mappings().one()
-        if payload.get("status"):
+        if payload.get("status") and target["identity_id"] is not None:
             self._session.execute(
                 text("UPDATE identity SET status = :status WHERE id = :id"),
                 {
@@ -341,6 +330,33 @@ class OrgService:
         self._session.commit()
         names = {d["id"]: d["name"] for d in self.all_departments(member["org_id"])}
         return _member_view(row, names, False)
+
+    # ------------------------------------------------------ 组织账号解绑
+
+    def unbind_member(self, member: dict, member_id: int) -> dict:
+        """解绑成员的组织账号（spec §3.2）：成员换号或被冒领后的恢复路径。"""
+        target = self.require_member(member["org_id"], member_id)
+        self.require_can_manage_department(member, target["department_id"])
+        self.unbind_member_row(target)
+        self._session.commit()
+        names = {d["id"]: d["name"] for d in self.all_departments(member["org_id"])}
+        return _member_view(self.require_member(member["org_id"], member_id), names, False)
+
+    def unbind_member_row(self, target: dict) -> None:
+        """清掉认领关系、停用其组织身份并吊销会话。组织侧成员记录保留。"""
+        identity_id = target["identity_id"]
+        if identity_id is not None:
+            self._session.execute(
+                text("UPDATE identity SET status = 'DISABLED' WHERE id = :id"),
+                {"id": identity_id},
+            )
+            if self._refresh_tokens is not None:
+                # 会话必须一起吊销：否则「删掉登录记录」只删了 App 那一份，服务端令牌还能用
+                self._refresh_tokens.revoke_all_for_identity(identity_id)
+        self._session.execute(
+            text("UPDATE org_member SET identity_id = NULL, updated_at = now() WHERE id = :id"),
+            {"id": target["id"]},
+        )
 
     # ------------------------------------------------------------ 组织日程
     def dispatch(self, member: dict, payload: dict) -> dict:
@@ -764,11 +780,9 @@ class OrgService:
     def _import_row(self, member: dict, row: dict, auto_create: bool) -> None:
         if not row.get("realName"):
             raise ApiError(ErrorCode.PARAM_INVALID, "姓名不能为空")
-        if not row.get("phone"):
-            raise ApiError(ErrorCode.PARAM_INVALID, "手机号不能为空")
-        phone = row["phone"]
-        if len(phone) != 11 or not phone.startswith("1") or not phone[1:].isdigit():
-            raise ApiError(ErrorCode.PARAM_INVALID, f"手机号格式不正确: {phone}")
+        # 成员唯一识别 ID 就是组织账号的登录凭据，缺了这行没有任何意义
+        if not row.get("memberKey"):
+            raise ApiError(ErrorCode.PARAM_INVALID, "成员唯一识别 ID（学号/工号）不能为空")
         if not row.get("departmentPath"):
             raise ApiError(ErrorCode.PARAM_INVALID, "部门路径不能为空")
         department = self._resolve_department_path(member, row["departmentPath"], auto_create)
@@ -780,8 +794,7 @@ class OrgService:
         if role != "MEMBER":
             self.require_org_admin(member)
         self._create_member_row(
-            member["org_id"], department["id"], phone, row["realName"],
-            row.get("memberNo"), row.get("email"), None, role,
+            member["org_id"], department["id"], row.get("memberKey"), row["realName"], None, role,
         )
 
     def _resolve_department_path(self, member: dict, path: str, auto_create: bool) -> dict:
@@ -905,7 +918,7 @@ class OrgService:
             "orgTimezone": member["org_timezone"],
             "memberId": member["id"],
             "realName": member["real_name"],
-            "memberNo": member["member_no"],
+            "memberKey": member["member_key"],
             "jobTitle": member["job_title"],
             "orgRole": member["org_role"],
             "departmentId": department["id"],
@@ -962,11 +975,9 @@ def _import_row(row_no: int, values: list[str]) -> dict:
     return {
         "rowNo": row_no,
         "realName": values[0] or None,
-        "phone": values[1] or None,
-        "email": values[2] or None,
-        "memberNo": values[3] or None,
-        "departmentPath": values[4] or None,
-        "role": values[5] or None,
+        "memberKey": values[1] or None,
+        "departmentPath": values[2] or None,
+        "role": values[3] or None,
     }
 
 
@@ -1021,7 +1032,9 @@ def _member_view(row, department_names: dict, is_manager: bool) -> dict:
         "departmentId": row["department_id"],
         "departmentName": department_names.get(row["department_id"]),
         "realName": row["real_name"],
-        "memberNo": row["member_no"],
+        "memberKey": row["member_key"],
+        # 是否已被某个个人账号认领：管理端要能一眼看出谁还没进来
+        "bound": row["identity_id"] is not None,
         "jobTitle": row["job_title"],
         "orgRole": row["org_role"],
         "status": row["status"],

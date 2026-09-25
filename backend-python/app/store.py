@@ -127,6 +127,11 @@ class RefreshTokenStore:
         records.sort(key=lambda item: item.issued_at)
         return records
 
+    def revoke_all_for_identity(self, identity_id: int) -> None:
+        """吊销某身份的全部会话（解绑组织账号、身份被停用时用）。"""
+        for record in self.list_for_identity(identity_id):
+            self.delete(record.token_id)
+
     def revoke_device(self, identity_id: int, device_id: str) -> bool:
         for record in self.list_for_identity(identity_id):
             if record.device_id == device_id:

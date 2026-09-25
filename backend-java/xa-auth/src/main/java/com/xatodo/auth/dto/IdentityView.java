@@ -13,7 +13,8 @@ public class IdentityView {
     private String orgName;
     private String orgLogoUrl;
     private String departmentName;
-    private String memberNo;
+    /** 成员唯一识别 ID（学号/工号） */
+    private String memberKey;
     private String orgRole;
 
     private String timezone;
@@ -82,12 +83,12 @@ public class IdentityView {
         this.departmentName = departmentName;
     }
 
-    public String getMemberNo() {
-        return memberNo;
+    public String getMemberKey() {
+        return memberKey;
     }
 
-    public void setMemberNo(String memberNo) {
-        this.memberNo = memberNo;
+    public void setMemberKey(String memberKey) {
+        this.memberKey = memberKey;
     }
 
     public String getOrgRole() {

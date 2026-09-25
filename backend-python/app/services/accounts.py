@@ -88,6 +88,6 @@ def identity_view(session: Session, account_id: int, identity_id: int) -> dict:
         "orgId": identity.org_id,
         "orgName": None,
         "departmentName": None,
-        "memberNo": None,
+        "memberKey": None,
         "orgRole": None,
     }

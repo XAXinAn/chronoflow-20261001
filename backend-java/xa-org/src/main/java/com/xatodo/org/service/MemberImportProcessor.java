@@ -112,8 +112,8 @@ public class MemberImportProcessor {
                 }
 
                 OrgMember created = orgMemberService.createMemberInternal(
-                        actor.getOrgId(), resolved.department().getId(), row.phone(), row.realName(),
-                        row.memberNo(), row.email(), null, role);
+                        actor.getOrgId(), resolved.department().getId(), row.memberKey(), row.realName(),
+                        null, role);
                 record(batchId, row, ImportRowResult.SUCCESS, null, created.getId());
                 success++;
             } catch (Exception ex) {
@@ -134,11 +134,9 @@ public class MemberImportProcessor {
         if (!StringUtils.hasText(row.realName())) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "姓名不能为空");
         }
-        if (!StringUtils.hasText(row.phone())) {
-            throw BizException.of(ErrorCode.PARAM_INVALID, "手机号不能为空");
-        }
-        if (!PHONE.matcher(row.phone()).matches()) {
-            throw BizException.of(ErrorCode.PARAM_INVALID, "手机号格式不正确: " + row.phone());
+        // 成员唯一识别 ID 就是组织账号的登录凭据，缺了这行没有任何意义
+        if (!StringUtils.hasText(row.memberKey())) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "成员唯一识别 ID（学号/工号）不能为空");
         }
         if (!StringUtils.hasText(row.departmentPath())) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "部门路径不能为空");
@@ -203,9 +201,7 @@ public class MemberImportProcessor {
     private String toJson(ImportRow row) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("realName", row.realName());
-        map.put("phone", row.phone());
-        map.put("email", row.email());
-        map.put("memberNo", row.memberNo());
+        map.put("memberKey", row.memberKey());
         map.put("departmentPath", row.departmentPath());
         map.put("role", row.role());
         try {

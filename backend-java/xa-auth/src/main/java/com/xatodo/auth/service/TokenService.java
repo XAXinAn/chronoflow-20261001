@@ -146,6 +146,11 @@ public class TokenService {
         refreshTokenStore.deleteAllForAccount(accountId);
     }
 
+    /** 吊销某个身份的全部刷新令牌（解绑组织账号、身份被停用时用）。 */
+    public void revokeAllForIdentity(Long identityId) {
+        refreshTokenStore.deleteAllForIdentity(identityId);
+    }
+
     public List<RefreshTokenRecord> listSessionRecords(Long identityId) {
         return refreshTokenStore.listForIdentity(identityId);
     }

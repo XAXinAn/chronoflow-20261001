@@ -1,11 +1,10 @@
 package com.xatodo.org.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.xatodo.auth.entity.Account;
 import com.xatodo.auth.entity.Identity;
-import com.xatodo.auth.mapper.AccountMapper;
 import com.xatodo.auth.mapper.IdentityMapper;
 import com.xatodo.auth.security.IdentityPrincipal;
+import com.xatodo.auth.service.TokenService;
 import com.xatodo.common.api.ErrorCode;
 import com.xatodo.common.exception.BizException;
 import com.xatodo.org.dto.OrgDtos.OrgCurrentResponse;
@@ -46,23 +45,23 @@ public class OrgMemberService {
 
     private final OrgMemberMapper orgMemberMapper;
     private final OrganizationMapper organizationMapper;
-    private final AccountMapper accountMapper;
     private final IdentityMapper identityMapper;
+    private final TokenService tokenService;
     private final DepartmentManagerMapper departmentManagerMapper;
     private final DepartmentService departmentService;
     private final OrgPermissionService permission;
 
     public OrgMemberService(OrgMemberMapper orgMemberMapper,
                             OrganizationMapper organizationMapper,
-                            AccountMapper accountMapper,
                             IdentityMapper identityMapper,
+                            TokenService tokenService,
                             DepartmentManagerMapper departmentManagerMapper,
                             DepartmentService departmentService,
                             OrgPermissionService permission) {
         this.orgMemberMapper = orgMemberMapper;
         this.organizationMapper = organizationMapper;
-        this.accountMapper = accountMapper;
         this.identityMapper = identityMapper;
+        this.tokenService = tokenService;
         this.departmentManagerMapper = departmentManagerMapper;
         this.departmentService = departmentService;
         this.permission = permission;
@@ -78,7 +77,7 @@ public class OrgMemberService {
 
         return new OrgCurrentResponse(
                 org.getId(), org.getName(), org.getCode(), org.getLogoUrl(), org.getTimezone(),
-                member.getId(), member.getRealName(), member.getMemberNo(), member.getJobTitle(),
+                member.getId(), member.getRealName(), member.getMemberKey(), member.getJobTitle(),
                 member.getOrgRole(), department.getId(), department.getName(),
                 departmentPathNames(department),
                 permission.isOrgAdmin(member),
@@ -122,17 +121,24 @@ public class OrgMemberService {
         List<OrgMemberResponse> result = new ArrayList<>();
         for (OrgMember member : members) {
             Department department = departments.get(member.getDepartmentId());
-            result.add(new OrgMemberResponse(
-                    member.getId(), member.getIdentityId(), member.getDepartmentId(),
-                    department == null ? null : department.getName(),
-                    member.getRealName(), member.getMemberNo(), member.getJobTitle(),
-                    member.getOrgRole(), member.getStatus(), managerMemberIds.contains(member.getId())));
+            result.add(toResponse(member, department, managerMemberIds.contains(member.getId())));
         }
         return result;
     }
 
+    /** 成员 → 响应。`bound` 让管理端一眼看出哪些成员还没认领组织账号。 */
+    private OrgMemberResponse toResponse(OrgMember member, Department department, boolean departmentManager) {
+        return new OrgMemberResponse(
+                member.getId(), member.getIdentityId(), member.getIdentityId() != null,
+                member.getDepartmentId(), department == null ? null : department.getName(),
+                member.getRealName(), member.getMemberKey(), member.getJobTitle(),
+                member.getOrgRole(), member.getStatus(), departmentManager);
+    }
+
     /**
-     * 新增成员：按手机号复用或创建账号，再建立组织身份与成员关系。
+     * 新增成员：只写成员唯一识别 ID（spec §3.1）。
+     *
+     * <p>不创建账号、不创建身份——身份等成员自己用「组织唯一 ID + 唯一识别 ID」认领组织账号时产生。
      */
     @Transactional
     public OrgMemberResponse create(OrgMember actor, OrgMemberCreateRequest request) {
@@ -148,59 +154,69 @@ public class OrgMemberService {
         }
 
         OrgMember member = createMemberInternal(actor.getOrgId(), department.getId(),
-                request.phone(), request.realName(), request.memberNo(), null, request.jobTitle(), role);
-        return new OrgMemberResponse(member.getId(), member.getIdentityId(), department.getId(),
-                department.getName(), member.getRealName(), member.getMemberNo(),
-                member.getJobTitle(), member.getOrgRole(), member.getStatus(), false);
+                request.memberKey(), request.realName(), request.jobTitle(), role);
+        return toResponse(member, department, false);
     }
 
     /**
      * 创建成员的内部实现：不做权限校验（由调用方保证），供单条新增与批量导入共用。
-     *
-     * <p>手机号对应账号不存在时自动创建，实现「管理员批量导入成员，创建账号」（spec §3.1）。
      */
     @Transactional
-    public OrgMember createMemberInternal(Long orgId, Long departmentId, String phone, String realName,
-                                          String memberNo, String email, String jobTitle, String role) {
-        Account account = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
-                .eq(Account::getPhone, phone));
-        if (account == null) {
-            account = new Account();
-            account.setPhone(phone);
-            account.setEmail(email);
-            account.setStatus("ACTIVE");
-            accountMapper.insert(account);
-        } else if (StringUtils.hasText(email) && !StringUtils.hasText(account.getEmail())) {
-            account.setEmail(email);
-            accountMapper.updateById(account);
+    public OrgMember createMemberInternal(Long orgId, Long departmentId, String memberKey, String realName,
+                                          String jobTitle, String role) {
+        String key = memberKey == null ? "" : memberKey.trim();
+        if (key.isEmpty()) {
+            throw BizException.of(ErrorCode.PARAM_MISSING, "成员唯一识别 ID 不能为空");
         }
-
-        Long existingIdentity = identityMapper.selectCount(new LambdaQueryWrapper<Identity>()
-                .eq(Identity::getAccountId, account.getId())
-                .eq(Identity::getOrgId, orgId));
-        if (existingIdentity != null && existingIdentity > 0) {
-            throw BizException.of(ErrorCode.MEMBER_ALREADY_EXISTS, "该手机号已是本组织成员");
+        Long duplicated = orgMemberMapper.selectCount(new LambdaQueryWrapper<OrgMember>()
+                .eq(OrgMember::getOrgId, orgId)
+                .eq(OrgMember::getMemberKey, key));
+        if (duplicated != null && duplicated > 0) {
+            throw BizException.of(ErrorCode.MEMBER_ALREADY_EXISTS,
+                    "该唯一识别 ID 已经是本组织成员：" + key);
         }
-
-        Identity identity = new Identity();
-        identity.setAccountId(account.getId());
-        identity.setIdentityType(Identity.TYPE_ORG_MEMBER);
-        identity.setOrgId(orgId);
-        identity.setNickname(realName);
-        identity.setStatus("ACTIVE");
-        identityMapper.insert(identity);
 
         OrgMember member = new OrgMember();
         member.setOrgId(orgId);
-        member.setIdentityId(identity.getId());
         member.setDepartmentId(departmentId);
         member.setRealName(realName);
-        member.setMemberNo(StringUtils.hasText(memberNo) ? memberNo : null);
+        member.setMemberKey(key);
         member.setJobTitle(jobTitle);
         member.setOrgRole(role);
         member.setStatus(OrgMember.STATUS_ACTIVE);
         orgMemberMapper.insert(member);
         return member;
+    }
+
+    /**
+     * 解绑成员的组织账号（spec §3.2）：清掉认领关系、停用其组织身份并吊销令牌。
+     *
+     * <p>成员被冒领、或换了个人账号时靠它恢复；组织侧的成员记录保留。
+     */
+    @Transactional
+    public OrgMemberResponse unbind(OrgMember actor, Long memberId) {
+        OrgMember target = requireMemberInOrg(actor.getOrgId(), memberId);
+        permission.requireCanManageDepartment(actor, target.getDepartmentId());
+        unbindInternal(target);
+        Department department = departmentService.requireInOrg(actor.getOrgId(), target.getDepartmentId());
+        return toResponse(target, department, false);
+    }
+
+    /** 解绑的内部实现（不做权限校验），供组织账号解绑与管理员解绑共用。 */
+    @Transactional
+    public void unbindInternal(OrgMember member) {
+        Long identityId = member.getIdentityId();
+        if (identityId != null) {
+            Identity identity = identityMapper.selectById(identityId);
+            if (identity != null) {
+                identity.setStatus("DISABLED");
+                identityMapper.updateById(identity);
+            }
+            // 会话必须一起吊销：否则「删掉登录记录」只删了 App 那一份，服务端令牌还能用
+            tokenService.revokeAllForIdentity(identityId);
+        }
+        member.setIdentityId(null);
+        orgMemberMapper.updateById(member);
     }
 
     /**
@@ -225,8 +241,18 @@ public class OrgMemberService {
         if (StringUtils.hasText(request.realName())) {
             target.setRealName(request.realName());
         }
-        if (request.memberNo() != null) {
-            target.setMemberNo(request.memberNo());
+        if (request.memberKey() != null) {
+            String key = request.memberKey().trim();
+            if (!key.isEmpty() && !key.equals(target.getMemberKey())) {
+                Long duplicated = orgMemberMapper.selectCount(new LambdaQueryWrapper<OrgMember>()
+                        .eq(OrgMember::getOrgId, actor.getOrgId())
+                        .eq(OrgMember::getMemberKey, key));
+                if (duplicated != null && duplicated > 0) {
+                    throw BizException.of(ErrorCode.MEMBER_ALREADY_EXISTS,
+                            "该唯一识别 ID 已经是本组织成员：" + key);
+                }
+                target.setMemberKey(key);
+            }
         }
         if (request.jobTitle() != null) {
             target.setJobTitle(request.jobTitle());
@@ -257,9 +283,7 @@ public class OrgMemberService {
         orgMemberMapper.updateById(target);
 
         Department department = departmentService.requireInOrg(actor.getOrgId(), target.getDepartmentId());
-        return new OrgMemberResponse(target.getId(), target.getIdentityId(), department.getId(),
-                department.getName(), target.getRealName(), target.getMemberNo(),
-                target.getJobTitle(), target.getOrgRole(), target.getStatus(), false);
+        return toResponse(target, department, false);
     }
 
     public OrgMember requireMemberInOrg(Long orgId, Long memberId) {
@@ -274,6 +298,10 @@ public class OrgMemberService {
      * 成员停用时同步停用其组织身份，刷新令牌随即失效（spec §10.1 必测场景 9）。
      */
     private void syncIdentityStatus(OrgMember member) {
+        // 未认领的成员没有组织身份，没什么可同步的
+        if (member.getIdentityId() == null) {
+            return;
+        }
         Identity identity = identityMapper.selectById(member.getIdentityId());
         if (identity == null) {
             return;

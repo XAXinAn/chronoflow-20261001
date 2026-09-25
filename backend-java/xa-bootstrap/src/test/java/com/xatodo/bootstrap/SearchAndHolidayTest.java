@@ -396,7 +396,7 @@ class SearchAndHolidayTest {
         String code = postJson("/api/v1/auth/sms/code", null, "{\"phone\":\"" + phone + "\"}")
                 .path("data").path("debugCode").asText();
         String registerToken = postJson("/api/v1/auth/login/sms", null,
-                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\"}")
+                "{\"phone\":\"" + phone + "\",\"code\":\"" + code + "\",\"deviceId\":\"dev\"}")
                 .path("data").path("registerToken").asText();
         return postJson("/api/v1/identities/personal", registerToken,
                 "{\"nickname\":\"用户" + phone.substring(phone.length() - 4) + "\",\"deviceId\":\"dev\"}")

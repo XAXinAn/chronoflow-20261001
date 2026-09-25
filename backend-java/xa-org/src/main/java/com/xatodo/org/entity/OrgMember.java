@@ -1,11 +1,19 @@
 package com.xatodo.org.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+import java.time.OffsetDateTime;
+
 /**
- * 组织成员关系：把某个组织身份挂到组织与部门下，并标记组织内角色。
+ * 组织成员关系：组织里的一名人员（spec §5.4）。
+ *
+ * <p>注意它**不依赖身份**：管理员导入成员时只写 {@code memberKey}（学号/工号），
+ * {@code identityId} 要等成员自己在 App 里认领组织账号时才回填。
+ * 这样组织侧的人员管理不必等任何人注册，也不会再出现「首位成员建不出来」。
  */
 @TableName("org_member")
 public class OrgMember {
@@ -23,11 +31,19 @@ public class OrgMember {
 
     private Long orgId;
 
+    /**
+     * 认领后指向该成员的组织身份；未认领时为 null。
+     *
+     * <p>必须声明 ALWAYS：解绑时要把这一列写回 null，而 updateById 默认忽略 null 字段，
+     * 那样「解绑」就会变成「接口返回成功、认领关系还在」。
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long identityId;
 
     private Long departmentId;
 
-    private String memberNo;
+    /** 成员唯一识别 ID（学号/工号），组织内唯一，也是登录组织账号的凭据之一 */
+    private String memberKey;
 
     private String realName;
 
@@ -36,6 +52,9 @@ public class OrgMember {
     private String jobTitle;
 
     private String status;
+
+    /** 最近一次认领/登录组织账号的时间，供 App「账户管理」展示 */
+    private OffsetDateTime lastLoginAt;
 
     public Long getId() {
         return id;
@@ -69,12 +88,20 @@ public class OrgMember {
         this.departmentId = departmentId;
     }
 
-    public String getMemberNo() {
-        return memberNo;
+    public String getMemberKey() {
+        return memberKey;
     }
 
-    public void setMemberNo(String memberNo) {
-        this.memberNo = memberNo;
+    public void setMemberKey(String memberKey) {
+        this.memberKey = memberKey;
+    }
+
+    public OffsetDateTime getLastLoginAt() {
+        return lastLoginAt;
+    }
+
+    public void setLastLoginAt(OffsetDateTime lastLoginAt) {
+        this.lastLoginAt = lastLoginAt;
     }
 
     public String getRealName() {

@@ -47,7 +47,13 @@ import java.util.Locale;
 public class MemberImportService {
 
     public static final int MAX_ROWS = 5000;
-    private static final String[] HEADERS = {"姓名", "手机号", "邮箱", "工号", "部门路径", "角色"};
+    /**
+     * 模板列：**姓名、成员唯一识别 ID（学号/工号）、部门路径**，角色选填。
+     *
+     * <p>没有手机号与邮箱：组织账号不再依赖手机号（spec §3.1），联系方式由成员在自己的
+     * 个人账号里维护。少两列，组织侧导入时就不用去凑自己也不掌握的信息。
+     */
+    private static final String[] HEADERS = {"姓名", "成员唯一识别 ID（学号/工号）", "部门路径", "角色"};
 
     private final ImportBatchMapper importBatchMapper;
     private final ImportRowResultMapper importRowResultMapper;
@@ -195,8 +201,7 @@ public class MemberImportService {
                     continue;   // 表头
                 }
                 rows.add(new ImportRow(index,
-                        value(record, 0), value(record, 1), value(record, 2),
-                        value(record, 3), value(record, 4), value(record, 5)));
+                        value(record, 0), value(record, 1), value(record, 2), value(record, 3)));
             }
         } catch (IOException ex) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "CSV 解析失败: " + ex.getMessage());
@@ -219,8 +224,7 @@ public class MemberImportService {
                 }
                 rows.add(new ImportRow(index + 1,
                         cellText(row.getCell(0), formatter), cellText(row.getCell(1), formatter),
-                        cellText(row.getCell(2), formatter), cellText(row.getCell(3), formatter),
-                        cellText(row.getCell(4), formatter), cellText(row.getCell(5), formatter)));
+                        cellText(row.getCell(2), formatter), cellText(row.getCell(3), formatter)));
             }
         } catch (IOException ex) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "Excel 解析失败: " + ex.getMessage());

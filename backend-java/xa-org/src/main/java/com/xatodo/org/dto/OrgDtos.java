@@ -29,7 +29,7 @@ public final class OrgDtos {
                                      String orgTimezone,
                                      Long memberId,
                                      String realName,
-                                     String memberNo,
+                                     String memberKey,
                                      String jobTitle,
                                      String orgRole,
                                      Long departmentId,
@@ -67,33 +67,69 @@ public final class OrgDtos {
 
     public record OrgMemberResponse(Long id,
                                     Long identityId,
+                                    /** 是否已被某个个人账号认领（认领后才有组织身份） */
+                                    boolean bound,
                                     Long departmentId,
                                     String departmentName,
                                     String realName,
-                                    String memberNo,
+                                    String memberKey,
                                     String jobTitle,
                                     String orgRole,
                                     String status,
                                     boolean departmentManager) {
     }
 
+    /**
+     * 新增成员：**只需要成员唯一识别 ID**（spec §3.1）。
+     *
+     * <p>手机号/邮箱是选填的联系方式，不参与登录；组织账号靠「组织唯一 ID + 唯一识别 ID」认领。
+     */
     public record OrgMemberCreateRequest(
-            @NotBlank(message = "手机号不能为空")
-            @Pattern(regexp = PHONE_PATTERN, message = "手机号格式不正确") String phone,
+            @NotBlank(message = "成员唯一识别 ID 不能为空")
+            @Size(max = 64, message = "成员唯一识别 ID 最长 64 个字符") String memberKey,
             @NotBlank(message = "姓名不能为空")
             @Size(max = 64) String realName,
             @NotNull(message = "departmentId 不能为空") Long departmentId,
-            @Size(max = 64) String memberNo,
+            @Pattern(regexp = PHONE_PATTERN, message = "手机号格式不正确") String phone,
             @Size(max = 64) String jobTitle,
             String orgRole) {
     }
 
     public record OrgMemberUpdateRequest(@Size(max = 64) String realName,
                                          Long departmentId,
-                                         @Size(max = 64) String memberNo,
+                                         @Size(max = 64) String memberKey,
                                          @Size(max = 64) String jobTitle,
                                          String orgRole,
                                          String status) {
+    }
+
+    // ------------------------------------------------------------ 组织账号
+
+    /**
+     * 登录组织账号并绑定（spec §3.2）。
+     *
+     * @param org 组织唯一 ID：组织编码（如 XATECH）或数字 ID 均可
+     * @param memberKey 成员唯一识别 ID（学号/工号）
+     */
+    public record OrgAccountLinkRequest(
+            @NotBlank(message = "组织唯一 ID 不能为空") String org,
+            @NotBlank(message = "成员唯一识别 ID 不能为空") String memberKey) {
+    }
+
+    /**
+     * 已绑定的组织账号。
+     *
+     * @param lastLoginAt 最近一次登录这个组织账号的时间
+     */
+    public record OrgAccountResponse(Long identityId,
+                                     Long orgId,
+                                     String orgName,
+                                     String orgCode,
+                                     String memberKey,
+                                     String realName,
+                                     String departmentName,
+                                     String orgRole,
+                                     OffsetDateTime lastLoginAt) {
     }
 
     // -------------------------------------------------------------- 组织日程
@@ -162,11 +198,14 @@ public final class OrgDtos {
 
     // -------------------------------------------------------------- 成员导入
 
+    /**
+     * 导入的一行。
+     *
+     * @param memberKey 成员唯一识别 ID（学号/工号），必填——它就是组织账号的登录凭据
+     */
     public record ImportRow(Integer rowNo,
                             String realName,
-                            String phone,
-                            String email,
-                            String memberNo,
+                            String memberKey,
                             String departmentPath,
                             String role) {
     }

@@ -56,12 +56,13 @@ public class AuthController {
 
     @PostMapping("/login/sms")
     public ApiResponse<SmsLoginResponse> loginBySms(@Valid @RequestBody SmsLoginRequest request) {
-        return ApiResponse.ok(authService.loginBySms(request.phone(), request.code()));
+        return ApiResponse.ok(authService.loginBySms(request.phone(), request.code(), request.deviceId()));
     }
 
     @PostMapping("/login/password")
     public ApiResponse<SmsLoginResponse> loginByPassword(@Valid @RequestBody PasswordLoginRequest request) {
-        return ApiResponse.ok(authService.loginByPassword(request.phone(), request.password()));
+        return ApiResponse.ok(authService.loginByPassword(
+                request.phone(), request.password(), request.deviceId()));
     }
 
     /**

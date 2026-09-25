@@ -180,7 +180,7 @@ def ensure_department(conn, org_id: int, parent_id: int | None, parent_path: str
         return dept_id
 
 
-def ensure_member(conn, org_id: int, dept_id: int, phone: str, real_name: str, member_no: str,
+def ensure_member(conn, org_id: int, dept_id: int, phone: str, real_name: str, member_key: str,
                   job_title: str, org_role: str) -> int:
     """建/取账号 + 组织身份 + 成员关系，返回 org_member.id。"""
     with conn.cursor() as cur:
@@ -214,9 +214,9 @@ def ensure_member(conn, org_id: int, dept_id: int, phone: str, real_name: str, m
         if row:
             return row[0]
         cur.execute(
-            "INSERT INTO org_member (org_id, identity_id, department_id, member_no, real_name, org_role, job_title, status)"
+            "INSERT INTO org_member (org_id, identity_id, department_id, member_key, real_name, org_role, job_title, status)"
             " VALUES (%s, %s, %s, %s, %s, %s, %s, 'ACTIVE') RETURNING id",
-            (org_id, identity_id, dept_id, member_no, real_name, org_role, job_title),
+            (org_id, identity_id, dept_id, member_key, real_name, org_role, job_title),
         )
         return cur.fetchone()[0]
 
