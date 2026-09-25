@@ -45,15 +45,16 @@ XaTodo（心安待办），智能日程与待办 App。项目代号 `xa-todo`。
 | 部分 | 状态 | 测试 |
 | --- | --- | --- |
 | spec.md | 完成（v1.1） | — |
-| backend-java（6 模块） | 完成 | **62 项集成测试全绿** |
-| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **27 项全绿** |
+| backend-java（6 模块） | 完成 | **69 项集成测试全绿** |
+| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **34 项全绿** |
 | packages/design-tokens | 完成 | 7 项 |
 | web-admin（React + Vite + AntD） | 完成 | 15 项 |
-| app（React Native + Expo） | **核心流程可用**（日程/待办增删改、地图选点、组织日程与回执） | **42 项**（**仅纯逻辑层，组件未做渲染测试**） |
+| app（React Native + Expo） | **核心流程可用**（日程/待办增删改、地图选点、组织日程与回执、日历页检索/跳转/节假日标记） | **56 项**（**仅纯逻辑层，组件未做渲染测试**） |
 
 最近几次提交：
 
 ```
+abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，并修掉月历多画一整周邻月
 54ebe85 feat(app): 待办的关联日程独立成行并带图标；修待办页时区跟随设备导致与日历自相矛盾
 aac7f75 feat: 待办可关联日程（一个日程对多个待办），入口在待办编辑页
 e519fad feat: 待办可编辑/删除，并修掉两处「更新时 null 被静默丢弃」的坑
@@ -118,16 +119,33 @@ App 的 adb 点击不太可靠（见 §5）。两条路：
 
 这几条是产品明确提出、且**已经写进 spec** 的需求，代码还没做。别当成"没提过"：
 
-**未做完的（按建议顺序）**：
+**本轮已完成（2026-09-25，代码 + 测试 + 模拟器实机都走过）**：
+
+| # | 需求 | 落地位置 | 证据 |
+| --- | --- | --- | --- |
+| 1 | **日历页置顶搜索框**（同时搜日程与待办） | 契约新增 `GET /search`；Java `SearchService` / Python `SearchService`；App `AgendaScreen` 顶部常驻搜索框 | Java `SearchAndHolidayTest` 7 项 + Python 同名 7 项；模拟器输入 `A` 命中地点「会议室 A」的日程，带「重复」徽标；curl 验证重复日程落在最近一次实例（`occurrenceDate=2026-09-28`） |
+| 2 | **「跳到指定日期」**（新建按钮上方的悬浮按钮） | 纯 App，`AgendaScreen` 里的 `jumpLayer`（复用月历组件，含「回到今天」） | 模拟器点开、翻月、选中均正常 |
+| 3 | **节假日与调休显示**（格子标「休 / 班」） | 契约新增 `GET /holidays`；表 `holiday`（V11 只建表）；数据源 `scripts/data/holidays/*.json` + `scripts/load_holidays.py` 热更新；App `MonthCalendar` 在数字右上角画休（蓝）/班（红） | 2026 年 39 条真实数据（33 放假 + 6 调休）；模拟器 9/25「休」、9/20「班」可见；详见下方「节假日数据」 |
+
+顺带修掉一个实机发现的问题：**月历固定画 6 行**会把整周属于邻月的日子也画进来（9 月视图里出现一整周 10 月）。
+现在按实际需要的行数渲染（5 或 6 行），`buildMonthGrid` 有专门的回归测试（`app/test/calendar.test.ts`）。
+
+**节假日数据（新的约定，别搞混）**：
+
+- 数据**不在迁移里、不在代码里**。`V11__holiday_calendar.sql` 只建表；数据放 `scripts/data/holidays/*.json`
+  （**原样拷贝自 [holiday-cn](https://github.com/NateScarlet/holiday-cn)**，含国务院办公厅通知链接）。
+- 灌数据：`backend-python/.venv/bin/python scripts/load_holidays.py`（幂等）。新增年份：
+  `--url https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/2027.json`；上游撤掉调休日时加 `--prune`。
+- 服务端有 5 分钟进程内缓存，所以热更新最迟 5 分钟生效，不用重启。
+- 库里没有那一年就是空数组、界面不显示任何标记——**不猜、不硬编码兜底**。
+
+**其余未做完的（按建议顺序）**：
 
 | # | 需求 | spec 位置 | 涉及范围 | 备注 |
 | --- | --- | --- | --- | --- |
-| 1 | **日历页置顶搜索框**：同时搜日程与待办 | §4.1.7、§6.2 `GET /search` | 契约新增端点 + Java + Python + 日历页 UI | **服务端全量检索**，不受当前月份限制——否则搜「上个月那个会」永远搜不到 |
-| 2 | **「跳到指定日期」**：新建按钮上方再加一个悬浮按钮 | §4.1.7 | 纯 App | 最容易，可随时插队 |
-| 3 | **节假日与调休显示**：日历格子标记「休/班」 | §4.1.2、§6.2 `GET /holidays` | 数据源（需支持热更新）+ 端点 + Java + Python + 日历渲染 | spec 里一直有这条，**从未实现** |
-| 4 | **意见反馈**：我的页入口，分类 + 文字 + 多图，提交给超管 | §4.1.9、§5.10、§6.2 `POST /feedback` | 上传通道 + `feedback` 表 + 两版 + App 表单 + 超管查阅 | 依赖 #5 |
-| 5 | **图片上传通道**（不是独立需求，是 #4 与 #6 的前置） | §5.10 | 存储实现 + `/uploads/**` 静态映射 + 两版 | 对象存储是 §8 明确推迟的外部依赖，首版用**可替换存储**：本地目录 + 静态映射，接口不绑具体存储 |
-| 6 | **头像上传/更新**：点「我的」页头像换图 | §4.1.8 | **只缺上传通道** | `PATCH /me` 的 `avatarUrl` 两版都已支持，契约里也有 |
+| 1 | **意见反馈**：我的页入口，分类 + 文字 + 多图，提交给超管 | §4.1.9、§5.10、§6.2 `POST /feedback` | 上传通道 + `feedback` 表 + 两版 + App 表单 + 超管查阅 | 依赖 #2 |
+| 2 | **图片上传通道**（不是独立需求，是 #1 与 #3 的前置） | §5.10 | 存储实现 + `/uploads/**` 静态映射 + 两版 | 对象存储是 §8 明确推迟的外部依赖，首版用**可替换存储**：本地目录 + 静态映射，接口不绑具体存储 |
+| 3 | **头像上传/更新**：点「我的」页头像换图 | §4.1.8 | **只缺上传通道** | `PATCH /me` 的 `avatarUrl` 两版都已支持，契约里也有 |
 
 建议做法：#1 与 #3 都要动 DB 与契约，**合并成一次迁移 + 一次契约变更**做完，避免反复跑两版同步；
 #2 是纯前端；#6 只要 #5 做出来就能落地，是最快的「见效」路径。
@@ -239,6 +257,12 @@ adb shell pm clear host.exp.exponent
 # 然后按 4.4 重启后端（Flyway 会重建表结构并重新创建初始超管）
 ```
 
+**重建库后要重灌节假日数据**（它不在迁移里，见 §3「节假日数据」）：
+
+```bash
+backend-python/.venv/bin/python scripts/load_holidays.py
+```
+
 **密钥**：`~/.codex/config.toml` 里有 API key，不要提交、不要外传。
 
 ---
@@ -254,6 +278,9 @@ adb shell pm clear host.exp.exponent
 | 日志文件被覆盖 | 重启后端复用同一路径，旧日志丢了 | 重启前先 `rm -f` 或换文件名 |
 | `mvn -pl xa-bootstrap spring-boot:run` | 报找不到 `com.xatodo:xa-common` | 要么先 `mvn install`，要么直接跑 fat jar |
 | Python 测试起不来（`pg_ctl ... returned non-zero`） | 嵌入式 PG 要绑 **5432**，与开发库抢端口；`pg.log` 里是 `Address already in use` | 跑 pytest 前先 `pg_ctl -D ~/.cache/xa-todo/pgdata -m fast -w stop`，跑完再 start |
+| Java 测试报 `SocketException: Operation not permitted` | 沙箱不允许绑监听端口，嵌入式 PG/Redis 起不来（表现为 `ApplicationContext failure`，看 surefire 报告里真正的 `Caused by`） | `mvn -B clean verify` 要提权；开发库不用停（zonky 用随机端口） |
+| 关键词检索里的 `%` / `_` | 不转义就成了通配符：搜「50%」命中所有日程，即「搜什么都灵」 | SQL 写 `ILIKE :pattern ESCAPE '\'`，Java/Python 两边都要把 `\ % _` 转义；行为有测试守着 |
+| Python 套件里无关用例报「验证码发送次数已达上限」 | 按 **IP** 的日限额在测试里没有意义（TestClient 的 client_ip 恒为 `testclient`，**整个套件共用一个计数器**），用例一多就随机变红 | `tests/conftest.py` 已把 `SMS_DAILY_LIMIT_PER_IP` 放开；手机号维度限额保持不变 |
 
 ### Android / adb
 
@@ -264,6 +291,8 @@ adb shell pm clear host.exp.exponent
 | 点击落在 Expo Go 调试浮层上 | 弹出元素检查器，挡住界面并吃掉后续点击 | 先 `input keyevent KEYCODE_BACK` 关闭；坐标避开屏幕左侧与右下角的悬浮按钮 |
 | 元素检查器反复出现 | 顶部 ~340px 或底部被深色横条覆盖，`input tap` 与 `input text` 全部失效，还会误触出「放弃未保存」弹窗 | 用 dev 菜单里的 **Toggle element inspector** 关掉；它一旦开着，所有 adb 自动化都不可信 |
 | 模拟器里没有 `curl` / `wget` | 手工测连通性时误判为不通 | 用 `adb shell "printf 'GET / HTTP/1.0\r\n\r\n' \| nc <host> <port>"` |
+| `adb shell input text` 打不了中文 | 想验证「搜索框」却输不进关键字 | 用 ASCII 关键字验证（例如地点名里的字母），或用 App 里已有的中文数据反查 |
+| 日历/月视图固定画 6 行 | 9 月视图里出现**一整周 10 月**——那一周一天都不属于 9 月 | `buildMonthGrid` 按实际需要渲染 5/6 行，`app/test/calendar.test.ts` 有回归测试；注意 1 基月份别当 0 基传给 `Date.UTC` |
 
 ### 后端 / 数据库
 
@@ -360,16 +389,17 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 
 ```bash
 # 后端（测试自带嵌入式 PG/Redis，无需外部依赖）
-cd backend-java && mvn -B clean verify          # 期望 51 项全绿
+cd backend-java && mvn -B clean verify          # 期望 69 项全绿（需提权：沙箱不让绑端口）
 
 # Python 后端（需要先跑 ./backend-python/scripts/setup-test-deps.sh）
-cd backend-python && .venv/bin/python -m pytest  # 期望 22 项全绿
+# 注意：嵌入式 PG 要占 5432，跑之前先停开发库，跑完再启回来
+cd backend-python && .venv/bin/python -m pytest  # 期望 34 项全绿
 
 # 前端
 npm run build -w @xa-todo/design-tokens
 npm run build -w @xa-todo/web-admin
 npm run typecheck -w @xa-todo/app
-npm test                                        # 期望 7 + 15 + 32 项全绿
+npm test                                        # 期望 7 + 15 + 56 项全绿
 ```
 
 CI 在 `.github/workflows/ci.yml`，三个 job：Java / Python / 前端。
