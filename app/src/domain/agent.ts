@@ -27,15 +27,7 @@ export const AGENT_OFFLINE_NOTICE =
   `${AGENT_NAME}还没有接入模型（spec §11 阶段三）：现在只能看入口，还不能真的帮你建日程。` +
   '在此之前，日程与待办请用编辑页手动创建。';
 
-/**
- * 拍照识别（拍会议通知 / 行程单自动建日程）的现状说明。
- *
- * <p>照片本身**已经走上传通道存下来了**（`POST /uploads/images`），
- * 缺的只是识别它的模型——所以这里说的是「存下来了、还没法识别」，而不是「功能不可用」。
- */
-export const AGENT_PHOTO_NOTICE =
-  '照片已经上传保存，但识别还没有接入模型（spec §11 阶段三）：' +
-  '等接入后就可用拍摄的通知/行程单直接生成日程。';
+
 
 /** 用户发消息后要不要回「未接入」的说明——接入模型后这里应返回 false。 */
 export function agentIsOffline(): boolean {

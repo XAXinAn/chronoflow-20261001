@@ -1,8 +1,11 @@
 package com.xatodo.personal.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xatodo.common.api.ErrorCode;
 import com.xatodo.common.exception.BizException;
+import com.xatodo.common.validation.ImageUrls;
 import com.xatodo.personal.dto.PersonalDtos.TaskCompleteRequest;
 import com.xatodo.personal.dto.PersonalDtos.TaskCreateRequest;
 import com.xatodo.personal.dto.PersonalDtos.TaskUpdateRequest;
@@ -37,11 +40,37 @@ public class TaskService {
     private final TaskMapper taskMapper;
     private final CalendarService calendarService;
     private final EventMapper eventMapper;
+    private final ObjectMapper objectMapper;
 
-    public TaskService(TaskMapper taskMapper, CalendarService calendarService, EventMapper eventMapper) {
+    public TaskService(TaskMapper taskMapper,
+                       CalendarService calendarService,
+                       EventMapper eventMapper,
+                       ObjectMapper objectMapper) {
         this.taskMapper = taskMapper;
         this.calendarService = calendarService;
         this.eventMapper = eventMapper;
+        this.objectMapper = objectMapper;
+    }
+
+    /** 待办的图片附件（jsonb → 列表）。脏数据不该让整个列表接口 500。 */
+    public List<String> imageUrls(Task task) {
+        if (task == null || !StringUtils.hasText(task.getImages())) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(task.getImages(), new TypeReference<List<String>>() {
+            });
+        } catch (Exception ex) {
+            return List.of();
+        }
+    }
+
+    private String writeImages(List<String> images) {
+        try {
+            return objectMapper.writeValueAsString(ImageUrls.requireValid(images));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     /**
@@ -132,6 +161,7 @@ public class TaskService {
         task.setAllDay(Boolean.TRUE.equals(request.allDay()));
         task.setStatus(Task.STATUS_TODO);
         task.setPriority(priority);
+        task.setImages(writeImages(request.images()));
         task.setRrule(request.rrule());
         task.setSortOrder(0);
         taskMapper.insert(task);
@@ -178,6 +208,10 @@ public class TaskService {
             task.setCompletedAt(Task.STATUS_DONE.equals(request.status())
                     ? OffsetDateTime.now(ZoneOffset.UTC)
                     : null);
+        }
+        // 图片：null = 不修改（与其它字段一致）；传空数组才是「删光所有图片」
+        if (request.images() != null) {
+            task.setImages(writeImages(request.images()));
         }
         if (request.sortOrder() != null) {
             task.setSortOrder(request.sortOrder());

@@ -19,6 +19,7 @@ export function EditorHeader({
   cancelLabel = '取消',
   saveLabel = '保存',
   savingLabel = '保存中…',
+  titleOnly = false,
 }: {
   title: string;
   onCancel: () => void;
@@ -29,6 +30,8 @@ export function EditorHeader({
   cancelLabel?: string;
   saveLabel?: string;
   savingLabel?: string;
+  /** 作为一级页面（底部导航的 tab）用时只留标题，不显示取消/保存 */
+  titleOnly?: boolean;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -45,6 +48,14 @@ export function EditorHeader({
         },
       ]}
     >
+      {titleOnly ? (
+        <>
+          <View style={{ width: 56 }} />
+          <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>{title}</Text>
+          <View style={{ width: 56 }} />
+        </>
+      ) : (
+        <>
       <Pressable accessibilityRole="button" accessibilityLabel="取消" onPress={onCancel} hitSlop={10}>
         <Text style={{ color: theme.color.textSecondary, fontSize: 16 }}>{cancelLabel}</Text>
       </Pressable>
@@ -66,6 +77,8 @@ export function EditorHeader({
           {saving ? savingLabel : saveLabel}
         </Text>
       </Pressable>
+        </>
+      )}
     </View>
   );
 }

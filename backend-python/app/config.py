@@ -50,6 +50,12 @@ class Settings:
     holiday_sync_run_on_startup: bool
     holiday_sync_startup_delay: float
     holiday_sync_timeout: float
+    vision_base_url: str
+    vision_model: str
+    vision_api_key: str
+    vision_timeout: float
+    vision_structured_output: str
+    vision_max_attempts: int
 
 
 def load_settings() -> Settings:
@@ -97,6 +103,15 @@ def load_settings() -> Settings:
         holiday_sync_run_on_startup=_bool("HOLIDAY_SYNC_RUN_ON_STARTUP", True),
         holiday_sync_startup_delay=float(os.getenv("HOLIDAY_SYNC_STARTUP_DELAY", "30")),
         holiday_sync_timeout=float(os.getenv("HOLIDAY_SYNC_TIMEOUT", "15")),
+        # 本地轻量多模态识别（spec §4.1.9）。指向本机/内网的 OpenAI 兼容推理服务，
+        # 留空表示未接入：那时 /ai/events/recognize 返回 90002，App 会明说「识别未接入」。
+        vision_base_url=os.getenv("XATODO_VISION_BASE_URL", ""),
+        vision_model=os.getenv("XATODO_VISION_MODEL", ""),
+        vision_api_key=os.getenv("XATODO_VISION_API_KEY", ""),
+        vision_timeout=float(os.getenv("XATODO_VISION_TIMEOUT_SECONDS", "60")),
+        # json_object（支持面最广）/ json_schema（约束最强）/ none（只靠提示词，排查用）
+        vision_structured_output=os.getenv("XATODO_VISION_STRUCTURED_OUTPUT", "json_object"),
+        vision_max_attempts=_int("XATODO_VISION_MAX_ATTEMPTS", 2),
     )
 
 

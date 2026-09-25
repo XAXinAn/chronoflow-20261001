@@ -4,7 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Alert, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppProvider, useAppSessionState, useAppTheme, useRuntimeState } from './context/AppContext';
@@ -23,6 +23,8 @@ import { TaskEditorScreen } from './screens/TaskEditorScreen';
 import { TasksScreen } from './screens/TasksScreen';
 import { localDateKey } from './domain/agenda';
 import { APP_TIMEZONE } from './domain/calendar';
+import type { RecognizedEventDraft } from './domain/vision';
+import { RecognizedEventsScreen } from './screens/RecognizedEventsScreen';
 
 type AuthStackParamList = {
   Login: undefined;
@@ -40,6 +42,8 @@ const TAB_ICONS: Record<string, { active: string; inactive: string }> = {
   Agenda: { active: 'calendar', inactive: 'calendar-outline' },
   Tasks: { active: 'checkbox', inactive: 'checkbox-outline' },
   OrgEvents: { active: 'business', inactive: 'business-outline' },
+  // 小安排在「组织」之后、「我的」之前（spec §11）
+  Agent: { active: 'sparkles', inactive: 'sparkles-outline' },
   Settings: { active: 'person', inactive: 'person-outline' },
 };
 
@@ -69,7 +73,12 @@ type MainTabsProps = {
   onOpenTask: (taskId: number) => void;
   onOpenOrgAccounts: () => void;
   onOpenOrgEvent: (identityId: number, dateKey: string) => void;
-  onOpenAgent: (payload?: { photoUrl?: string }) => void;
+  onOpenRecognized: (payload: {
+    drafts: RecognizedEventDraft[];
+    photoUri: string;
+    sourceLabel: string;
+    deviceFallbackReason: string | null;
+  }) => void;
   onOpenFeedback: () => void;
 };
 
@@ -80,7 +89,7 @@ function MainTabs({
   onOpenTask,
   onOpenOrgAccounts,
   onOpenOrgEvent,
-  onOpenAgent,
+  onOpenRecognized,
   onOpenFeedback,
 }: MainTabsProps) {
   const theme = useAppTheme();
@@ -110,7 +119,7 @@ function MainTabs({
             // 日历页的检索会跨到待办，所以这里也要能直接打开待办编辑页（spec §4.1.7）
             onOpenTask={onOpenTask}
             onOpenOrgEvent={onOpenOrgEvent}
-            onOpenAgent={onOpenAgent}
+            onOpenRecognized={onOpenRecognized}
           />
         )}
       </Tabs.Screen>
@@ -123,6 +132,10 @@ function MainTabs({
       */}
       <Tabs.Screen name="OrgEvents" options={{ title: '组织', tabBarIcon: tabIcon('OrgEvents') }}>
         {() => <OrgTabScreen onOpenAccounts={onOpenOrgAccounts} />}
+      </Tabs.Screen>
+      {/* 小安常驻在导航里，位于「组织」之后（spec §11） */}
+      <Tabs.Screen name="Agent" options={{ title: '小安', tabBarIcon: tabIcon('Agent') }}>
+        {() => <AgentChatScreen />}
       </Tabs.Screen>
       <Tabs.Screen name="Settings" options={{ title: '我的', tabBarIcon: tabIcon('Settings') }}>
         {() => <SettingsScreen onOpenFeedback={onOpenFeedback} />}
@@ -139,7 +152,12 @@ type AppStackParamList = {
   EventPicker: undefined;
   Feedback: undefined;
   OrgAccounts: undefined;
-  AgentChat: { photoUrl?: string } | undefined;
+  RecognizedEvents: {
+    drafts: RecognizedEventDraft[];
+    photoUri: string;
+    sourceLabel: string;
+    deviceFallbackReason: string | null;
+  };
 };
 
 const AppStack = createNativeStackNavigator<AppStackParamList>();
@@ -155,6 +173,14 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
  */
 function MainStack() {
   const [placeSelection, setPlaceSelection] = useState<PlaceSelection>({ version: 0, place: null });
+  /** 识别结果页选地点的回传：带 index，指明是改哪一条 */
+  const [recognizedPlace, setRecognizedPlace] = useState<{
+    version: number;
+    index: number;
+    place: PlaceSelection['place'];
+  }>({ version: 0, index: -1, place: null });
+  /** 选点页是从编辑页来的还是从识别结果页来的：两者回传目标不同 */
+  const [pickerFor, setPickerFor] = useState<'editor' | 'recognized'>('editor');
   // 待办关联日程的回传，和地点一样用 version 表达「又选了一次」
   const [eventSelection, setEventSelection] = useState<{ version: number; event: PickedEvent | null }>({
     version: 0,
@@ -194,7 +220,7 @@ function MainStack() {
               navigation.navigate('Main', { screen: 'OrgEvents' });
             }}
             onOpenFeedback={() => navigation.navigate('Feedback')}
-            onOpenAgent={(payload) => navigation.navigate('AgentChat', payload ?? {})}
+            onOpenRecognized={(payload) => navigation.navigate('RecognizedEvents', payload)}
           />
         )}
       </AppStack.Screen>
@@ -206,7 +232,10 @@ function MainStack() {
             eventId={route.params.eventId}
             occurrenceDate={route.params.occurrenceDate ?? null}
             placeSelection={placeSelection}
-            onPickLocation={() => navigation.navigate('LocationPicker')}
+            onPickLocation={() => {
+              setPickerFor('editor');
+              navigation.navigate('LocationPicker');
+            }}
             onCancel={() => navigation.goBack()}
             onSaved={() => navigation.goBack()}
           />
@@ -245,7 +274,15 @@ function MainStack() {
             initialLongitude={placeSelection.place?.longitude ?? null}
             onCancel={() => navigation.goBack()}
             onPick={(place) => {
-              setPlaceSelection((current) => ({ version: current.version + 1, place }));
+              if (pickerFor === 'recognized') {
+                setRecognizedPlace((current) => ({
+                  version: current.version + 1,
+                  index: current.index,
+                  place,
+                }));
+              } else {
+                setPlaceSelection((current) => ({ version: current.version + 1, place }));
+              }
               navigation.goBack();
             }}
           />
@@ -260,11 +297,23 @@ function MainStack() {
         {({ navigation }) => <OrgAccountsScreen onBack={() => navigation.goBack()} />}
       </AppStack.Screen>
 
-      <AppStack.Screen name="AgentChat">
+      <AppStack.Screen name="RecognizedEvents">
         {({ navigation, route }) => (
-          <AgentChatScreen
-            photoUrl={route.params?.photoUrl ?? null}
+          <RecognizedEventsScreen
+            drafts={route.params.drafts}
+            photoUri={route.params.photoUri}
+            sourceLabel={route.params.sourceLabel}
+            deviceFallbackReason={route.params.deviceFallbackReason}
+            pickedPlace={recognizedPlace}
+            onPickPlace={(index) => {
+              setPickerFor('recognized');
+              setRecognizedPlace((current) => ({ ...current, index }));
+              navigation.navigate('LocationPicker');
+            }}
             onBack={() => navigation.goBack()}
+            onCreated={(summary) =>
+              Alert.alert('已完成', summary, [{ text: '好', onPress: () => navigation.goBack() }])
+            }
           />
         )}
       </AppStack.Screen>

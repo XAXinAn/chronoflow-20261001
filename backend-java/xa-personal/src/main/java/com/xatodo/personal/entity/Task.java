@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.xatodo.common.persistence.JsonbStringTypeHandler;
 
 import java.time.OffsetDateTime;
 
@@ -60,6 +61,10 @@ public class Task {
     private String priority;
 
     private String rrule;
+
+    /** 图片附件的相对 URL 数组（jsonb，spec §4.1.3）。 */
+    @TableField(typeHandler = JsonbStringTypeHandler.class)
+    private String images;
 
     private Integer sortOrder;
 
@@ -179,6 +184,14 @@ public class Task {
 
     public void setRrule(String rrule) {
         this.rrule = rrule;
+    }
+
+    public String getImages() {
+        return images;
+    }
+
+    public void setImages(String images) {
+        this.images = images;
     }
 
     public Integer getSortOrder() {

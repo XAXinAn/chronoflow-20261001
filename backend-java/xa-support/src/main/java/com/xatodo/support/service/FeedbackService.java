@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xatodo.common.api.ErrorCode;
 import com.xatodo.common.exception.BizException;
+import com.xatodo.common.validation.ImageUrls;
 import com.xatodo.support.dto.FeedbackDtos.FeedbackCreateRequest;
 import com.xatodo.support.dto.FeedbackDtos.FeedbackResponse;
 import com.xatodo.support.entity.Feedback;
@@ -32,7 +33,6 @@ public class FeedbackService {
     private static final Set<String> CATEGORIES = Set.of("BUG", "SUGGESTION", "OTHER");
     private static final Set<String> STATUSES =
             Set.of(Feedback.STATUS_OPEN, Feedback.STATUS_HANDLED);
-    private static final int MAX_IMAGES = 9;
     private static final int MAX_CONTENT_LENGTH = 2000;
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
@@ -60,7 +60,7 @@ public class FeedbackService {
         if (!CATEGORIES.contains(category)) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "反馈分类取值非法: " + request.category());
         }
-        List<String> images = validateImages(request.images());
+        List<String> images = ImageUrls.requireValid(request.images());
 
         Feedback feedback = new Feedback();
         feedback.setAccountId(accountId);
@@ -126,27 +126,6 @@ public class FeedbackService {
 
     public FeedbackResponse toResponse(Feedback feedback) {
         return FeedbackResponse.from(feedback, readImages(feedback.getImages()));
-    }
-
-    /**
-     * 图片只接受本服务上传通道产生的相对 URL。
-     *
-     * <p>不校验的话，客户端可以把任意外链塞进 images——
-     * 那就等于让别人的服务在我们的用户界面上打广告或埋追踪，后台也会跟着去取。
-     */
-    private List<String> validateImages(List<String> images) {
-        if (images == null || images.isEmpty()) {
-            return List.of();
-        }
-        if (images.size() > MAX_IMAGES) {
-            throw BizException.of(ErrorCode.PARAM_INVALID, "最多上传 " + MAX_IMAGES + " 张图片");
-        }
-        for (String image : images) {
-            if (image == null || !image.startsWith("/uploads/") || image.contains("..")) {
-                throw BizException.of(ErrorCode.PARAM_INVALID, "图片地址非法: " + image);
-            }
-        }
-        return List.copyOf(images);
     }
 
     private String writeImages(List<String> images) {

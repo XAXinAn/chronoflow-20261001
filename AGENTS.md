@@ -174,6 +174,7 @@ App 的 adb 点击不太可靠（见 §5）。两条路：
 | 1 | **新建组织的成员导入还没有入口**（原来的「首位成员断点」换了形态） | 新模型下 `/org-admin/members` 仍需要**组织身份令牌**，而全新组织里还没有人认领过成员 → 无人能导入。两条可选路线，需产品定：①超管建组织时预置「总部部门 + 首位拥有者成员（唯一识别 ID 由超管填）」，该成员认领后即可往下导入；②让后台组织管理员（`admin_user`，带 `org_id`）的令牌也能调 `/org-admin/**`（spec §4.3 的组织管理端本来就是这个角色） |
 | 2 | **深色模式偏好没有持久化** | `AppContext.toggleScheme` 只改 React state，App 重启即丢（实测确认） |
 | 3 | **web-admin 还缺两块页面** | ①组织管理端（src 里搜不到 `/org-admin`、`/org/current`）；②意见反馈查阅——**后端接口已就绪**（`GET /admin/feedback`、`POST /admin/feedback/{id}/handle`），只差后台页面 |
+| 4 | **拍照 / 相册识别日程**（spec §4.1.9）：契约、约束解码、容错解析、修复重试、App 的拍照/相册入口与可编辑确认页、地点高德解析都已就绪并有测试 | **端侧模型未跑通**：端侧推理要 Dev Client 构建（原生模块 + Android NDK/CMake），本机工具链不具备（Windows SDK 无 ndk/cmake/cmdline-tools、WSL 无 gcc）。**产品要求排到最后再做**；未配模型时接口如实返回 90002 |
 
 App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File`（原因见 §5 陷阱里的
 「Expo SDK 57 的 fetch 不支持 `{uri,name,type}`」）。

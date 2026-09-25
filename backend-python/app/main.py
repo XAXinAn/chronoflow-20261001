@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .errors import ApiError, ErrorCode, envelope, set_trace_id
-from .routers import admin, auth, geo, me, org, org_accounts, personal, support, system
+from .routers import admin, ai, auth, geo, me, org, org_accounts, personal, support, system
 from .config import settings
 from .services import holiday_sync
 
@@ -129,6 +129,7 @@ app.include_router(org_accounts.router)
 app.include_router(admin.router)
 app.include_router(geo.router)
 app.include_router(support.router)
+app.include_router(ai.router)
 
 # 上传目录映射成 /uploads/**（spec §5.10）。
 # 必须免鉴权：<Image> 直接按 URL 取图，带不了 Authorization 头——

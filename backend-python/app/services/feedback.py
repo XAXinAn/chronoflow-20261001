@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError, ErrorCode
+from .storage import validate_image_urls
 
 CATEGORIES = {"BUG", "SUGGESTION", "OTHER"}
 STATUSES = {"OPEN", "HANDLED"}
@@ -56,7 +57,7 @@ class FeedbackService:
         if category not in CATEGORIES:
             raise ApiError(ErrorCode.PARAM_INVALID, f"反馈分类取值非法: {payload.get('category')}")
 
-        images = self._validate_images(payload.get("images"))
+        images = validate_image_urls(payload.get("images"))
 
         # RETURNING *：created_at 由数据库生成，回内存对象会出现「响应里没有创建时间」这种假成功
         row = (
@@ -155,19 +156,3 @@ class FeedbackService:
 
         self._session.commit()
         return _view(row)
-
-    @staticmethod
-    def _validate_images(images) -> list[str]:
-        """图片只接受本服务上传通道产生的相对 URL。
-
-        不校验的话，客户端可以把任意外链塞进 images——那等于让别人的服务在我们的用户界面上
-        打广告或埋追踪，后台也会跟着去取。
-        """
-        if not images:
-            return []
-        if len(images) > MAX_IMAGES:
-            raise ApiError(ErrorCode.PARAM_INVALID, f"最多上传 {MAX_IMAGES} 张图片")
-        for image in images:
-            if not isinstance(image, str) or not image.startswith("/uploads/") or ".." in image:
-                raise ApiError(ErrorCode.PARAM_INVALID, f"图片地址非法: {image}")
-        return list(images)

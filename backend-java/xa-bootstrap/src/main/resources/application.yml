@@ -122,6 +122,16 @@ xatodo:
     # 换 MinIO/OSS 时接口不变、只替换存储实现。
     dir: ${XATODO_UPLOAD_DIR:./data/uploads}
     max-bytes: ${XATODO_UPLOAD_MAX_BYTES:5242880}
+  ai:
+    vision:
+      # 本地轻量多模态识别（spec §4.1.9）：指向**本机/内网**的 OpenAI 兼容推理服务，
+      # 比如 ollama 起的 http://localhost:11434/v1 + qwen2.5vl:3b。
+      # 留空表示未接入：那时 /ai/events/recognize 返回 90002，App 会明说「识别未接入」。
+      base-url: ${XATODO_VISION_BASE_URL:}
+      model: ${XATODO_VISION_MODEL:}
+      api-key: ${XATODO_VISION_API_KEY:}
+      timeout-seconds: ${XATODO_VISION_TIMEOUT_SECONDS:60}
+      timezone: Asia/Shanghai
 
 logging:
   pattern:

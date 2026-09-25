@@ -308,6 +308,10 @@ XaTodo（心安待办）是一款智能日程与待办管理应用。产品围�
 - 完成 / 取消、完成时间记录、优先级（LOW / NORMAL / HIGH / URGENT）。
 - 逾期高亮；无时间的待办归入「待安排」清单。
 - 子任务完成不影响父任务状态，父任务完成需二次确认。
+- **图片附件**：待办可附最多 9 张图片（如拍的纸质通知、白板、便签），
+  走 §5.10 的上传通道存成相对 URL。日历页的「拍照」悬浮按钮就是这条路径的快捷入口：
+  拍一张 → 直接进「新建待办」并带上这张图，**不经过智能助手**——
+  拍照记录是确定性操作，不需要模型。
 
 #### 4.1.4 日程字段（对齐主流系统日历）
 
@@ -375,9 +379,9 @@ XaTodo（心安待办）是一款智能日程与待办管理应用。产品围�
 
 - 日历页提供**「跳到指定日期」**入口（悬浮按钮，位于新建按钮上方）。
 - 日历页右下角是一组**悬浮按钮**（自上而下：拍照 / 跳到指定日期 / 新建日程）：
-  - **拍照**：拍纸质通知、行程单、白板照片 → 交给智能助手识别成日程（见 §11 阶段三）。
-    照片先走 §5.10 的上传通道存下来；**识别尚未接入模型**，这一点在对话页里如实说明，
-    不会假装"拍完就建好了"。
+  - **拍照**：拍纸质通知、行程单、白板照片 → 直接进入「新建待办」并带上这张图（§4.1.3）。
+    这条路**不经过智能助手**：拍照记录是确定性操作，等模型是多余的中间步骤。
+    照片走 §5.10 的上传通道，落库的是相对 URL。
   - **跳到指定日期**：滚轮选日期（年 / 月 / 日），见下。
   - **新建日程**：主操作，实心按钮。
 - 点开是一个选择层，复用月历组件并可翻月；选中某天后日历切到该月并选中该日，选择层关闭。
@@ -391,7 +395,48 @@ XaTodo（心安待办）是一款智能日程与待办管理应用。产品围�
   服务端不存绝对域名，换域名 / 上 CDN 都不用改数据。
 - 头像是**身份级**属性（`identity.avatar_url`）：切到组织身份时用的是该组织身份的头像。
 
-#### 4.1.9 意见反馈
+#### 4.1.9 拍照 / 相册识别日程（**已实现但暂缓上线，排到最后**）
+
+> **当前状态（2026-09-25）**：接口、后端约束解码/容错解析/修复重试、App 的拍照与相册入口、
+> 可编辑的结果确认页、地点的高德解析都已实现并有测试；
+> **端侧模型还没有真正跑起来**——端侧推理需要 Dev Client 构建（原生模块 + Android NDK/CMake），
+> 本机工具链不具备，因此整条功能**按产品要求排到最后再做**。
+> 在此之前，后端未配置模型时该接口如实返回 `90002`，App 会明确提示并给「手动新建」的兜底。
+
+日历页的「拍照」悬浮按钮不是助手入口，而是一条**确定性的录入捷径**：
+
+```
+点「拍照」→ 选择：拍照 / 从相册选择
+   ↓
+上传图片（§5.10）→ 交给**本地部署的轻量多模态模型**识别
+   ↓
+返回 0..N 条日程草稿（一张图里可能有多场活动，必须都识别出来）
+   ↓
+用户在结果列表里勾选/修改 → 批量创建日程
+```
+
+- **一张图多条日程**：返回值是一组条目而不是单条；App 按列表展示、逐条可编辑、可勾选，
+  默认全选。识别不出时间的条目**不要丢掉**，退化成「标题 + 待定时间」让用户补。
+- **端侧优先，服务端兜底**：
+  1. **端侧**（首选）：图片**不出设备**，用手机上的轻量多模态模型识别。
+     选择用 `llama.rn`（GGUF，模型文件可替换、不需要导出转换链），
+     默认模型 **Qwen2.5-VL-3B-Instruct（Q4_K_M，约 2.3GB）**——
+     中文通知/行程单的识别质量明显好于 1B 级模型；低配机可降级 **SmolVLM-500M（约 0.5GB）**。
+     端侧推理需要 **Dev Client 构建**（原生模块在 Expo Go 里不存在）。
+  2. **服务端**（兜底）：端侧不可用时（Expo Go、模型没下载、内存不足）回落到
+     `POST /ai/events/recognize`，由**内网**部署的同款模型识别；照片仍不出内网。
+  3. 两边都不可用时明确报错并给「手动新建日程」的兜底，**不假装识别成功**。
+  App 会如实标注本次是「本机识别」还是「服务器识别」——照片的去向是用户该知道的事。
+- **结构化输出有四层保障**（只靠提示词不够）：①请求带 `response_format`（JSON 模式，
+  可切 JSON Schema 严格模式）做**约束解码**；②提示词写明结构；③**容错解析**
+  （代码块、夹带解释、单引号、尾逗号、只回一个对象都能吃）；④解析不出来就把坏输出
+  **回灌给模型修复重试一次**，仍不合法则报 `90002`——绝不让格式不对的结果流到 App。
+- **不自动落库**：识别结果一律先给用户确认。模型会看错，直接写进日历比看错更糟——
+  日历是用户唯一的事实来源，写脏了要花更多时间清理。
+- 这是阶段三能力的**第一步**，与「小安」（§11）共用同一套模型接入点，但**入口独立**：
+  拍照记录是确定性操作，不该先经过一个对话。
+
+#### 4.1.10 意见反馈
 
 - 「我的」页提供**「意见反馈」**入口，进入独立页面填写并提交给平台超管。
 - 内容：分类（功能异常 / 体验建议 / 其他）、文字描述（必填）、**图片附件（可多张，可选）**。
@@ -574,7 +619,7 @@ erDiagram
 | `calendar` | `id`、`calendar_type`、`owner_identity_id`(可空)、`org_id`(可空)、`department_id`(可空)、`name`、`color`、`timezone`、`is_default`、`status`、`created_at`、`updated_at` | `PERSONAL` 时 `owner_identity_id` 必填；`ORG`/`ORG_DEPARTMENT` 时 `org_id` 必填 |
 | `event` | `id`、`calendar_id`、`org_id`(可空)、`creator_identity_id`、`source_type`、`title`、`description`、`location_name`、`location_address`、`latitude`、`longitude`、`poi_id`、`coordinate_system`、`start_at`、`end_at`、`all_day`、`timezone`、`rrule`、`rrule_until`、`status`、`availability`、`color`、`priority`、`category`、`url`、`travel_time_minutes`、`dispatch_id`(可空)、`updated_after_dispatch`、`created_at`、`updated_at`、`deleted_at` | 索引 `idx_calendar_range(calendar_id, start_at, end_at)`；`end_at > start_at`；`status` ∈ `CONFIRMED`/`TENTATIVE`/`CANCELLED`；`availability` ∈ `BUSY`/`FREE`；地点字段语义见 §5.9 |
 | `event_exception` | `id`、`event_id`、`occurrence_date`、`exception_type`(MODIFIED/CANCELLED)、`override_start_at`、`override_end_at`、`override_title`、`created_at` | `(event_id, occurrence_date)` 唯一 |
-| `task` | `id`、`calendar_id`、`owner_identity_id`、`org_id`(可空)、`parent_task_id`(可空)、`event_id`(可空)、`title`、`description`、`due_at`(可空)、`all_day`、`status`、`completed_at`、`priority`、`rrule`、`sort_order`、`created_at`、`updated_at`、`deleted_at` | 仅两层（父/子）；父任务与子任务须同 `calendar_id`；`event_id` 指向关联日程（一个日程可关联多个待办，见 §4.1.6），删除日程时置空而非级联删除 |
+| `task` | `id`、`calendar_id`、`owner_identity_id`、`org_id`(可空)、`parent_task_id`(可空)、`event_id`(可空)、`title`、`description`、`due_at`(可空)、`all_day`、`status`、`completed_at`、`priority`、`rrule`、`images`(jsonb)、`sort_order`、`created_at`、`updated_at`、`deleted_at` | 仅两层（父/子）；父任务与子任务须同 `calendar_id`；`event_id` 指向关联日程（一个日程可关联多个待办，见 §4.1.6），删除日程时置空而非级联删除；`images` 存上传后的相对 URL 数组（≤9，与 `feedback.images` 同一套写法） |
 | `reminder` | `id`、`target_type`(EVENT/TASK)、`target_id`、`identity_id`、`occurrence_date`(可空)、`minutes_before`、`channel`、`enabled`、`sent_at`、`created_at` | `(target_type, target_id, identity_id, occurrence_date, minutes_before)` 唯一 |
 
 ### 5.6 组织日历下发与回执
@@ -775,6 +820,12 @@ erDiagram
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/search` | 跨日程与待办的关键字检索。入参 `keyword`、可选 `types`（`EVENT`/`TASK`/`ORG_EVENT`，默认全部）、可选 `limit`（默认 20，上限 50）；返回统一条目（`type`、`id`、`title`、`startAt`/`endAt` 或 `dueAt`、`locationName`、`timezone`、`recurring`、`occurrenceDate`）。`type=ORG_EVENT` 的条目额外带 `identityId`、`orgId`、`orgName`——它属于某个组织，点开要跳进那个组织的视图。**服务端全量检索**（个人 + 我绑定的所有组织），按时间倒序、无时间待办置末，范围与排序见 §4.1.7 |
+
+**拍照识别与上传**
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/ai/events/recognize` | 上传一张图片（`multipart/form-data`，字段 `file`），交给**本地轻量多模态模型**识别其中的日程，返回 `{ provider, imageUrl, items[] }`；`items` 每条含 `title`、`startAt`/`endAt`（可为空，表示没看出时间）、`allDay`、`locationName`（可空）、`confidence`。**一张图可返回多条**；模型未配置或不可用时返回 `90002`（与「图里确实没有日程」是两件事：后者返回空 `items`），见 §4.1.9 |
 
 **上传与反馈**
 
@@ -1240,7 +1291,7 @@ flowchart LR
 - 自然语言创建日程与待办（如「明天下午三点和张总开会」）。
 - 日程冲突检测与空闲时段推荐。
 - 接入位置：后端预留 `ai` 模块边界与 `AiProvider` 接口；前端入口位**已落地** ——
-  日历页搜索框右侧的「小安」入口，进入对话页。
+  底部导航里常驻的**「小安」tab（排在「组织」之后）**，进入对话页。
 - **当前状态：只有入口与骨架，没有接入任何模型**。对话页会明说这一点
   （`domain/agent.ts` 的 `AGENT_OFFLINE_NOTICE`，并有测试盯着，避免将来接入模型时
   界面还在说「未接入」）。不假装能用，是因为点两次就会被识破，比直说更伤信任。

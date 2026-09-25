@@ -4,7 +4,6 @@ import {
   AGENT_CAPABILITIES,
   AGENT_NAME,
   AGENT_OFFLINE_NOTICE,
-  AGENT_PHOTO_NOTICE,
   AGENT_STARTERS,
   agentIsOffline,
 } from '../src/domain/agent';
@@ -30,8 +29,4 @@ describe('智能助手入口（spec §11 阶段三）', () => {
     expect(AGENT_NAME).not.toBe('');
   });
 
-  it('拍照入口要如实说明「存下来了但还没法识别」，别让人觉得拍完就成日程了', () => {
-    expect(AGENT_PHOTO_NOTICE).toContain('已经上传保存');
-    expect(AGENT_PHOTO_NOTICE).toContain('没有接入模型');
-  });
 });

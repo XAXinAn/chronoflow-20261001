@@ -65,7 +65,9 @@ public class TaskController {
         return ApiResponse.ok(tasks.stream()
                 // 未关联日程时不要拿 null 去查表：不可变 Map 的 get(null) 会抛 NPE
                 .map(task -> TaskResponse.from(
-                        task, task.getEventId() == null ? null : titles.get(task.getEventId())))
+                        task,
+                        task.getEventId() == null ? null : titles.get(task.getEventId()),
+                        taskService.imageUrls(task)))
                 .toList());
     }
 
@@ -103,6 +105,7 @@ public class TaskController {
     }
 
     private TaskResponse toResponse(Task task) {
-        return TaskResponse.from(task, taskService.eventTitle(task.getEventId()));
+        return TaskResponse.from(
+                task, taskService.eventTitle(task.getEventId()), taskService.imageUrls(task));
     }
 }

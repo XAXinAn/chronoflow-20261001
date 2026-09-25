@@ -56,7 +56,8 @@ public class EventController {
     public ApiResponse<TaskResponse> convertToTask(@PathVariable Long id) {
         Long identityId = CurrentIdentity.require().identityId();
         var task = conversionService.convertEventToTask(identityId, id);
-        return ApiResponse.ok(TaskResponse.from(task, taskService.eventTitle(task.getEventId())));
+        return ApiResponse.ok(TaskResponse.from(
+                task, taskService.eventTitle(task.getEventId()), taskService.imageUrls(task)));
     }
 
     /**

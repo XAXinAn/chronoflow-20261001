@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from sqlalchemy import text
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..errors import ApiError, ErrorCode
 from . import recurrence
+from .storage import validate_image_urls
 
 DEFAULT_CALENDAR_NAME = "我的日程"
 
@@ -523,9 +525,10 @@ class PersonalService:
         row = self._session.execute(
             text(
                 "INSERT INTO task (calendar_id, owner_identity_id, parent_task_id, title,"
-                " description, event_id, due_at, all_day, status, priority, rrule, sort_order)"
+                " description, event_id, due_at, all_day, status, priority, rrule, images, sort_order)"
                 " VALUES (:calendar_id, :identity, :parent_id, :title, :description, :event_id,"
-                " :due_at, :all_day, 'TODO', :priority, :rrule, 0) RETURNING *"
+                " :due_at, :all_day, 'TODO', :priority, :rrule, CAST(:images AS jsonb), 0)"
+                " RETURNING *"
             ),
             {
                 "calendar_id": calendar_id,
@@ -538,6 +541,8 @@ class PersonalService:
                 "all_day": bool(payload.get("allDay")),
                 "priority": payload.get("priority") or "NORMAL",
                 "rrule": payload.get("rrule"),
+                # jsonb 列不能用数组适配器直接塞：显式序列化再 CAST
+                "images": json.dumps(validate_image_urls(payload.get("images")), ensure_ascii=False),
             },
         ).mappings().one()
         self._session.commit()
@@ -565,6 +570,8 @@ class PersonalService:
                 " due_at = CASE WHEN :clear_due THEN NULL ELSE COALESCE(:due_at, due_at) END,"
                 " all_day = CASE WHEN :clear_due THEN false ELSE COALESCE(:all_day, all_day) END,"
                 " priority = COALESCE(:priority, priority), status = COALESCE(:status, status),"
+                # 图片：null = 不修改；传空数组才是「删光所有图片」
+                " images = COALESCE(CAST(:images AS jsonb), images),"
                 " completed_at = CASE WHEN :status = 'DONE' THEN now()"
                 "   WHEN :status IS NULL THEN completed_at ELSE NULL END,"
                 " sort_order = COALESCE(:sort_order, sort_order), updated_at = now()"
@@ -581,6 +588,9 @@ class PersonalService:
                 "all_day": payload.get("allDay"),
                 "priority": payload.get("priority"),
                 "status": payload.get("status"),
+                "images": json.dumps(validate_image_urls(payload.get("images")), ensure_ascii=False)
+                if payload.get("images") is not None
+                else None,
                 "sort_order": payload.get("sortOrder"),
                 "completed": completed,
             },
@@ -769,6 +779,9 @@ def _task_view(row) -> dict:
     # event_title 来自 LEFT JOIN；单条读写时由 _task_row 补上，缺失即视为未关联
     keys = row.keys() if hasattr(row, "keys") else []
     event_title = row["event_title"] if "event_title" in keys else None
+    images = row["images"] if "images" in keys else []
+    if isinstance(images, str):  # 驱动返回字符串时也要能读
+        images = json.loads(images)
     return {
         "id": row["id"],
         "calendarId": row["calendar_id"],
@@ -783,6 +796,8 @@ def _task_view(row) -> dict:
         "status": row["status"],
         "completedAt": row["completed_at"],
         "priority": row["priority"],
+        # 图片附件的相对 URL（spec §4.1.3）
+        "images": images or [],
         "sortOrder": row["sort_order"],
     }
 

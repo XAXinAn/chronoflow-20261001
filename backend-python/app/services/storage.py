@@ -81,3 +81,24 @@ class ImageStorage:
             # 内容寻址：同名文件内容必然相同，重复上传直接复用
             target.write_bytes(content)
         return StoredImage(url=f"/uploads/{file_name}", size=len(content), content_type=content_type)
+
+
+MAX_IMAGES = 9
+
+
+def validate_image_urls(images: list[str] | None) -> list[str]:
+    """校验图片地址（spec §5.10）。
+
+    只接受**本服务上传通道产出的相对 URL**：不校验的话，客户端可以把任意外链塞进来——
+    那等于让别人的服务在我们的用户界面上打广告或埋追踪，后台也会跟着去取。
+
+    反馈图片（§4.1.9）与待办图片（§4.1.3）共用这一份规则，避免两处慢慢长歪。
+    """
+    if not images:
+        return []
+    if len(images) > MAX_IMAGES:
+        raise ApiError(ErrorCode.PARAM_INVALID, f"最多上传 {MAX_IMAGES} 张图片")
+    for image in images:
+        if not isinstance(image, str) or not image.startswith("/uploads/") or ".." in image:
+            raise ApiError(ErrorCode.PARAM_INVALID, f"图片地址非法: {image}")
+    return list(images)

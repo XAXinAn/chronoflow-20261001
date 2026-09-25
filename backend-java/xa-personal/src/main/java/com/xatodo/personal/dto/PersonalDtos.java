@@ -148,6 +148,8 @@ public final class PersonalDtos {
             OffsetDateTime dueAt,
             Boolean allDay,
             String priority,
+            /** 图片附件的相对 URL 数组（§4.1.3）：日历页「拍照」直接带一张进来 */
+            java.util.List<String> images,
             @Size(max = 512) String rrule) {
     }
 
@@ -169,6 +171,7 @@ public final class PersonalDtos {
             Boolean allDay,
             String priority,
             String status,
+            java.util.List<String> images,
             Integer sortOrder) {
     }
 
@@ -188,15 +191,24 @@ public final class PersonalDtos {
                                String status,
                                OffsetDateTime completedAt,
                                String priority,
+                               java.util.List<String> images,
                                Integer sortOrder) {
 
-        /** 实体 → 响应。eventTitle 由服务层批量查出来传入，避免逐条查库。 */
-        public static TaskResponse from(com.xatodo.personal.entity.Task task, String eventTitle) {
+        /**
+         * 实体 → 响应。
+         *
+         * @param eventTitle 关联日程标题，由服务层批量查出来传入，避免逐条查库
+         * @param images     图片相对 URL（jsonb 列由服务层解析后传入）
+         */
+        public static TaskResponse from(com.xatodo.personal.entity.Task task,
+                                        String eventTitle,
+                                        java.util.List<String> images) {
             return new TaskResponse(
                     task.getId(), task.getCalendarId(), task.getParentTaskId(),
                     task.getEventId(), eventTitle,
                     task.getTitle(), task.getDescription(), task.getDueAt(), task.getAllDay(),
-                    task.getStatus(), task.getCompletedAt(), task.getPriority(), task.getSortOrder());
+                    task.getStatus(), task.getCompletedAt(), task.getPriority(), images,
+                    task.getSortOrder());
         }
     }
 

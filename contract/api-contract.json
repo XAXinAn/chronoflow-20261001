@@ -60,6 +60,7 @@
     { "method": "GET", "path": "/api/v1/search", "auth": "access" },
 
     { "method": "POST", "path": "/api/v1/uploads/images", "auth": "access" },
+    { "method": "POST", "path": "/api/v1/ai/events/recognize", "auth": "access" },
     { "method": "POST", "path": "/api/v1/feedback", "auth": "access" },
     { "method": "GET", "path": "/api/v1/feedback", "auth": "access" },
 

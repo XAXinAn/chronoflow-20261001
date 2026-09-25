@@ -89,6 +89,8 @@ class TaskCreate(BaseModel):
     dueAt: datetime | None = None
     allDay: bool | None = None
     priority: str | None = None
+    # 图片附件的相对 URL（§4.1.3）：日历页「拍照」会直接带一张进来
+    images: list[str] | None = None
     rrule: str | None = None
 
 
@@ -105,6 +107,7 @@ class TaskUpdate(BaseModel):
     allDay: bool | None = None
     priority: str | None = None
     status: str | None = None
+    images: list[str] | None = None
     sortOrder: int | None = None
 
 

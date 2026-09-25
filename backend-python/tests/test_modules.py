@@ -621,6 +621,32 @@ def test_task_update_and_clear_due_at(client) -> None:
     assert detail["dueAt"] is None
 
 
+def test_task_images_are_stored_and_validated(client) -> None:
+    """待办可带图片附件；外链地址被拒；空数组 = 删光（spec §4.1.3）。"""
+    tokens = register(client, "13800000304")
+    created = client.post(
+        "/api/v1/tasks",
+        json={"title": "拍的通知", "images": ["/uploads/notice.png"]},
+        headers=auth(tokens),
+    ).json()["data"]
+
+    detail = client.get(f"/api/v1/tasks/{created['id']}", headers=auth(tokens)).json()["data"]
+    assert detail["images"] == ["/uploads/notice.png"]
+
+    # 外链必须被拒：否则等于让别人在我们的用户界面上打广告
+    external = client.post(
+        "/api/v1/tasks",
+        json={"title": "外链", "images": ["https://evil.example/a.png"]},
+        headers=auth(tokens),
+    ).json()
+    assert external["code"] == ErrorCode.PARAM_INVALID
+
+    # 空数组 = 删光图片（None 才是「不修改」）
+    client.patch(f"/api/v1/tasks/{created['id']}", json={"images": []}, headers=auth(tokens))
+    cleared = client.get(f"/api/v1/tasks/{created['id']}", headers=auth(tokens)).json()["data"]
+    assert cleared["images"] == []
+
+
 def test_task_delete(client) -> None:
     tokens = register(client, "13800000302")
     created = client.post(

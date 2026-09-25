@@ -23,6 +23,11 @@
             <groupId>com.xatodo</groupId>
             <artifactId>xa-auth</artifactId>
         </dependency>
+        <!-- 复用上传通道的图片校验与落盘（拍照识别要先把图存下来，结果里带上它的 URL） -->
+        <dependency>
+            <groupId>com.xatodo</groupId>
+            <artifactId>xa-support</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>

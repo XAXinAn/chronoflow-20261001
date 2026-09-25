@@ -1,18 +1,16 @@
 import { useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { EditorHeader } from '../components/form';
 import { Card } from '../components/ui';
-import { useAppTheme, useRuntime } from '../context/AppContext';
+import { useAppTheme } from '../context/AppContext';
 import {
   AGENT_CAPABILITIES,
   AGENT_NAME,
   AGENT_OFFLINE_NOTICE,
-  AGENT_PHOTO_NOTICE,
   AGENT_STARTERS,
   agentIsOffline,
 } from '../domain/agent';
-import { absoluteMediaUrl } from '../domain/media';
 
 interface Message {
   id: number;
@@ -27,22 +25,11 @@ interface Message {
  * 「还没有接入模型」。宁可现在看着"简陋"，也不要让界面假装智能——
  * 用户点两次就会发现全是套话，比直说更伤信任。
  */
-export function AgentChatScreen({
-  onBack,
-  photoUrl,
-}: {
-  onBack: () => void;
-  /** 从日历页「拍照」进来的照片相对 URL（已上传，等模型接入后识别） */
-  photoUrl?: string | null;
-}) {
+export function AgentChatScreen() {
   const theme = useAppTheme();
-  const { baseUrl } = useRuntime();
-  const [messages, setMessages] = useState<Message[]>(() =>
-    // 带着照片进来时，先把「照片 + 现状说明」摆上，别让用户以为点了没反应
-    photoUrl ? [{ id: 1, role: 'agent' as const, text: AGENT_PHOTO_NOTICE }] : [],
-  );
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [nextId, setNextId] = useState(photoUrl ? 2 : 1);
+  const [nextId, setNextId] = useState(1);
 
   const send = (text: string) => {
     const trimmed = text.trim();
@@ -61,11 +48,10 @@ export function AgentChatScreen({
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.bg }}>
       <EditorHeader
-        title={`${AGENT_NAME}助手`}
-        cancelLabel="返回"
-        saveLabel=""
-        saveDisabled
-        onCancel={onBack}
+        title={AGENT_NAME}
+        // 作为底部导航的一级页面：只留标题，不需要返回/保存
+        titleOnly
+        onCancel={() => undefined}
         onSave={() => undefined}
       />
 
@@ -91,14 +77,6 @@ export function AgentChatScreen({
                 {AGENT_OFFLINE_NOTICE}
               </Text>
             </Card>
-          ) : null}
-
-          {photoUrl ? (
-            <Image
-              source={{ uri: absoluteMediaUrl(baseUrl, photoUrl) as string }}
-              style={[styles.photo, { borderColor: theme.color.border }]}
-              accessibilityLabel="刚拍的照片"
-            />
           ) : null}
 
           {messages.map((message) => (
@@ -203,7 +181,6 @@ export function AgentChatScreen({
 }
 
 const styles = StyleSheet.create({
-  photo: { width: '100%', height: 200, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, resizeMode: 'cover' },
   bubbleRow: { flexDirection: 'row' },
   bubbleRowRight: { justifyContent: 'flex-end' },
   bubble: {

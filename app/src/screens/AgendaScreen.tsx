@@ -4,6 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -25,6 +26,8 @@ import { dayHeading, formatTimeRange, localDateKey } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 import { holidayName, toHolidayMarks, yearsSpanned } from '../domain/holiday';
 import { resultBadges, resultDateKey, resultSubtitle, resultTypeLabel } from '../domain/search';
+import type { RecognizedEventDraft } from '../domain/vision';
+import { recognizePhoto, resolveDraftPlaces } from '../vision/recognizer';
 
 /** 检索防抖：每敲一个字就发一次请求既费流量，也会让结果闪。 */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -50,15 +53,20 @@ export function AgendaScreen({
   onOpenEvent,
   onOpenTask,
   onOpenOrgEvent,
-  onOpenAgent,
+  onOpenRecognized,
 }: {
   onCreateEvent: (dateKey: string) => void;
   onOpenEvent: (eventId: number, dateKey: string, occurrenceDate: string | null) => void;
   onOpenTask: (taskId: number) => void;
   /** 组织日程结果：切到那个组织的视图并选中那天（只读，进不了个人编辑页） */
   onOpenOrgEvent: (identityId: number, dateKey: string) => void;
-  /** 智能助手入口（spec §11 阶段三预留） */
-  onOpenAgent: (payload?: { photoUrl?: string }) => void;
+  /** 拍照/相册识别完的结果确认页（spec §4.1.9） */
+  onOpenRecognized: (payload: {
+    drafts: RecognizedEventDraft[];
+    photoUri: string;
+    sourceLabel: string;
+    deviceFallbackReason: string | null;
+  }) => void;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -211,21 +219,46 @@ export function AgendaScreen({
    */
   const shootPhoto = async () => {
     setError(null);
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      setError('需要相机权限才能拍照');
-      return;
+    // 先让用户选来源：拍照还是相册（spec §4.1.9）
+    Alert.alert('识别日程', '选择图片来源', [
+      { text: '拍照', onPress: () => void pickPhoto('camera') },
+      { text: '从相册选择', onPress: () => void pickPhoto('library') },
+      { text: '取消', style: 'cancel' },
+    ]);
+  };
+
+  const pickPhoto = async (from: 'camera' | 'library') => {
+    if (from === 'camera') {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setError('需要相机权限才能拍照');
+        return;
+      }
     }
-    const shot = await ImagePicker.launchCameraAsync({ quality: 0.8 });
-    if (shot.canceled || shot.assets.length === 0) {
+    const picked = from === 'camera'
+      ? await ImagePicker.launchCameraAsync({ quality: 0.8 })
+      : await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+    if (picked.canceled || picked.assets.length === 0) {
       return;
     }
     setPhotoBusy(true);
     try {
-      const uploaded = await api.uploadImage(shot.assets[0].uri);
-      onOpenAgent({ photoUrl: uploaded.url });
+      const result = await recognizePhoto({ uri: picked.assets[0].uri, api });
+      // 地点必须能被高德定位：匹配不到就留空，由用户在结果页手动选或不要地点
+      const drafts = await resolveDraftPlaces(result.items, api);
+      onOpenRecognized({
+        drafts,
+        photoUri: result.imageUrl ?? picked.assets[0].uri,
+        sourceLabel:
+          result.source === 'device'
+            ? `本机识别（${result.provider}）`
+            : `服务器识别（${result.provider}）`,
+        deviceFallbackReason: result.deviceFallbackReason,
+      });
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '照片上传失败');
+      // 识别没接入时如实说明，并给「手动新建」的兜底，而不是让用户反复重拍
+      const message = cause instanceof ApiError ? cause.message : '识别失败';
+      Alert.alert('识别不可用', `${message}\n\n可以先用「＋」手动新建日程。`);
     } finally {
       setPhotoBusy(false);
     }
@@ -264,23 +297,6 @@ export function AgendaScreen({
           ) : null}
         </View>
 
-        {/* 智能助手入口：紧挨搜索框（spec §11 阶段三的预留位） */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="智能助手"
-          onPress={() => onOpenAgent()}
-          style={({ pressed }) => [
-            styles.agentEntry,
-            {
-              backgroundColor: theme.color.surfaceRaised,
-              borderColor: theme.color.border,
-              borderRadius: theme.radius.card,
-              opacity: pressed ? 0.7 : 1,
-            },
-          ]}
-        >
-          <Ionicons name="sparkles-outline" size={18} color={theme.color.textPrimary} />
-        </Pressable>
       </View>
 
       {searchActive ? (
@@ -537,13 +553,6 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingBottom: 8,
-  },
-  agentEntry: {
-    width: 40,
-    height: 40,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   searchField: {
     flex: 1,

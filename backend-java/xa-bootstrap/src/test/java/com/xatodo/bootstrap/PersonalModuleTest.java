@@ -210,6 +210,33 @@ class PersonalModuleTest {
     }
 
     @Test
+    @DisplayName("待办可带图片附件：读回来还在，外链地址被拒绝")
+    void taskImagesAreStoredAndValidated() throws Exception {
+        String token = registerAccount("13800000209");
+
+        long taskId = postJson("/api/v1/tasks", token,
+                "{\"title\":\"拍的通知\",\"images\":[\"/uploads/notice.png\"]}")
+                .path("data").path("id").asLong();
+
+        // 必须重新 GET 读回来：更新接口返回的是内存对象，断言它会假通过
+        JsonNode reread = getJson("/api/v1/tasks/" + taskId, token).path("data");
+        assertThat(reread.path("images").get(0).asText()).isEqualTo("/uploads/notice.png");
+
+        // 外链必须被拒：否则等于让别人在我们的用户界面上打广告
+        mockMvc.perform(post("/api/v1/tasks")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"外链\",\"images\":[\"https://evil.example/a.png\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(10002));
+
+        // 传空数组 = 删光图片（null 才是「不修改」）
+        patchJson("/api/v1/tasks/" + taskId, token, "{\"images\":[]}");
+        assertThat(getJson("/api/v1/tasks/" + taskId, token).path("data").path("images").isMissingNode())
+                .as("清空后不再返回 images 字段（non_null 序列化）").isTrue();
+    }
+
+    @Test
     @DisplayName("待办生命周期：创建、完成、子任务与两层限制")
     void taskLifecycleWithSubtask() throws Exception {
         String token = registerAccount("13800000208");

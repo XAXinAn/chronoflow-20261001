@@ -228,6 +228,25 @@ export interface FeedbackItem {
   handledAt?: string | null;
 }
 
+/** 识别出的日程草稿（POST /ai/events/recognize，spec §4.1.9）。 */
+export interface RecognizedEventItem {
+  title: string;
+  /** 为空表示**没看出时间**：App 会把它降级成一条「待安排」的待办 */
+  startAt?: string | null;
+  endAt?: string | null;
+  allDay?: boolean | null;
+  locationName?: string | null;
+  confidence?: number | null;
+}
+
+export interface RecognizeResponse {
+  /** 实际生效的识别实现；端侧识别时由 App 自己填 */
+  provider: string;
+  /** 服务端识别会把图片存下来并返回相对 URL */
+  imageUrl: string | null;
+  items: RecognizedEventItem[];
+}
+
 export interface OrgEvent {
   eventId: number;
   dispatchId: number;
