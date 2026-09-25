@@ -1,0 +1,26 @@
+{
+  "name": "@xa-todo/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "XaTodo 设计令牌唯一来源：黑白极简 · 高级质感 · 动态呼吸感（spec §7.6）",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tokens.css": "./dist/tokens.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/emit-css.mjs",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

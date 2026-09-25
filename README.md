@@ -13,8 +13,8 @@ xa-todo/
 ├── backend-java/       阶段一后端：Java 21 + Spring Boot 3
 ├── backend-python/     阶段二后端：FastAPI 平行重写（尚未开始）
 ├── app/                App 端：React Native + Expo（尚未开始）
-├── web-admin/          Web 后台：React + Vite + Ant Design（尚未开始）
-├── packages/           共享 TypeScript 类型与 API 客户端（尚未开始）
+├── web-admin/          Web 后台：React + Vite + Ant Design
+├── packages/           共享包（design-tokens：设计令牌唯一来源）
 └── deploy/             Docker Compose 与 Nginx 配置
 ```
 
@@ -23,13 +23,15 @@ xa-todo/
 | 部分 | 状态 |
 | --- | --- |
 | 需求与规格（spec.md） | 完成 |
-| 数据库结构（19 张表 / V1–V6 迁移） | 完成 |
-| 后端地基（统一响应体、错误码、鉴权链路骨架、OpenAPI） | 完成 |
-| 后端业务模块（auth / personal / org / admin） | 未开始 |
+| 数据库结构（19 张表 / V1–V7 迁移） | 完成 |
+| 后端（common / auth / personal / org / admin） | 完成（43 项集成测试） |
+| 设计令牌 packages/design-tokens | 完成（7 项测试） |
+| Web 后台 web-admin | 完成（15 项测试） |
 | App 端 | 未开始 |
-| Web 后台 | 未开始 |
+| 阶段二 backend-python | 未开始 |
+| CI、OpenAPI 契约测试、生产部署编排 | 未开始 |
 
-详见 [backend-java/README.md](./backend-java/README.md)。
+详见 [backend-java/README.md](./backend-java/README.md) 与 [web-admin/README.md](./web-admin/README.md)。
 
 ## 快速开始
 
@@ -42,9 +44,18 @@ cd backend-java && mvn clean verify
 
 # 3) 运行后端
 mvn -pl xa-bootstrap spring-boot:run
+
+# 4) 构建并测试前端（设计令牌需先构建）
+cd .. && npm install
+npm run build -w @xa-todo/design-tokens
+npm run test  -w @xa-todo/web-admin
+
+# 5) 启动 Web 后台（默认 http://127.0.0.1:5173）
+npm run dev:web
 ```
 
 后端默认监听 `8080`，探活接口 `GET /api/v1/system/ping`。
+后台初始账号由 `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD` 决定。
 
 ## 开发环境注意事项
 
@@ -56,4 +67,5 @@ mvn -pl xa-bootstrap spring-boot:run
   ```
 
 - Maven 依赖走阿里云镜像（配置在 `~/.m2/settings.xml`），直连 Maven Central 约 20KB/s 不可用。
+- npm 依赖走 npmmirror（配置在 `~/.npmrc`），直连约 1MB/s、镜像约 7MB/s。
 - Android 模拟器调试需在 Windows 侧启动 AVD，详见 spec §8.3；iOS 模拟器在当前环境不可用。

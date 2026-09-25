@@ -1,0 +1,78 @@
+@import '@xa-todo/design-tokens/tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--xa-bg);
+  color: var(--xa-text-primary);
+  font-family: var(--xa-font-sans);
+  /* 数字与时间使用等宽字形，保证列表与统计对齐 */
+  font-variant-numeric: tabular-nums;
+  transition: background var(--xa-duration-enter) var(--xa-easing-standard);
+}
+
+.xa-page {
+  padding: var(--xa-space-lg);
+  animation: xa-fade-up var(--xa-duration-enter) var(--xa-easing-standard);
+}
+
+.xa-page-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 var(--xa-space-md);
+}
+
+.xa-card {
+  background: var(--xa-surface-raised);
+  border: 1px solid var(--xa-border);
+  border-radius: var(--xa-radius-card);
+  box-shadow: var(--xa-shadow);
+  padding: var(--xa-space-md);
+  transition:
+    box-shadow var(--xa-duration-enter) var(--xa-easing-standard),
+    transform var(--xa-duration-enter) var(--xa-easing-standard);
+}
+
+/* Web 端悬停时阴影加深并上浮 2px（spec §7.6.5） */
+.xa-card--hoverable:hover {
+  box-shadow: var(--xa-shadow), 0 10px 28px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.xa-metric-value {
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 40px;
+  letter-spacing: -0.02em;
+}
+
+.xa-metric-label {
+  color: var(--xa-text-secondary);
+  font-size: 13px;
+}
+
+@keyframes xa-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xa-page {
+    animation: none;
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "xa-todo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "XaTodo（心安待办）—— 智能日程与待办",
+  "workspaces": [
+    "packages/*",
+    "web-admin",
+    "app"
+  ],
+  "scripts": {
+    "build": "npm run build -w @xa-todo/design-tokens && npm run build -w @xa-todo/web-admin",
+    "test": "npm run test -w @xa-todo/design-tokens && npm run test -w @xa-todo/web-admin",
+    "dev:web": "npm run dev -w @xa-todo/web-admin"
+  }
+}
