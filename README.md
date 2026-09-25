@@ -29,7 +29,7 @@ xa-todo/
 | 设计令牌 packages/design-tokens | 完成（7 项测试） |
 | Web 后台 web-admin | 完成（15 项测试） |
 | App 端 app | 完成（22 项测试，模拟器联调待进行） |
-| 阶段二 backend-python | 进行中（认证与账号设置已完成，契约覆盖率 20%） |
+| 阶段二 backend-python | 完成（契约覆盖率 100%，22 项测试） |
 | CI 与 API 契约测试 | 完成（GitHub Actions） |
 | 生产部署编排（Dockerfile / Nginx） | 未开始 |
 

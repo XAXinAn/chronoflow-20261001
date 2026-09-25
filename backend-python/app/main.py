@@ -6,14 +6,55 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import uuid
+from contextlib import asynccontextmanager
 
+import bcrypt
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from .errors import ApiError, ErrorCode, envelope, set_trace_id
-from .routers import auth, me, system
+from .routers import admin, auth, me, org, personal, system
+
+logger = logging.getLogger(__name__)
+
+
+def bootstrap_super_admin() -> None:
+    """首次启动且 admin_user 表为空时创建初始超管。
+
+    与 Java 版 AdminUserInitializer 行为一致——否则会出现「没有任何人能登录后台」的死锁状态。
+    生产环境务必用环境变量覆盖初始密码。
+    """
+    from .db import SessionLocal
+
+    username = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "admin")
+    password = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "admin123456")
+    with SessionLocal() as session:
+        if session.execute(text("SELECT count(*) FROM admin_user")).scalar_one():
+            return
+        session.execute(
+            text(
+                "INSERT INTO admin_user (username, password_hash, real_name, role, mfa_enabled,"
+                " status, failed_login_count)"
+                " VALUES (:username, :hash, '平台超管', 'SUPER_ADMIN', false, 'ACTIVE', 0)"
+            ),
+            {
+                "username": username,
+                "hash": bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=10)).decode(),
+            },
+        )
+        session.commit()
+        logger.warning("已创建初始超级管理员 [%s]，请立即登录后台修改密码", username)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    bootstrap_super_admin()
+    yield
 
 app = FastAPI(
     title="XaTodo API（Python 版）",
@@ -23,6 +64,7 @@ app = FastAPI(
     openapi_url="/v3/api-docs",
     docs_url="/swagger-ui.html",
     redoc_url=None,
+    lifespan=lifespan,
 )
 
 
@@ -64,3 +106,6 @@ async def handle_unexpected(_: Request, exc: Exception) -> JSONResponse:
 app.include_router(system.router)
 app.include_router(auth.router)
 app.include_router(me.router)
+app.include_router(personal.router)
+app.include_router(org.router)
+app.include_router(admin.router)

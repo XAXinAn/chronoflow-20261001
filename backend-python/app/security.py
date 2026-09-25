@@ -32,6 +32,18 @@ class IdentityPrincipal:
     org_id: int | None
 
 
+@dataclass(frozen=True)
+class AdminPrincipal:
+    admin_id: int
+    username: str
+    role: str
+    org_id: int | None
+
+    @property
+    def is_super_admin(self) -> bool:
+        return self.role == "SUPER_ADMIN"
+
+
 def _encode(payload: dict) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
@@ -101,3 +113,31 @@ def parse_scoped_token(token: str, expected: TokenScope) -> int:
 
 def new_token_id() -> str:
     return uuid.uuid4().hex
+
+
+def issue_admin_token(admin_id: int, username: str, role: str, org_id: int | None) -> str:
+    now = int(time.time())
+    return _encode(
+        {
+            "iss": settings.jwt_issuer,
+            "sub": str(admin_id),
+            "scope": TokenScope.ADMIN.value,
+            "username": username,
+            "adminRole": role,
+            "orgId": org_id,
+            "iat": now,
+            "exp": now + settings.access_token_ttl,
+        }
+    )
+
+
+def parse_admin_token(token: str) -> AdminPrincipal:
+    claims = _decode(token)
+    if claims.get("scope") != TokenScope.ADMIN.value:
+        raise ApiError(ErrorCode.UNAUTHENTICATED, http_status=401)
+    return AdminPrincipal(
+        admin_id=int(claims["sub"]),
+        username=claims.get("username") or "",
+        role=claims.get("adminRole") or "",
+        org_id=claims.get("orgId"),
+    )

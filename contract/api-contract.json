@@ -68,6 +68,7 @@
     { "method": "PATCH", "path": "/api/v1/org-admin/departments/{id}", "auth": "access" },
     { "method": "DELETE", "path": "/api/v1/org-admin/departments/{id}", "auth": "access" },
     { "method": "POST", "path": "/api/v1/org-admin/departments/{id}/managers", "auth": "access" },
+    { "method": "DELETE", "path": "/api/v1/org-admin/departments/{id}/managers/{orgMemberId}", "auth": "access" },
     { "method": "GET", "path": "/api/v1/org-admin/members", "auth": "access" },
     { "method": "POST", "path": "/api/v1/org-admin/members", "auth": "access" },
     { "method": "PATCH", "path": "/api/v1/org-admin/members/{id}", "auth": "access" },

@@ -43,14 +43,14 @@ CI 上有 root，直接 `apt-get install postgresql redis-server` 并设置
 | 统一响应体 / 错误码 / traceId | 完成 |
 | 认证（短信、密码、身份选择与切换、令牌轮换与宽限期、登出） | 完成 |
 | 账号设置（资料、密码、设备、通知偏好） | 完成 |
-| 个人日历 / 日程 / 待办 / 提醒 | **未开始** |
-| 组织与下发回执 | **未开始** |
-| 平台超管后台 | **未开始** |
+| 个人日历 / 日程（RRULE + 例外 + THIS/FUTURE/ALL）/ 待办 / 提醒 / 互转 | 完成 |
+| 组织、部门树、成员、批量导入、组织日历下发与回执 | 完成 |
+| 平台超管后台（组织、账号、管理员、配置、看板、审计） | 完成 |
 
-契约覆盖率由 `tests/test_contract.py` 里的棘轮常量守着（当前下限 20%），
-随模块补齐逐步提高，不允许倒退。
+**契约覆盖率 100%（83/83 端点）**，由 `tests/test_contract.py` 里的棘轮常量守着，不允许倒退。
+测试 22 项，覆盖认证链路、时区展开、THIS/FUTURE 范围、部门递归权限、下发快照等关键语义。
 
-## 踩过的两个坑
+## 踩过的三个坑
 
 **SQLAlchemy 会覆盖数据库默认值**：只要映射了某列却没给 `server_default`，
 ORM 就会在 INSERT 时显式写 NULL，把 `DEFAULT now()` 顶掉。凡是「值由数据库生成」
@@ -58,3 +58,11 @@ ORM 就会在 INSERT 时显式写 NULL，把 `DEFAULT now()` 顶掉。凡是「�
 
 **jsonb 列不能用 String 映射**：psycopg 会按 varchar 发送参数，PostgreSQL 拒绝隐式转换。
 用 `JSONB` 类型直接传 dict（Java 侧对应的是自定义 `JsonbStringTypeHandler`）。
+
+**写操作必须显式 commit**：Java 侧靠 `@Transactional`，Python 侧没有等价物——
+`get_session` 只负责关闭会话，忘记 commit 的写操作会随请求结束被静默回滚。
+表现是「接口返回成功但数据不存在」，排查起来很费时间。
+
+另外要注意 `model_dump()` 会带上值为 `None` 的可选字段，
+`payload.get("includeSubDepartments", True)` 取到的是 `None` 而不是默认值，
+需要先判 `None` 再给默认值。

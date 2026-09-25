@@ -1,0 +1,1048 @@
+"""组织、部门、成员与组织日历下发回执（spec §4.2）。"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from ..errors import ApiError, ErrorCode
+from . import recurrence
+
+MAX_DEPARTMENT_LEVEL = 5
+
+
+class OrgService:
+    def __init__(self, session: Session):
+        self._session = session
+
+    # ------------------------------------------------------------ 权限
+    def require_membership(self, principal) -> dict:
+        if principal.org_id is None:
+            raise ApiError(ErrorCode.FORBIDDEN, "该接口需要组织身份")
+        org = self._session.execute(
+            text("SELECT * FROM organization WHERE id = :id AND deleted_at IS NULL"),
+            {"id": principal.org_id},
+        ).mappings().first()
+        # 组织被平台停用后，成员不得再访问组织接口（spec §10.1 场景 10）
+        if org is None or org["status"] != "ACTIVE":
+            raise ApiError(ErrorCode.FORBIDDEN, "组织已停用")
+        member = self._session.execute(
+            text(
+                "SELECT * FROM org_member WHERE org_id = :org_id AND identity_id = :identity_id"
+            ),
+            {"org_id": principal.org_id, "identity_id": principal.identity_id},
+        ).mappings().first()
+        if member is None:
+            raise ApiError(ErrorCode.IDENTITY_UNAVAILABLE, "组织成员关系不存在")
+        if member["status"] != "ACTIVE":
+            raise ApiError(ErrorCode.FORBIDDEN, "组织成员身份已停用")
+        return {**dict(member), "org_name": org["name"], "org_code": org["code"],
+                "org_timezone": org["timezone"], "org_logo_url": org["logo_url"]}
+
+    @staticmethod
+    def is_org_admin(member: dict) -> bool:
+        return member["org_role"] in ("OWNER", "ADMIN")
+
+    @staticmethod
+    def require_org_admin(member: dict) -> None:
+        if member["org_role"] not in ("OWNER", "ADMIN"):
+            raise ApiError(ErrorCode.FORBIDDEN, "该操作需要组织管理员权限")
+
+    def all_departments(self, org_id: int) -> list[dict]:
+        rows = self._session.execute(
+            text(
+                "SELECT * FROM department WHERE org_id = :org_id AND status = 'ACTIVE'"
+                " ORDER BY level, sort_order, id"
+            ),
+            {"org_id": org_id},
+        ).mappings()
+        return [dict(row) for row in rows]
+
+    def self_and_descendants(self, department: dict) -> list[dict]:
+        # 物化路径结尾带斜杠，因此 '/5/' 不会误匹配 '/51/' —— 这是刻意设计
+        rows = self._session.execute(
+            text(
+                "SELECT * FROM department WHERE org_id = :org_id AND status = 'ACTIVE'"
+                " AND path LIKE :prefix"
+            ),
+            {"org_id": department["org_id"], "prefix": department["path"] + "%"},
+        ).mappings()
+        return [dict(row) for row in rows]
+
+    def manageable_department_ids(self, member: dict) -> set[int]:
+        if self.is_org_admin(member):
+            return {department["id"] for department in self.all_departments(member["org_id"])}
+        grants = self._session.execute(
+            text("SELECT department_id FROM department_manager WHERE org_member_id = :member_id"),
+            {"member_id": member["id"]},
+        ).scalars().all()
+        result: set[int] = set()
+        for department_id in grants:
+            department = self.require_department(member["org_id"], department_id)
+            result.update(node["id"] for node in self.self_and_descendants(department))
+        return result
+
+    def require_can_manage_department(self, member: dict, department_id: int) -> dict:
+        department = self.require_department(member["org_id"], department_id)
+        if department["id"] not in self.manageable_department_ids(member):
+            raise ApiError(ErrorCode.FORBIDDEN, "无权管理该部门")
+        return department
+
+    def require_department(self, org_id: int, department_id: int) -> dict:
+        row = self._session.execute(
+            text("SELECT * FROM department WHERE id = :id AND org_id = :org_id"),
+            {"id": department_id, "org_id": org_id},
+        ).mappings().first()
+        if row is None:
+            raise ApiError(ErrorCode.FORBIDDEN, "部门不存在或不属于当前组织")
+        return dict(row)
+
+    # ------------------------------------------------------------ 部门
+    def department_tree(self, org_id: int) -> list[dict]:
+        children: dict[int | None, list[dict]] = {}
+        for department in self.all_departments(org_id):
+            children.setdefault(department["parent_id"], []).append(department)
+        return _build_nodes(None, children)
+
+    def create_department(self, member: dict, payload: dict) -> dict:
+        parent_id = payload.get("parentId")
+        parent = None
+        if parent_id is not None:
+            parent = self.require_department(member["org_id"], parent_id)
+            self.require_can_manage_department(member, parent["id"])
+            if parent["level"] >= MAX_DEPARTMENT_LEVEL:
+                raise ApiError(ErrorCode.DEPARTMENT_LEVEL_EXCEEDED, f"部门层级最多 {MAX_DEPARTMENT_LEVEL} 层")
+        else:
+            self.require_org_admin(member)
+        row = self._session.execute(
+            text(
+                "INSERT INTO department (org_id, parent_id, name, path, level, sort_order, status)"
+                " VALUES (:org_id, :parent_id, :name, '/', :level, :sort_order, 'ACTIVE')"
+                " RETURNING *"
+            ),
+            {
+                "org_id": member["org_id"],
+                "parent_id": parent_id,
+                "name": payload["name"],
+                "level": 1 if parent is None else parent["level"] + 1,
+                "sort_order": payload.get("sortOrder") or 0,
+            },
+        ).mappings().one()
+        parent_path = "/" if parent is None else parent["path"]
+        row = self._session.execute(
+            text("UPDATE department SET path = :path WHERE id = :id RETURNING *"),
+            {"id": row["id"], "path": f"{parent_path}{row['id']}/"},
+        ).mappings().one()
+        self._session.commit()
+        return _department_view(row)
+
+    def update_department(self, member: dict, department_id: int, payload: dict) -> dict:
+        self.require_can_manage_department(member, department_id)
+        row = self._session.execute(
+            text(
+                "UPDATE department SET name = COALESCE(:name, name),"
+                " sort_order = COALESCE(:sort_order, sort_order), updated_at = now()"
+                " WHERE id = :id RETURNING *"
+            ),
+            {"id": department_id, "name": payload.get("name"), "sort_order": payload.get("sortOrder")},
+        ).mappings().one()
+        self._session.commit()
+        return _department_view(row)
+
+    def delete_department(self, member: dict, department_id: int) -> None:
+        department = self.require_can_manage_department(member, department_id)
+        descendants = [
+            node for node in self.self_and_descendants(department) if node["id"] != department_id
+        ]
+        if descendants:
+            raise ApiError(ErrorCode.PARAM_INVALID, "请先删除下级部门")
+        members = self._session.execute(
+            text("SELECT count(*) FROM org_member WHERE department_id = :id"), {"id": department_id}
+        ).scalar_one()
+        if members:
+            raise ApiError(ErrorCode.PARAM_INVALID, "部门下仍有成员，无法删除")
+        self._session.execute(
+            text("DELETE FROM department_manager WHERE department_id = :id"), {"id": department_id}
+        )
+        self._session.execute(text("DELETE FROM department WHERE id = :id"), {"id": department_id})
+        self._session.commit()
+
+    def grant_manager(self, member: dict, department_id: int, org_member_id: int) -> None:
+        self.require_org_admin(member)
+        department = self.require_department(member["org_id"], department_id)
+        target = self.require_member(member["org_id"], org_member_id)
+        self._session.execute(
+            text(
+                "INSERT INTO department_manager (department_id, org_member_id) VALUES (:dept, :member)"
+                " ON CONFLICT (department_id, org_member_id) DO NOTHING"
+            ),
+            {"dept": department["id"], "member": target["id"]},
+        )
+        self._session.commit()
+
+    def revoke_manager(self, member: dict, department_id: int, org_member_id: int) -> None:
+        self.require_org_admin(member)
+        self._session.execute(
+            text(
+                "DELETE FROM department_manager WHERE department_id = :dept AND org_member_id = :member"
+            ),
+            {"dept": department_id, "member": org_member_id},
+        )
+        self._session.commit()
+
+    # ------------------------------------------------------------ 成员
+    def require_member(self, org_id: int, member_id: int) -> dict:
+        row = self._session.execute(
+            text("SELECT * FROM org_member WHERE id = :id AND org_id = :org_id"),
+            {"id": member_id, "org_id": org_id},
+        ).mappings().first()
+        if row is None:
+            raise ApiError(ErrorCode.FORBIDDEN, "成员不存在或不属于当前组织")
+        return dict(row)
+
+    def list_members(self, member: dict, department_id: int | None) -> list[dict]:
+        scope = self.manageable_department_ids(member)
+        params: dict = {"org_id": member["org_id"]}
+        if not scope:
+            sql = "SELECT * FROM org_member WHERE org_id = :org_id AND id = :self_id"
+            params["self_id"] = member["id"]
+        elif department_id is not None:
+            self.require_can_manage_department(member, department_id)
+            sql = (
+                "SELECT * FROM org_member WHERE org_id = :org_id AND department_id = :dept"
+                " AND status <> 'LEFT'"
+            )
+            params["dept"] = department_id
+        else:
+            sql = (
+                "SELECT * FROM org_member WHERE org_id = :org_id"
+                " AND department_id = ANY(:dept_ids) AND status <> 'LEFT'"
+            )
+            params["dept_ids"] = list(scope)
+        rows = self._session.execute(text(sql + " ORDER BY id"), params).mappings().all()
+        names = {d["id"]: d["name"] for d in self.all_departments(member["org_id"])}
+        manager_ids = set(
+            self._session.execute(
+                text("SELECT org_member_id FROM department_manager WHERE org_member_id = ANY(:ids)"),
+                {"ids": [row["id"] for row in rows] or [0]},
+            ).scalars().all()
+        )
+        return [_member_view(row, names, row["id"] in manager_ids) for row in rows]
+
+    def create_member(self, member: dict, payload: dict) -> dict:
+        department = self.require_can_manage_department(member, payload["departmentId"])
+        role = payload.get("orgRole") or "MEMBER"
+        if role not in ("OWNER", "ADMIN", "MEMBER"):
+            raise ApiError(ErrorCode.PARAM_INVALID, f"组织角色取值非法: {role}")
+        if role != "MEMBER":
+            self.require_org_admin(member)
+        created = self._create_member_row(
+            member["org_id"], department["id"], payload["phone"], payload["realName"],
+            payload.get("memberNo"), payload.get("email"), payload.get("jobTitle"), role,
+        )
+        self._session.commit()
+        names = {d["id"]: d["name"] for d in self.all_departments(member["org_id"])}
+        return _member_view(created, names, False)
+
+    def _create_member_row(
+        self, org_id: int, department_id: int, phone: str, real_name: str,
+        member_no: str | None, email: str | None, job_title: str | None, role: str,
+    ) -> dict:
+        account = self._session.execute(
+            text("SELECT * FROM account WHERE phone = :phone"), {"phone": phone}
+        ).mappings().first()
+        if account is None:
+            account = self._session.execute(
+                text("INSERT INTO account (phone, email, status) VALUES (:phone, :email, 'ACTIVE')"
+                     " RETURNING *"),
+                {"phone": phone, "email": email},
+            ).mappings().one()
+        elif email and not account["email"]:
+            self._session.execute(
+                text("UPDATE account SET email = :email WHERE id = :id"),
+                {"id": account["id"], "email": email},
+            )
+        existing = self._session.execute(
+            text("SELECT count(*) FROM identity WHERE account_id = :account_id AND org_id = :org_id"),
+            {"account_id": account["id"], "org_id": org_id},
+        ).scalar_one()
+        if existing:
+            raise ApiError(ErrorCode.MEMBER_ALREADY_EXISTS, "该手机号已是本组织成员")
+        identity = self._session.execute(
+            text(
+                "INSERT INTO identity (account_id, identity_type, org_id, nickname, status)"
+                " VALUES (:account_id, 'ORG_MEMBER', :org_id, :nickname, 'ACTIVE') RETURNING id"
+            ),
+            {"account_id": account["id"], "org_id": org_id, "nickname": real_name},
+        ).scalar_one()
+        row = self._session.execute(
+            text(
+                "INSERT INTO org_member (org_id, identity_id, department_id, member_no, real_name,"
+                " org_role, job_title, status) VALUES (:org_id, :identity_id, :department_id,"
+                " :member_no, :real_name, :role, :job_title, 'ACTIVE') RETURNING *"
+            ),
+            {
+                "org_id": org_id,
+                "identity_id": identity,
+                "department_id": department_id,
+                "member_no": member_no or None,
+                "real_name": real_name,
+                "role": role,
+                "job_title": job_title,
+            },
+        ).mappings().one()
+        return {**dict(row), "identity_id": identity}
+
+    def update_member(self, member: dict, member_id: int, payload: dict) -> dict:
+        target = self.require_member(member["org_id"], member_id)
+        if target["id"] != member["id"]:
+            self.require_can_manage_department(member, target["department_id"])
+        elif not self.is_org_admin(member):
+            raise ApiError(ErrorCode.FORBIDDEN, "普通成员不能修改成员信息")
+        if payload.get("departmentId") and payload["departmentId"] != target["department_id"]:
+            self.require_can_manage_department(member, payload["departmentId"])
+        if payload.get("orgRole"):
+            self.require_org_admin(member)
+            if target["org_role"] == "OWNER" and payload["orgRole"] != "OWNER":
+                raise ApiError(ErrorCode.PARAM_INVALID, "拥有者不可被降级，请先转让拥有者")
+        if payload.get("status"):
+            self.require_org_admin(member)
+            if target["org_role"] == "OWNER" and payload["status"] != "ACTIVE":
+                raise ApiError(ErrorCode.PARAM_INVALID, "拥有者不可被停用")
+        row = self._session.execute(
+            text(
+                "UPDATE org_member SET real_name = COALESCE(:real_name, real_name),"
+                " department_id = COALESCE(:department_id, department_id),"
+                " member_no = COALESCE(:member_no, member_no),"
+                " job_title = COALESCE(:job_title, job_title),"
+                " org_role = COALESCE(:org_role, org_role), status = COALESCE(:status, status),"
+                " updated_at = now() WHERE id = :id RETURNING *"
+            ),
+            {
+                "id": member_id,
+                "real_name": payload.get("realName"),
+                "department_id": payload.get("departmentId"),
+                "member_no": payload.get("memberNo"),
+                "job_title": payload.get("jobTitle"),
+                "org_role": payload.get("orgRole"),
+                "status": payload.get("status"),
+            },
+        ).mappings().one()
+        if payload.get("status"):
+            self._session.execute(
+                text("UPDATE identity SET status = :status WHERE id = :id"),
+                {
+                    "id": target["identity_id"],
+                    "status": "ACTIVE" if payload["status"] == "ACTIVE" else "DISABLED",
+                },
+            )
+        self._session.commit()
+        names = {d["id"]: d["name"] for d in self.all_departments(member["org_id"])}
+        return _member_view(row, names, False)
+
+    # ------------------------------------------------------------ 组织日程
+    def dispatch(self, member: dict, payload: dict) -> dict:
+        if payload["endAt"] <= payload["startAt"]:
+            raise ApiError(ErrorCode.EVENT_TIME_INVALID)
+        if payload.get("rrule"):
+            raise ApiError(ErrorCode.PARAM_INVALID, "首版组织日程暂不支持重复规则")
+        recipients = self._resolve_recipients(member, payload)
+        if not recipients:
+            raise ApiError(ErrorCode.DISPATCH_TARGET_EMPTY)
+        calendar_id = self._ensure_org_calendar(member)
+        event = self._session.execute(
+            text(
+                "INSERT INTO event (calendar_id, org_id, creator_identity_id, source_type, title,"
+                " description, location, start_at, end_at, all_day, timezone, status,"
+                " updated_after_dispatch) VALUES (:calendar_id, :org_id, :identity, 'ORG_DISPATCH',"
+                " :title, :description, :location, :start_at, :end_at, :all_day, :timezone,"
+                " 'CONFIRMED', false) RETURNING *"
+            ),
+            {
+                "calendar_id": calendar_id,
+                "org_id": member["org_id"],
+                "identity": member["identity_id"],
+                "title": payload["title"],
+                "description": payload.get("description"),
+                "location": payload.get("location"),
+                "start_at": payload["startAt"],
+                "end_at": payload["endAt"],
+                "all_day": bool(payload.get("allDay")),
+                "timezone": payload.get("timezone") or member["org_timezone"],
+            },
+        ).mappings().one()
+        dispatch = self._session.execute(
+            text(
+                "INSERT INTO event_dispatch (event_id, org_id, scope_type, department_id,"
+                " include_sub_departments, require_receipt, created_by_member_id, status,"
+                " recipient_count) VALUES (:event_id, :org_id, :scope_type, :department_id,"
+                " :include_sub, :require_receipt, :member_id, 'ACTIVE', :count) RETURNING *"
+            ),
+            {
+                "event_id": event["id"],
+                "org_id": member["org_id"],
+                "scope_type": payload["scopeType"],
+                "department_id": payload.get("departmentId"),
+                # 注意：model_dump() 会带上值为 None 的可选字段，因此要先判 None 再取默认
+                "include_sub": True
+                if payload.get("includeSubDepartments") is None
+                else bool(payload["includeSubDepartments"]),
+                "require_receipt": bool(payload.get("requireReceipt")),
+                "member_id": member["id"],
+                "count": len(recipients),
+            },
+        ).mappings().one()
+        self._session.execute(
+            text("UPDATE event SET dispatch_id = :dispatch_id WHERE id = :id"),
+            {"dispatch_id": dispatch["id"], "id": event["id"]},
+        )
+        for recipient in recipients:
+            self._session.execute(
+                text(
+                    "INSERT INTO event_recipient (dispatch_id, event_id, org_member_id,"
+                    " department_id, receipt_status) VALUES (:dispatch_id, :event_id, :member_id,"
+                    " :department_id, 'PENDING')"
+                ),
+                {
+                    "dispatch_id": dispatch["id"],
+                    "event_id": event["id"],
+                    "member_id": recipient["id"],
+                    "department_id": recipient["department_id"],
+                },
+            )
+        self._session.commit()
+        return _org_event_view(event, dispatch, None)
+
+    def _resolve_recipients(self, member: dict, payload: dict) -> list[dict]:
+        scope = payload["scopeType"]
+        if scope == "ALL":
+            self.require_org_admin(member)
+            return self._active_members(member["org_id"], None)
+        if scope == "DEPARTMENT":
+            department_id = payload.get("departmentId")
+            if department_id is None:
+                raise ApiError(ErrorCode.PARAM_INVALID, "departmentId 不能为空")
+            department = self.require_can_manage_department(member, department_id)
+            include_sub = payload.get("includeSubDepartments")
+            if include_sub is None or include_sub:
+                scope_ids = [node["id"] for node in self.self_and_descendants(department)]
+            else:
+                scope_ids = [department["id"]]
+            return self._active_members(member["org_id"], scope_ids)
+        if scope == "MEMBER":
+            member_ids = payload.get("memberIds") or []
+            if not member_ids:
+                raise ApiError(ErrorCode.DISPATCH_TARGET_EMPTY)
+            targets = [
+                self.require_member(member["org_id"], member_id) for member_id in set(member_ids)
+            ]
+            manageable = self.manageable_department_ids(member)
+            for target in targets:
+                if target["department_id"] not in manageable:
+                    raise ApiError(ErrorCode.FORBIDDEN, "无权向该成员下发日程")
+            return targets
+        raise ApiError(ErrorCode.PARAM_INVALID, f"下发范围取值非法: {scope}")
+
+    def _active_members(self, org_id: int, department_ids: list[int] | None) -> list[dict]:
+        params: dict = {"org_id": org_id}
+        sql = "SELECT * FROM org_member WHERE org_id = :org_id AND status = 'ACTIVE'"
+        if department_ids is not None:
+            sql += " AND department_id = ANY(:dept_ids)"
+            params["dept_ids"] = department_ids
+        return [dict(row) for row in self._session.execute(text(sql), params).mappings()]
+
+    def _ensure_org_calendar(self, member: dict) -> int:
+        existing = self._session.execute(
+            text(
+                "SELECT id FROM calendar WHERE calendar_type = 'ORG' AND org_id = :org_id"
+                " AND status = 'ACTIVE' LIMIT 1"
+            ),
+            {"org_id": member["org_id"]},
+        ).scalar()
+        if existing:
+            return int(existing)
+        return int(
+            self._session.execute(
+                text(
+                    "INSERT INTO calendar (calendar_type, org_id, name, color, timezone,"
+                    " is_default, status) VALUES ('ORG', :org_id, '组织日历', '#0A0A0A', :timezone,"
+                    " true, 'ACTIVE') RETURNING id"
+                ),
+                {"org_id": member["org_id"], "timezone": member["org_timezone"]},
+            ).scalar_one()
+        )
+
+    def list_org_events(self, member: dict, start: datetime, end: datetime) -> list[dict]:
+        rows = self._session.execute(
+            text(
+                "SELECT r.*, d.scope_type, d.require_receipt, e.* FROM event_recipient r"
+                " JOIN event_dispatch d ON d.id = r.dispatch_id"
+                " JOIN event e ON e.id = r.event_id"
+                " WHERE r.org_member_id = :member_id AND d.status = 'ACTIVE'"
+                "   AND e.deleted_at IS NULL AND e.status <> 'CANCELLED'"
+            ),
+            {"member_id": member["id"]},
+        ).mappings().all()
+        result: list[dict] = []
+        for row in rows:
+            event = {
+                "id": row["event_id"],
+                "calendar_id": row["calendar_id"],
+                "title": row["title"],
+                "location": row["location"],
+                "start_at": row["start_at"],
+                "end_at": row["end_at"],
+                "all_day": row["all_day"],
+                "timezone": row["timezone"],
+                "rrule": row["rrule"],
+                "description": row["description"],
+            }
+            for occurrence in recurrence.expand(event, [], start, end):
+                result.append(
+                    {
+                        "eventId": event["id"],
+                        "dispatchId": row["dispatch_id"],
+                        "title": occurrence["title"],
+                        "description": event["description"],
+                        "location": occurrence["location"],
+                        "startAt": occurrence["startAt"],
+                        "endAt": occurrence["endAt"],
+                        "allDay": occurrence["allDay"],
+                        "timezone": occurrence["timezone"],
+                        "rrule": event["rrule"],
+                        "requireReceipt": bool(row["require_receipt"]),
+                        "receiptStatus": row["receipt_status"],
+                        "receiptAt": row["receipt_at"],
+                        "remark": row["remark"],
+                        "read": row["read_at"] is not None,
+                    }
+                )
+        result.sort(key=lambda item: (item["startAt"], item["eventId"]))
+        return result
+
+    def submit_receipt(self, member: dict, event_id: int, status: str, remark: str | None) -> dict:
+        if status not in ("ACCEPTED", "DECLINED", "COMPLETED"):
+            raise ApiError(ErrorCode.PARAM_INVALID, f"回执状态取值非法: {status}")
+        row = self._session.execute(
+            text(
+                "SELECT r.*, d.status AS dispatch_status, d.require_receipt, e.* FROM event_recipient r"
+                " JOIN event_dispatch d ON d.id = r.dispatch_id"
+                " JOIN event e ON e.id = r.event_id"
+                " WHERE r.event_id = :event_id AND r.org_member_id = :member_id"
+            ),
+            {"event_id": event_id, "member_id": member["id"]},
+        ).mappings().first()
+        if row is None:
+            raise ApiError(ErrorCode.FORBIDDEN, "该日程未下发给当前成员")
+        if row["dispatch_status"] != "ACTIVE":
+            raise ApiError(ErrorCode.FORBIDDEN, "该下发已撤回")
+        self._session.execute(
+            text(
+                "UPDATE event_recipient SET receipt_status = :status, receipt_at = now(),"
+                " remark = :remark, read_at = COALESCE(read_at, now()), updated_at = now()"
+                " WHERE id = :id"
+            ),
+            {"id": row["id"], "status": status, "remark": remark},
+        )
+        self._session.commit()
+        return {
+            "eventId": row["event_id"],
+            "dispatchId": row["dispatch_id"],
+            "title": row["title"],
+            "description": row["description"],
+            "location": row["location"],
+            "startAt": row["start_at"],
+            "endAt": row["end_at"],
+            "allDay": bool(row["all_day"]),
+            "timezone": row["timezone"],
+            "rrule": row["rrule"],
+            "requireReceipt": bool(row["require_receipt"]),
+            "receiptStatus": status,
+            "receiptAt": datetime.now(),
+            "remark": remark,
+            "read": True,
+        }
+
+    def mark_read(self, member: dict, event_id: int) -> None:
+        result = self._session.execute(
+            text(
+                "UPDATE event_recipient SET read_at = COALESCE(read_at, now())"
+                " WHERE event_id = :event_id AND org_member_id = :member_id"
+            ),
+            {"event_id": event_id, "member_id": member["id"]},
+        )
+        if result.rowcount == 0:
+            raise ApiError(ErrorCode.FORBIDDEN, "该日程未下发给当前成员")
+        self._session.commit()
+
+    def receipt_summary(self, member: dict, event_id: int) -> dict:
+        dispatch = self._require_active_dispatch(member["org_id"], event_id)
+        if not self.is_org_admin(member):
+            if not (
+                dispatch["scope_type"] == "DEPARTMENT"
+                and dispatch["department_id"] in self.manageable_department_ids(member)
+            ):
+                raise ApiError(ErrorCode.FORBIDDEN, "无权查看该下发的回执")
+        rows = self._session.execute(
+            text(
+                "SELECT r.*, m.real_name, d.name AS department_name FROM event_recipient r"
+                " LEFT JOIN org_member m ON m.id = r.org_member_id"
+                " LEFT JOIN department d ON d.id = r.department_id"
+                " WHERE r.dispatch_id = :dispatch_id ORDER BY r.id"
+            ),
+            {"dispatch_id": dispatch["id"]},
+        ).mappings().all()
+        counts = {"PENDING": 0, "ACCEPTED": 0, "DECLINED": 0, "COMPLETED": 0}
+        read_count = 0
+        items = []
+        for row in rows:
+            counts[row["receipt_status"]] = counts.get(row["receipt_status"], 0) + 1
+            if row["read_at"]:
+                read_count += 1
+            items.append(
+                {
+                    "orgMemberId": row["org_member_id"],
+                    "realName": row["real_name"],
+                    "departmentName": row["department_name"],
+                    "receiptStatus": row["receipt_status"],
+                    "receiptAt": row["receipt_at"],
+                    "remark": row["remark"],
+                    "read": row["read_at"] is not None,
+                }
+            )
+        return {
+            "dispatchId": dispatch["id"],
+            "eventId": event_id,
+            "scopeType": dispatch["scope_type"],
+            "requireReceipt": bool(dispatch["require_receipt"]),
+            "total": len(rows),
+            "pending": counts["PENDING"],
+            "accepted": counts["ACCEPTED"],
+            "declined": counts["DECLINED"],
+            "completed": counts["COMPLETED"],
+            "readCount": read_count,
+            "items": items,
+        }
+
+    def _require_active_dispatch(self, org_id: int, event_id: int) -> dict:
+        row = self._session.execute(
+            text(
+                "SELECT * FROM event_dispatch WHERE event_id = :event_id AND org_id = :org_id"
+                " AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1"
+            ),
+            {"event_id": event_id, "org_id": org_id},
+        ).mappings().first()
+        if row is None:
+            raise ApiError(ErrorCode.FORBIDDEN, "该日程没有有效的下发记录")
+        return dict(row)
+
+    def revoke_dispatch(self, member: dict, event_id: int) -> None:
+        dispatch = self._require_active_dispatch(member["org_id"], event_id)
+        self._require_can_view_dispatch(member, dispatch)
+        receipted = self._session.execute(
+            text(
+                "SELECT count(*) FROM event_recipient WHERE dispatch_id = :id"
+                " AND receipt_status <> 'PENDING'"
+            ),
+            {"id": dispatch["id"]},
+        ).scalar_one()
+        if receipted:
+            raise ApiError(ErrorCode.DISPATCH_ALREADY_RECEIPTED)
+        self._session.execute(
+            text("UPDATE event_dispatch SET status = 'REVOKED' WHERE id = :id"), {"id": dispatch["id"]}
+        )
+        self._session.commit()
+
+    def update_org_event(self, member: dict, event_id: int, payload: dict) -> dict:
+        dispatch = self._require_active_dispatch(member["org_id"], event_id)
+        self._require_can_view_dispatch(member, dispatch)
+        row = self._session.execute(
+            text(
+                "UPDATE event SET title = COALESCE(:title, title),"
+                " description = COALESCE(:description, description),"
+                " location = COALESCE(:location, location),"
+                " start_at = COALESCE(:start_at, start_at), end_at = COALESCE(:end_at, end_at),"
+                " all_day = COALESCE(:all_day, all_day),"
+                " timezone = COALESCE(:timezone, timezone), updated_after_dispatch = true,"
+                " updated_at = now() WHERE id = :id RETURNING *"
+            ),
+            {
+                "id": event_id,
+                "title": payload.get("title"),
+                "description": payload.get("description"),
+                "location": payload.get("location"),
+                "start_at": payload.get("startAt"),
+                "end_at": payload.get("endAt"),
+                "all_day": payload.get("allDay"),
+                "timezone": payload.get("timezone"),
+            },
+        ).mappings().one()
+        self._session.commit()
+        return _org_event_view(row, dispatch, None)
+
+    def delete_org_event(self, member: dict, event_id: int) -> None:
+        dispatch = self._require_active_dispatch(member["org_id"], event_id)
+        self._require_can_view_dispatch(member, dispatch)
+        self._session.execute(
+            text(
+                "UPDATE event SET deleted_at = now(), status = 'CANCELLED' WHERE id = :id"
+            ),
+            {"id": event_id},
+        )
+        self._session.execute(
+            text("UPDATE event_dispatch SET status = 'REVOKED' WHERE id = :id"), {"id": dispatch["id"]}
+        )
+        self._session.commit()
+
+    def _require_can_view_dispatch(self, member: dict, dispatch: dict) -> None:
+        if self.is_org_admin(member):
+            return
+        if (
+            dispatch["scope_type"] == "DEPARTMENT"
+            and dispatch["department_id"] is not None
+            and dispatch["department_id"] in self.manageable_department_ids(member)
+        ):
+            return
+        raise ApiError(ErrorCode.FORBIDDEN, "无权查看该下发的回执")
+
+    # ------------------------------------------------------------ 成员导入
+    def import_members(self, member: dict, file_name: str, content: bytes, auto_create: bool) -> dict:
+        rows = _parse_import_file(file_name, content)
+        if not rows:
+            raise ApiError(ErrorCode.PARAM_INVALID, "文件中没有可导入的数据行")
+        if len(rows) > 5000:
+            raise ApiError(ErrorCode.PARAM_INVALID, f"单次导入最多 5000 行，当前 {len(rows)} 行")
+        if auto_create and not self.is_org_admin(member):
+            raise ApiError(ErrorCode.FORBIDDEN, "自动创建部门需要组织管理员权限")
+
+        batch = self._session.execute(
+            text(
+                "INSERT INTO import_batch (org_id, file_name, file_url, total_count, success_count,"
+                " fail_count, status, created_by_member_id) VALUES (:org_id, :file_name, :file_url,"
+                " :total, 0, 0, 'PROCESSING', :member_id) RETURNING id"
+            ),
+            {
+                "org_id": member["org_id"],
+                "file_name": file_name,
+                "file_url": f"memory://{file_name}",
+                "total": len(rows),
+                "member_id": member["id"],
+            },
+        ).scalar_one()
+        self._session.commit()
+
+        success = 0
+        failed = 0
+        for row in rows:
+            try:
+                self._import_row(member, row, auto_create)
+                self._record_import_row(batch, row, "SUCCESS", None)
+                success += 1
+            except ApiError as exc:
+                self._record_import_row(batch, row, "FAILED", str(exc))
+                failed += 1
+            except Exception:  # noqa: BLE001 - 单行失败不影响整批
+                self._session.rollback()
+                self._record_import_row(batch, row, "FAILED", "数据冲突：该手机号或工号可能已存在")
+                failed += 1
+            self._session.commit()
+
+        status = "SUCCESS" if failed == 0 else ("FAILED" if success == 0 else "PARTIAL_FAILED")
+        self._session.execute(
+            text(
+                "UPDATE import_batch SET success_count = :success, fail_count = :failed,"
+                " status = :status, finished_at = now() WHERE id = :id"
+            ),
+            {"id": batch, "success": success, "failed": failed, "status": status},
+        )
+        self._session.commit()
+        return self.import_detail(member, batch)
+
+    def _import_row(self, member: dict, row: dict, auto_create: bool) -> None:
+        if not row.get("realName"):
+            raise ApiError(ErrorCode.PARAM_INVALID, "姓名不能为空")
+        if not row.get("phone"):
+            raise ApiError(ErrorCode.PARAM_INVALID, "手机号不能为空")
+        phone = row["phone"]
+        if len(phone) != 11 or not phone.startswith("1") or not phone[1:].isdigit():
+            raise ApiError(ErrorCode.PARAM_INVALID, f"手机号格式不正确: {phone}")
+        if not row.get("departmentPath"):
+            raise ApiError(ErrorCode.PARAM_INVALID, "部门路径不能为空")
+        department = self._resolve_department_path(member, row["departmentPath"], auto_create)
+        if department["id"] not in self.manageable_department_ids(member):
+            raise ApiError(ErrorCode.FORBIDDEN, "无权向该部门导入成员")
+        role = (row.get("role") or "MEMBER").upper()
+        if role not in ("OWNER", "ADMIN", "MEMBER"):
+            raise ApiError(ErrorCode.PARAM_INVALID, f"角色取值非法: {row.get('role')}")
+        if role != "MEMBER":
+            self.require_org_admin(member)
+        self._create_member_row(
+            member["org_id"], department["id"], phone, row["realName"],
+            row.get("memberNo"), row.get("email"), None, role,
+        )
+
+    def _resolve_department_path(self, member: dict, path: str, auto_create: bool) -> dict:
+        current = None
+        for segment in path.split("/"):
+            name = segment.strip()
+            if not name:
+                continue
+            params = {"org_id": member["org_id"], "name": name}
+            if current is None:
+                sql = "SELECT * FROM department WHERE org_id = :org_id AND name = :name AND parent_id IS NULL"
+            else:
+                sql = ("SELECT * FROM department WHERE org_id = :org_id AND name = :name"
+                       " AND parent_id = :parent_id")
+                params["parent_id"] = current["id"]
+            found = self._session.execute(text(sql + " LIMIT 1"), params).mappings().first()
+            if found is None:
+                if not auto_create:
+                    raise ApiError(ErrorCode.PARAM_INVALID, f"部门路径不存在: {path}")
+                created = self.create_department(
+                    member,
+                    {"parentId": current["id"] if current else None, "name": name, "sortOrder": 0},
+                )
+                found = self.require_department(member["org_id"], created["id"])
+            current = dict(found)
+        if current is None:
+            raise ApiError(ErrorCode.PARAM_INVALID, "部门路径不能为空")
+        return current
+
+    def _record_import_row(self, batch_id: int, row: dict, status: str, error: str | None) -> None:
+        self._session.execute(
+            text(
+                "INSERT INTO import_row_result (batch_id, row_no, raw_data, status, error_message)"
+                " VALUES (:batch_id, :row_no, :raw_data, :status, :error)"
+            ),
+            {
+                "batch_id": batch_id,
+                "row_no": row["rowNo"],
+                "raw_data": json_dumps(row),
+                "status": status,
+                "error": error,
+            },
+        )
+        self._session.commit()
+
+    def import_detail(self, member: dict, batch_id: int) -> dict:
+        batch = self._session.execute(
+            text("SELECT * FROM import_batch WHERE id = :id AND org_id = :org_id"),
+            {"id": batch_id, "org_id": member["org_id"]},
+        ).mappings().first()
+        if batch is None:
+            raise ApiError(ErrorCode.FORBIDDEN, "导入批次不存在或不属于当前组织")
+        rows = self._session.execute(
+            text(
+                "SELECT * FROM import_row_result WHERE batch_id = :id ORDER BY row_no"
+            ),
+            {"id": batch_id},
+        ).mappings()
+        return {
+            "batchId": batch["id"],
+            "fileName": batch["file_name"],
+            "status": batch["status"],
+            "totalCount": batch["total_count"],
+            "successCount": batch["success_count"],
+            "failCount": batch["fail_count"],
+            "createdAt": batch["created_at"],
+            "finishedAt": batch["finished_at"],
+            "rows": [
+                {
+                    "rowNo": row["row_no"],
+                    "status": row["status"],
+                    "errorMessage": row["error_message"],
+                    "createdMemberId": row["created_member_id"],
+                    "rawData": json_dumps(row["raw_data"]),
+                }
+                for row in rows
+            ],
+        }
+
+    def list_imports(self, member: dict) -> list[dict]:
+        rows = self._session.execute(
+            text("SELECT * FROM import_batch WHERE org_id = :org_id ORDER BY id DESC"),
+            {"org_id": member["org_id"]},
+        ).mappings()
+        return [
+            {
+                "batchId": row["id"],
+                "fileName": row["file_name"],
+                "status": row["status"],
+                "totalCount": row["total_count"],
+                "successCount": row["success_count"],
+                "failCount": row["fail_count"],
+                "createdAt": row["created_at"],
+                "finishedAt": row["finished_at"],
+            }
+            for row in rows
+        ]
+
+    def import_template(self) -> bytes:
+        from io import BytesIO
+
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "成员导入"
+        headers = ["姓名", "手机号", "邮箱", "工号", "部门路径", "角色"]
+        sheet.append(headers)
+        sheet.append(["张三", "13800000000", "zhangsan@example.com", "E1001", "技术中心/后端组", "MEMBER"])
+        output = BytesIO()
+        workbook.save(output)
+        return output.getvalue()
+
+    def current_context(self, member: dict) -> dict:
+        department = self.require_department(member["org_id"], member["department_id"])
+        return {
+            "orgId": member["org_id"],
+            "orgName": member["org_name"],
+            "orgCode": member["org_code"],
+            "orgLogoUrl": member["org_logo_url"],
+            "orgTimezone": member["org_timezone"],
+            "memberId": member["id"],
+            "realName": member["real_name"],
+            "memberNo": member["member_no"],
+            "jobTitle": member["job_title"],
+            "orgRole": member["org_role"],
+            "departmentId": department["id"],
+            "departmentName": department["name"],
+            "departmentPathNames": _path_names(self, department),
+            "orgAdmin": self.is_org_admin(member),
+            "manageableDepartmentIds": sorted(self.manageable_department_ids(member)),
+        }
+
+
+def _parse_import_file(file_name: str, content: bytes) -> list[dict]:
+    if not content:
+        raise ApiError(ErrorCode.PARAM_INVALID, "上传文件为空")
+    lower = (file_name or "").lower()
+    if lower.endswith(".csv"):
+        return _parse_csv(content)
+    if lower.endswith(".xlsx"):
+        return _parse_xlsx(content)
+    raise ApiError(ErrorCode.PARAM_INVALID, "仅支持 .xlsx 或 .csv 文件")
+
+
+def _parse_csv(content: bytes) -> list[dict]:
+    import csv
+    from io import StringIO
+
+    text_content = content.decode("utf-8-sig")
+    rows: list[dict] = []
+    for index, raw in enumerate(csv.reader(StringIO(text_content))):
+        if index == 0 or not any(cell.strip() for cell in raw):
+            continue
+        padded = list(raw) + [""] * (6 - len(raw))
+        rows.append(_import_row(index + 1, padded))
+    return rows
+
+
+def _parse_xlsx(content: bytes) -> list[dict]:
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+    sheet = workbook.worksheets[0]
+    rows: list[dict] = []
+    for index, raw in enumerate(sheet.iter_rows(values_only=True)):
+        if index == 0 or raw is None or not any(cell is not None and str(cell).strip() for cell in raw):
+            continue
+        values = ["" if cell is None else str(cell).strip() for cell in raw]
+        values += [""] * (6 - len(values))
+        rows.append(_import_row(index + 1, values))
+    return rows
+
+
+def _import_row(row_no: int, values: list[str]) -> dict:
+    return {
+        "rowNo": row_no,
+        "realName": values[0] or None,
+        "phone": values[1] or None,
+        "email": values[2] or None,
+        "memberNo": values[3] or None,
+        "departmentPath": values[4] or None,
+        "role": values[5] or None,
+    }
+
+
+def json_dumps(value) -> str:
+    import json
+
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+def _path_names(service: OrgService, department: dict) -> list[str]:
+    names = []
+    for segment in department["path"].split("/"):
+        if segment.strip():
+            node = service.require_department(department["org_id"], int(segment))
+            names.append(node["name"])
+    return names or [department["name"]]
+
+
+def _build_nodes(parent_id, children: dict) -> list[dict]:
+    nodes = children.get(parent_id) or []
+    return [
+        {
+            "id": node["id"],
+            "parentId": node["parent_id"],
+            "name": node["name"],
+            "level": node["level"],
+            "path": node["path"],
+            "sortOrder": node["sort_order"],
+            "children": _build_nodes(node["id"], children),
+        }
+        for node in sorted(nodes, key=lambda item: (item["sort_order"] or 0, item["id"]))
+    ]
+
+
+def _department_view(row) -> dict:
+    return {
+        "id": row["id"],
+        "orgId": row["org_id"],
+        "parentId": row["parent_id"],
+        "name": row["name"],
+        "path": row["path"],
+        "level": row["level"],
+        "sortOrder": row["sort_order"],
+        "status": row["status"],
+    }
+
+
+def _member_view(row, department_names: dict, is_manager: bool) -> dict:
+    return {
+        "id": row["id"],
+        "identityId": row["identity_id"],
+        "departmentId": row["department_id"],
+        "departmentName": department_names.get(row["department_id"]),
+        "realName": row["real_name"],
+        "memberNo": row["member_no"],
+        "jobTitle": row["job_title"],
+        "orgRole": row["org_role"],
+        "status": row["status"],
+        "departmentManager": is_manager,
+    }
+
+
+def _org_event_view(event, dispatch, receipt) -> dict:
+    return {
+        "eventId": event["id"],
+        "dispatchId": dispatch["id"],
+        "title": event["title"],
+        "description": event["description"],
+        "location": event["location"],
+        "startAt": event["start_at"],
+        "endAt": event["end_at"],
+        "allDay": bool(event["all_day"]),
+        "timezone": event["timezone"],
+        "rrule": event["rrule"],
+        "requireReceipt": bool(dispatch["require_receipt"]),
+        "receiptStatus": receipt["receipt_status"] if receipt else None,
+        "receiptAt": receipt["receipt_at"] if receipt else None,
+        "remark": receipt["remark"] if receipt else None,
+        "read": bool(receipt and receipt["read_at"]),
+    }

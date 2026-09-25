@@ -14,8 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = json.loads((REPO_ROOT / "contract" / "api-contract.json").read_text(encoding="utf-8"))
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
-# 覆盖率棘轮：随 Python 版补齐模块逐步提高，不允许倒退
-MIN_COVERAGE_PERCENT = 20
+# 覆盖率棘轮：Python 版已实现全部契约端点，不允许倒退
+MIN_COVERAGE_PERCENT = 100
 
 
 def _contract_index() -> dict[tuple[str, str], dict]:
