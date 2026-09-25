@@ -2,15 +2,17 @@ import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '../api/client';
-import type { IdentityView, TokenResponse } from '../api/types';
+import type { TokenResponse } from '../api/types';
 import { Card, PrimaryButton, Screen } from '../components/ui';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 
-interface LoginScreenProps {
-  onNeedSelectIdentity: (payload: { selectToken: string; identities: IdentityView[] }) => void;
-}
-
-export function LoginScreen({ onNeedSelectIdentity }: LoginScreenProps) {
+/**
+ * 登录页：**只登录个人账号**（spec §3.2）。
+ *
+ * 不再有「选身份」这一步——组织账号是在登录后、在组织 tab 的「账户管理」里
+ * 用「组织唯一 ID + 成员唯一识别 ID」认领的。
+ */
+export function LoginScreen() {
   const theme = useAppTheme();
   const { api, deviceId } = useRuntime();
   const { applyTokenResponse } = useAppSessionState();
@@ -43,7 +45,7 @@ export function LoginScreen({ onNeedSelectIdentity }: LoginScreenProps) {
     setBusy(true);
     setError(null);
     try {
-      const result = await api.loginBySms(phone.trim(), code.trim());
+      const result = await api.loginBySms(phone.trim(), code.trim(), deviceId);
 
       if (result.needRegister && result.registerToken) {
         // 首次登录：账号已建，直接创建个人身份进入；昵称可在设置里改
@@ -55,8 +57,9 @@ export function LoginScreen({ onNeedSelectIdentity }: LoginScreenProps) {
         await applyToken(token);
         return;
       }
-      if (result.selectToken) {
-        onNeedSelectIdentity({ selectToken: result.selectToken, identities: result.identities });
+      if (result.session) {
+        // 已有个人身份：直接把它的会话写进安全存储，进入 App
+        await applyToken(result.session);
         return;
       }
       setError('登录返回异常，请重试');

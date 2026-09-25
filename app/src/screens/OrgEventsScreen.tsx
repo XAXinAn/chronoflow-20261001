@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { OrgEvent, ReceiptStatus } from '../api/types';
+import type { Endpoints } from '../api/endpoints';
 import { ApiError } from '../api/client';
 import { MonthCalendar } from '../components/MonthCalendar';
 import { Card, EmptyState, GhostButton, Pill, Screen } from '../components/ui';
-import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
+import { useAppTheme } from '../context/AppContext';
 import { dayHeading, formatTimeRange, localDateKey, receiptLabel } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 
@@ -31,11 +32,18 @@ function pad(value: number): string {
  * 差异只在内容语义：组织日程对成员只读，卡片上多一个「我的回执」状态与回执按钮；
  * 没有新建入口——下发权在部门管理员 / 组织管理员手里，不在成员端。
  */
-export function OrgEventsScreen() {
+export function OrgEventsScreen({
+  api,
+  orgName,
+  onOpenAccounts,
+}: {
+  /** 当前组织的接口客户端（组织 tab 里的每个组织各有一套令牌，spec §4.2.3） */
+  api: Endpoints;
+  orgName: string;
+  onOpenAccounts: () => void;
+}) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { api } = useRuntime();
-  const { session } = useAppSessionState();
 
   const today = useMemo(todayKey, []);
   const [todayYear, todayMonth] = useMemo(() => {
@@ -49,13 +57,7 @@ export function OrgEventsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const isOrgIdentity = session?.identityType === 'ORG_MEMBER';
-
   const load = useCallback(async () => {
-    if (!isOrgIdentity) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
@@ -67,7 +69,7 @@ export function OrgEventsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [api, isOrgIdentity, year, month]);
+  }, [api, year, month]);
 
   useEffect(() => {
     void load();
@@ -101,16 +103,6 @@ export function OrgEventsScreen() {
     }
   };
 
-  if (!isOrgIdentity) {
-    return (
-      <Screen>
-        <View style={{ padding: theme.spacing.md, paddingTop: insets.top + theme.spacing.sm }}>
-          <EmptyState title="当前是个人身份" hint="在「我的」里切换到组织身份后即可查看组织日程" />
-        </View>
-      </Screen>
-    );
-  }
-
   return (
     <Screen>
       <ScrollView
@@ -121,6 +113,17 @@ export function OrgEventsScreen() {
         }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} />}
       >
+        {/* 组织 tab 顶部固定显示当前组织：所有请求都带这个组织的令牌，切组织就整套换掉，避免串数据 */}
+        <View style={styles.orgHeader}>
+          <Text style={{ color: theme.color.textSecondary, fontSize: 13 }}>当前组织</Text>
+          <Text style={{ color: theme.color.textPrimary, fontSize: 15, fontWeight: '600' }}>
+            {orgName}
+          </Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="账户管理" onPress={onOpenAccounts} hitSlop={10}>
+            <Text style={{ color: theme.color.accent, fontSize: 14 }}>账户管理</Text>
+          </Pressable>
+        </View>
+
         <MonthCalendar
           year={year}
           month={month}
@@ -186,6 +189,13 @@ export function OrgEventsScreen() {
 }
 
 const styles = StyleSheet.create({
+  orgHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 10,
+  },
   divider: { height: 1, marginVertical: 14 },
   dayHeading: { fontSize: 15, fontWeight: '600', marginBottom: 10 },
   eventRow: { flexDirection: 'row', alignItems: 'center' },

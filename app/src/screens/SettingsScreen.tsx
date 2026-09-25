@@ -18,10 +18,8 @@ import { absoluteMediaUrl } from '../domain/media';
  * 不该让用户去逐行读文字。
  */
 export function SettingsScreen({
-  onOpenIdentitySwitch,
   onOpenFeedback,
 }: {
-  onOpenIdentitySwitch: () => void;
   onOpenFeedback: () => void;
 }) {
   const theme = useAppTheme();
@@ -30,7 +28,6 @@ export function SettingsScreen({
   const { api, baseUrl } = useRuntime();
   const { session, toggleScheme, signOut } = useAppSessionState();
 
-  const [identities, setIdentities] = useState<IdentityView[]>([]);
   /**
    * 当前身份信息从服务端读，而不是只在本地会话里取：
    * 头像是身份级属性（spec §4.1.8），本地会话缓存里没有它，重启后也必须还在。
@@ -38,14 +35,6 @@ export function SettingsScreen({
   const [profile, setProfile] = useState<IdentityView | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
-
-  const loadIdentities = useCallback(async () => {
-    try {
-      setIdentities(await api.identities());
-    } catch {
-      // 身份列表拿不到不影响本页其他内容
-    }
-  }, [api]);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -56,9 +45,8 @@ export function SettingsScreen({
   }, [api]);
 
   useEffect(() => {
-    void loadIdentities();
     void loadProfile();
-  }, [loadIdentities, loadProfile]);
+  }, [loadProfile]);
 
   /**
    * 换头像：选图 → 上传拿到相对 URL → PATCH /me 回填（spec §4.1.8）。
@@ -111,7 +99,6 @@ export function SettingsScreen({
 
   const isOrg = session?.identityType === 'ORG_MEMBER';
   const nickname = session?.nickname ?? '未命名';
-  const otherIdentityCount = identities.filter((item) => item.identityId !== session?.identityId).length;
 
   return (
     <ScrollView
@@ -168,19 +155,6 @@ export function SettingsScreen({
             <Text style={{ color: theme.color.danger, fontSize: 12, marginTop: 4 }}>{avatarError}</Text>
           ) : null}
         </View>
-      </View>
-
-      <View style={{ marginBottom: theme.spacing.lg }}>
-        <SectionHeader title="账号" />
-        <ListGroup>
-          <ListRow
-            leading={<RowIcon name="swap-horizontal-outline" />}
-            title="切换身份"
-            subtitle={otherIdentityCount > 0 ? `还可切换 ${otherIdentityCount} 个身份` : '暂无其他身份'}
-            onPress={onOpenIdentitySwitch}
-            trailing={<Chevron />}
-          />
-        </ListGroup>
       </View>
 
       <View style={{ marginBottom: theme.spacing.lg }}>

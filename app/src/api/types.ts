@@ -38,9 +38,34 @@ export interface IdentityView {
 export interface SmsLoginResponse {
   needRegister: boolean;
   registerToken: string | null;
-  needSelectIdentity: boolean;
-  selectToken: string | null;
-  identities: IdentityView[];
+  /**
+   * 已有个人身份时直接给出的会话（spec §3.2）。
+   *
+   * App 只登录个人账号，所以没有「选身份」这一步；组织身份靠认领组织账号产生。
+   */
+  session: TokenResponse | null;
+}
+
+/** 我绑定过的组织账号（GET /org-accounts，spec §4.2.5）。 */
+export interface OrgAccount {
+  identityId: number;
+  orgId: number;
+  orgName: string;
+  orgCode: string;
+  /** 成员唯一识别 ID（学号/工号） */
+  memberKey: string;
+  realName: string | null;
+  departmentName: string | null;
+  orgRole: string;
+  lastLoginAt?: string | null;
+}
+
+/** 认领组织账号的结果：账号视图 + 该组织身份的令牌对。 */
+export interface OrgAccountLoginResult {
+  account: OrgAccount;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
 }
 
 export interface EventOccurrence {

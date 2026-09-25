@@ -7,18 +7,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import type { IdentityView } from './api/types';
 import { AppProvider, useAppSessionState, useAppTheme, useRuntimeState } from './context/AppContext';
 import { createRuntime } from './runtime';
 import { AgendaScreen } from './screens/AgendaScreen';
 import { EventEditorScreen, type PlaceSelection } from './screens/EventEditorScreen';
 import { EventPickerScreen, type PickedEvent } from './screens/EventPickerScreen';
 import { FeedbackScreen } from './screens/FeedbackScreen';
-import { IdentitySelectScreen } from './screens/IdentitySelectScreen';
-import { IdentitySwitchScreen } from './screens/IdentitySwitchScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { LocationPickerScreen } from './screens/LocationPickerScreen';
-import { OrgEventsScreen } from './screens/OrgEventsScreen';
+import { OrgAccountsScreen } from './screens/OrgAccountsScreen';
+import { OrgTabScreen } from './screens/OrgTabScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { TaskEditorScreen } from './screens/TaskEditorScreen';
 import { TasksScreen } from './screens/TasksScreen';
@@ -27,7 +25,6 @@ import { APP_TIMEZONE } from './domain/calendar';
 
 type AuthStackParamList = {
   Login: undefined;
-  IdentitySelect: { selectToken: string; identities: IdentityView[] };
 };
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -58,24 +55,8 @@ function tabIcon(routeName: keyof typeof TAB_ICONS) {
 function AuthFlow() {
   return (
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-      <AuthStack.Screen name="Login">
-        {({ navigation }) => (
-          <LoginScreen
-            onNeedSelectIdentity={({ selectToken, identities }) =>
-              navigation.navigate('IdentitySelect', { selectToken, identities })
-            }
-          />
-        )}
-      </AuthStack.Screen>
-      <AuthStack.Screen name="IdentitySelect">
-        {({ route, navigation }) => (
-          <IdentitySelectScreen
-            selectToken={route.params.selectToken}
-            identities={route.params.identities}
-            onBack={() => navigation.goBack()}
-          />
-        )}
-      </AuthStack.Screen>
+      {/* 只登录个人账号（spec §3.2）：组织账号在组织 tab 的「账户管理」里认领 */}
+      <AuthStack.Screen name="Login" component={LoginScreen} />
     </AuthStack.Navigator>
   );
 }
@@ -85,7 +66,7 @@ type MainTabsProps = {
   onOpenEvent: (eventId: number, dateKey: string, occurrenceDate: string | null) => void;
   onCreateTask: () => void;
   onOpenTask: (taskId: number) => void;
-  onOpenIdentitySwitch: () => void;
+  onOpenOrgAccounts: () => void;
   onOpenFeedback: () => void;
 };
 
@@ -94,13 +75,11 @@ function MainTabs({
   onOpenEvent,
   onCreateTask,
   onOpenTask,
-  onOpenIdentitySwitch,
+  onOpenOrgAccounts,
   onOpenFeedback,
 }: MainTabsProps) {
   const theme = useAppTheme();
   const { session } = useAppSessionState();
-  // 组织 tab 只对组织身份可见；个人身份下它没有任何内容可展示
-  const isOrgIdentity = session?.identityType === 'ORG_MEMBER';
 
   return (
     <Tabs.Navigator
@@ -131,20 +110,15 @@ function MainTabs({
       <Tabs.Screen name="Tasks" options={{ title: '待办', tabBarIcon: tabIcon('Tasks') }}>
         {() => <TasksScreen onCreateTask={onCreateTask} onOpenTask={onOpenTask} />}
       </Tabs.Screen>
-      {isOrgIdentity ? (
-        <Tabs.Screen
-          name="OrgEvents"
-          component={OrgEventsScreen}
-          options={{ title: '组织', tabBarIcon: tabIcon('OrgEvents') }}
-        />
-      ) : null}
+      {/*
+        组织 tab **常驻**（spec §4.2.3）：没有绑定组织账号时展示空状态与添加入口。
+        入口消失会让用户根本找不到「我在哪里加组织账号」。
+      */}
+      <Tabs.Screen name="OrgEvents" options={{ title: '组织', tabBarIcon: tabIcon('OrgEvents') }}>
+        {() => <OrgTabScreen onOpenAccounts={onOpenOrgAccounts} />}
+      </Tabs.Screen>
       <Tabs.Screen name="Settings" options={{ title: '我的', tabBarIcon: tabIcon('Settings') }}>
-        {() => (
-          <SettingsScreen
-            onOpenIdentitySwitch={onOpenIdentitySwitch}
-            onOpenFeedback={onOpenFeedback}
-          />
-        )}
+        {() => <SettingsScreen onOpenFeedback={onOpenFeedback} />}
       </Tabs.Screen>
     </Tabs.Navigator>
   );
@@ -156,8 +130,8 @@ type AppStackParamList = {
   TaskEditor: { taskId?: number };
   LocationPicker: undefined;
   EventPicker: undefined;
-  IdentitySwitch: undefined;
   Feedback: undefined;
+  OrgAccounts: undefined;
 };
 
 const AppStack = createNativeStackNavigator<AppStackParamList>();
@@ -203,7 +177,7 @@ function MainStack() {
               setEventSelection({ version: 0, event: null });
               navigation.navigate('TaskEditor', { taskId });
             }}
-            onOpenIdentitySwitch={() => navigation.navigate('IdentitySwitch')}
+            onOpenOrgAccounts={() => navigation.navigate('OrgAccounts')}
             onOpenFeedback={() => navigation.navigate('Feedback')}
           />
         )}
@@ -262,17 +236,12 @@ function MainStack() {
         )}
       </AppStack.Screen>
 
-      <AppStack.Screen name="IdentitySwitch">
-        {({ navigation }) => (
-          <IdentitySwitchScreen
-            onCancel={() => navigation.goBack()}
-            onSwitched={() => navigation.goBack()}
-          />
-        )}
-      </AppStack.Screen>
-
       <AppStack.Screen name="Feedback">
         {({ navigation }) => <FeedbackScreen onBack={() => navigation.goBack()} />}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="OrgAccounts">
+        {({ navigation }) => <OrgAccountsScreen onBack={() => navigation.goBack()} />}
       </AppStack.Screen>
     </AppStack.Navigator>
   );

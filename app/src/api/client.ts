@@ -1,4 +1,3 @@
-import type { SessionManager } from '../auth/session';
 import type { ApiEnvelope } from './types';
 
 export class ApiError extends Error {
@@ -23,10 +22,19 @@ export class ApiError extends Error {
 
 export interface ApiClientOptions {
   baseUrl: string;
-  session?: SessionManager;
+  /**
+   * 令牌来源。**不写死 SessionManager**：组织上下文的令牌是每个组织一份的，
+   * 由 orgAccounts 里的轻量实现提供；两者只要能「取访问令牌 + 强制刷新」就够了。
+   */
+  session?: TokenProvider;
   fetchImpl?: typeof fetch;
   /** 刷新也失败时回调，用于跳转登录页 */
   onSessionExpired?: () => void;
+}
+
+export interface TokenProvider {
+  getAccessToken(): Promise<string | null>;
+  forceRefresh(): Promise<unknown>;
 }
 
 export interface ApiRequestOptions {

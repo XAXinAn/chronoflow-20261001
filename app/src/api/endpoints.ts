@@ -9,6 +9,8 @@ import type {
   GeoStatus,
   HolidayResponse,
   IdentityView,
+  OrgAccount,
+  OrgAccountLoginResult,
   OrgEvent,
   SearchResultItem,
   SmsLoginResponse,
@@ -81,8 +83,13 @@ export function createEndpoints(client: ApiClient) {
         { phone },
         { skipAuthRetry: true },
       ),
-    loginBySms: (phone: string, code: string) =>
-      client.post<SmsLoginResponse>('/api/v1/auth/login/sms', { phone, code }, { skipAuthRetry: true }),
+    /** 登录只认个人账号：已有个人身份时直接返回它的令牌对（spec §3.2）。 */
+    loginBySms: (phone: string, code: string, deviceId: string) =>
+      client.post<SmsLoginResponse>(
+        '/api/v1/auth/login/sms',
+        { phone, code, deviceId },
+        { skipAuthRetry: true },
+      ),
     selectIdentity: (selectToken: string, identityId: number, deviceId: string) =>
       client.post<TokenResponse>(
         '/api/v1/auth/identity/select',
@@ -187,6 +194,18 @@ export function createEndpoints(client: ApiClient) {
     }) => client.post<FeedbackItem>('/api/v1/feedback', payload),
     /** 我提交过的反馈；用户端不展示处理过程，只用来回看自己提过什么。 */
     myFeedback: () => client.get<FeedbackItem[]>('/api/v1/feedback'),
+
+    // --------------------------------------------------------- 组织账号
+    /** 登录组织账号并绑定（spec §3.2）：组织唯一 ID + 成员唯一识别 ID。 */
+    claimOrgAccount: (org: string, memberKey: string, deviceId: string) =>
+      client.post<OrgAccountLoginResult>(
+        `/api/v1/org-accounts/login?deviceId=${encodeURIComponent(deviceId)}`,
+        { org, memberKey },
+      ),
+    /** 我绑定过的组织账号列表。 */
+    orgAccounts: () => client.get<OrgAccount[]>('/api/v1/org-accounts'),
+    /** 解绑（删除登录记录）：组织侧成员记录保留，可重新认领。 */
+    unlinkOrgAccount: (identityId: number) => client.del<void>(`/api/v1/org-accounts/${identityId}`),
 
     // --------------------------------------------------------------- 组织
     orgCurrent: () => client.get<Record<string, unknown>>('/api/v1/org/current'),
