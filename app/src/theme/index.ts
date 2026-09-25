@@ -1,6 +1,7 @@
 import {
   colors,
   elevation,
+  holidayColors,
   radius,
   semanticColors,
   spacing,
@@ -26,6 +27,10 @@ export interface AppTheme {
     success: string;
     warning: string;
     danger: string;
+    /** 日历格子「休」标记（放假） */
+    holiday: string;
+    /** 日历格子「班」标记（调休上班） */
+    workday: string;
   };
   spacing: typeof spacing;
   radius: typeof radius;
@@ -36,6 +41,7 @@ export interface AppTheme {
 export function createTheme(scheme: ColorScheme): AppTheme {
   const palette = colors[scheme];
   const semantic = semanticColors[scheme];
+  const holiday = holidayColors[scheme];
   return {
     scheme,
     color: {
@@ -51,6 +57,9 @@ export function createTheme(scheme: ColorScheme): AppTheme {
       success: semantic.success,
       warning: semantic.warning,
       danger: semantic.danger,
+      // 全项目唯一的彩色例外：休/班必须一眼扫出来（spec §4.1.2 / §5.11）
+      holiday: holiday.holiday,
+      workday: holiday.workday,
     },
     spacing,
     radius,

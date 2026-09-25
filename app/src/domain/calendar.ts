@@ -35,7 +35,11 @@ function toKey(date: Date): string {
 }
 
 /**
- * 生成月视图网格：固定 6 行 × 7 列，周一为一周起点（中文习惯）。
+ * 生成月视图网格：周一为一周起点（中文习惯），**行数按实际需要**（5 行或 6 行）。
+ *
+ * 刻意不固定 6 行：固定 6 行会把整周都不属于本月的那一周也画进来
+ * （例如 2026 年 9 月会带上 10/5–10/11），用户看到的是「上个月/下个月的日历」，
+ * 而不是「9 月」。首行永远含本月 1 号，末行永远含本月最后一天，中间不补空行。
  */
 export function buildMonthGrid(year: number, month: number): MonthGrid {
   const first = new Date(Date.UTC(year, month - 1, 1));
@@ -43,8 +47,19 @@ export function buildMonthGrid(year: number, month: number): MonthGrid {
   const offset = (first.getUTCDay() + 6) % 7;
   const start = new Date(Date.UTC(year, month - 1, 1 - offset));
 
+  // 本月最后一天；再往后补到当周周日，补齐的那几天至少有一天属于本月
+  const last = new Date(Date.UTC(year, month, 0));
+  const trailing = 6 - ((last.getUTCDay() + 6) % 7);
+  // 注意用 setUTCDate 而不是 Date.UTC(year, month, ...)：month 是 1 基的，
+  // 当成 0 基传进去会整体多算一个月（曾经把 9 月的末行算到了 11 月）
+  const end = new Date(last.getTime());
+  end.setUTCDate(last.getUTCDate() + trailing);
+
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  const weekCount = totalDays / 7;
+
   const weeks: MonthGridCell[][] = [];
-  for (let week = 0; week < 6; week += 1) {
+  for (let week = 0; week < weekCount; week += 1) {
     const row: MonthGridCell[] = [];
     for (let day = 0; day < 7; day += 1) {
       const current = new Date(start);
@@ -57,9 +72,6 @@ export function buildMonthGrid(year: number, month: number): MonthGrid {
     }
     weeks.push(row);
   }
-
-  const end = new Date(start);
-  end.setUTCDate(start.getUTCDate() + 41);
 
   return { year, month, weeks, startDateKey: toKey(start), endDateKey: toKey(end) };
 }

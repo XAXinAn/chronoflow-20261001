@@ -4,8 +4,10 @@ import type {
   EventOccurrence,
   GeoPlace,
   GeoStatus,
+  HolidayResponse,
   IdentityView,
   OrgEvent,
+  SearchResultItem,
   SmsLoginResponse,
   Task,
   TokenResponse,
@@ -139,6 +141,19 @@ export function createEndpoints(client: ApiClient) {
     deleteTask: (taskId: number) => client.del<void>(`/api/v1/tasks/${taskId}`),
     completeTask: (taskId: number, completed: boolean) =>
       client.post<Task>(`/api/v1/tasks/${taskId}/complete`, { completed }),
+
+    // ----------------------------------------------------- 检索与节假日
+    /**
+     * 跨日程与待办的检索。**服务端全量检索**，不传月份——否则「上个月那个会」永远搜不到。
+     */
+    search: (keyword: string, types?: string, limit?: number) =>
+      client.get<SearchResultItem[]>('/api/v1/search', { keyword, types, limit }),
+    /**
+     * 节假日与调休。省略 month 取全年：日历网格会带出相邻月份的格子，
+     * 按年取一次比按月取更适合翻月场景。
+     */
+    holidays: (year: number, month?: number, country?: string) =>
+      client.get<HolidayResponse>('/api/v1/holidays', { year, month, country }),
 
     // --------------------------------------------------------------- 组织
     orgCurrent: () => client.get<Record<string, unknown>>('/api/v1/org/current'),

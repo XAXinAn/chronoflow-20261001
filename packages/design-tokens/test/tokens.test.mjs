@@ -9,6 +9,7 @@ import {
   calendarGrayscale,
   colors,
   cssVariables,
+  holidayColors,
   isColorScheme,
   schemeVariables,
   semanticColors,
@@ -59,6 +60,20 @@ test('日历灰度阶梯与语义色符合 spec §7.6', () => {
   assert.equal(semanticColors.light.success, '#2E7D5B');
   assert.equal(semanticColors.light.warning, '#B58500');
   assert.equal(semanticColors.light.danger, '#B3352F');
+});
+
+test('休 / 班 标记色是全项目唯一的例外：放假蓝、调休红，深浅两套都要有', () => {
+  assert.equal(holidayColors.light.holiday, '#1565C0');
+  assert.equal(holidayColors.light.workday, '#C62828');
+  // 深色底需要提亮，直接复用浅色值会在暗背景上糊掉
+  assert.notEqual(holidayColors.dark.holiday, holidayColors.light.holiday);
+  assert.notEqual(holidayColors.dark.workday, holidayColors.light.workday);
+  for (const scheme of ['light', 'dark']) {
+    const { holiday, workday } = holidayColors[scheme];
+    assert.match(holiday, /^#[0-9A-Fa-f]{6}$/);
+    assert.match(workday, /^#[0-9A-Fa-f]{6}$/);
+    assert.notEqual(holiday, workday, `${scheme} 的休与班不能同色`);
+  }
 });
 
 test('Ant Design 主题令牌可生成且主色随方案切换', () => {

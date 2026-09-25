@@ -124,6 +124,10 @@ def databases() -> Iterator[dict[str, str]]:
         os.environ["DATABASE_URL"] = "postgresql+psycopg://" + dsn.split("://", 1)[1]
         os.environ["REDIS_URL"] = f"redis://127.0.0.1:{redis_port}/0"
         os.environ["EXPOSE_SMS_CODE"] = "true"
+        # 按 IP 的验证码日限额在测试里没有意义：TestClient 的 client_ip 恒为 "testclient"，
+        # 于是**整个套件**共用一个计数器，用例一多就会随机变红（表现为无关用例报「发送次数已达上限」）。
+        # 手机号维度的限额保持原样，它才是测试真正会碰到的那个。
+        os.environ["SMS_DAILY_LIMIT_PER_IP"] = "100000"
 
         try:
             yield {"dsn": dsn}

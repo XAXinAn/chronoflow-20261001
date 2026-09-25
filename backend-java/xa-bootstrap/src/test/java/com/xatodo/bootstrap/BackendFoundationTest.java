@@ -79,7 +79,9 @@ class BackendFoundationTest {
                 "department", "org_member", "department_manager",
                 "calendar", "event", "event_exception", "task", "reminder",
                 "event_dispatch", "event_recipient",
-                "import_batch", "import_row_result", "audit_log", "system_config");
+                "import_batch", "import_row_result", "audit_log", "system_config",
+                // spec §5.11 节假日与调休（数据由 scripts/load_holidays.py 灌入，迁移只建表）
+                "holiday");
 
         List<String> actual = jdbcTemplate.queryForList(
                 "SELECT table_name FROM information_schema.tables "

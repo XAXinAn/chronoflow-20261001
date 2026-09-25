@@ -132,6 +132,51 @@ export interface Task {
 
 export type ReceiptStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'COMPLETED';
 
+/**
+ * 检索结果条目（GET /search）。
+ *
+ * 日程与待办共用一条结构、靠 `type` 区分：服务端给的是一份按时间倒序排好的统一结果流，
+ * 不是两段各自排序的列表（spec §4.1.7）。
+ *
+ * 注意：Java 版响应会丢掉值为 null 的字段（`default-property-inclusion: non_null`），
+ * 所以这里的可选字段一律兼容 `undefined`。
+ */
+export interface SearchResultItem {
+  type: 'EVENT' | 'TASK';
+  id: number;
+  title: string;
+  /** 日程开始时间；重复日程给的是最近一次实例 */
+  startAt?: string | null;
+  endAt?: string | null;
+  allDay?: boolean | null;
+  timezone?: string | null;
+  locationName?: string | null;
+  /** 待办截止时间；为空表示「待安排」 */
+  dueAt?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  /** 命中重复日程时为 true */
+  recurring?: boolean | null;
+  /** 命中重复实例的日期；点进去应打开「这一次」而不是整条序列 */
+  occurrenceDate?: string | null;
+}
+
+/** 节假日与调休中的一天（spec §5.11）。 */
+export interface HolidayDay {
+  date: string;
+  name: string;
+  /** HOLIDAY 放假 / WORKDAY 调休上班 */
+  dayType: 'HOLIDAY' | 'WORKDAY';
+}
+
+export interface HolidayResponse {
+  country: string;
+  year: number;
+  /** 省略 month 时服务端返回全年，此时该字段缺失 */
+  month?: number | null;
+  days: HolidayDay[];
+}
+
 export interface OrgEvent {
   eventId: number;
   dispatchId: number;

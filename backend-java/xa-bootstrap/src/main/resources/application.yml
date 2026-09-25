@@ -99,6 +99,10 @@ xatodo:
       js-security-code: ${GEO_AMAP_JS_SECURITY_CODE:}
       base-url: ${GEO_AMAP_BASE_URL:https://restapi.amap.com}
       timeout-seconds: ${GEO_AMAP_TIMEOUT_SECONDS:5}
+  holiday:
+    # 节假日数据的进程内缓存时长（spec §5.11）。数据由 scripts/load_holidays.py 灌库，
+    # 热更新的可见延迟上限就是这个 TTL：不想等就重启服务，或把 TTL 调小。
+    cache-ttl: ${HOLIDAY_CACHE_TTL:5m}
 
 logging:
   pattern:

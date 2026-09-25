@@ -33,6 +33,193 @@ def range_query(client, tokens, start: str, end: str) -> list[dict]:
     return response["data"]
 
 
+def search(client, tokens, keyword: str, **params) -> list[dict]:
+    response = client.get(
+        "/api/v1/search", params={"keyword": keyword, **params}, headers=auth(tokens)
+    ).json()
+    assert response["code"] == 0, response
+    return response["data"]
+
+
+def create_task(client, tokens, payload: dict) -> dict:
+    response = client.post("/api/v1/tasks", json=payload, headers=auth(tokens)).json()
+    assert response["code"] == 0, response
+    return response["data"]
+
+
+def test_search_spans_events_and_tasks_in_time_desc_order(client) -> None:
+    """检索跨日程与待办，按时间倒序、无时间的待办排最后（spec §4.1.7）。"""
+    tokens = register(client, "13900002101")
+    create_event(
+        client,
+        tokens,
+        {
+            "title": "评审会彩排",
+            "startAt": "2026-10-05T10:00:00+08:00",
+            "endAt": "2026-10-05T11:00:00+08:00",
+        },
+    )
+    create_event(
+        client,
+        tokens,
+        {
+            "title": "技术评审会",
+            "startAt": "2026-09-20T10:00:00+08:00",
+            "endAt": "2026-09-20T11:00:00+08:00",
+        },
+    )
+    create_task(client, tokens, {"title": "写评审会纪要", "dueAt": "2026-09-25T18:00:00+08:00"})
+    create_task(client, tokens, {"title": "评审会后续跟进"})
+
+    items = search(client, tokens, "评审会")
+
+    assert [item["title"] for item in items] == [
+        "评审会彩排",
+        "写评审会纪要",
+        "技术评审会",
+        "评审会后续跟进",
+    ]
+    assert [item["type"] for item in items] == ["EVENT", "TASK", "EVENT", "TASK"]
+    # 无时间的待办排在最后，且确实没有截止时间
+    assert items[-1]["dueAt"] is None
+
+
+def test_search_is_scoped_to_own_identity_and_can_filter_types(client) -> None:
+    mine = register(client, "13900002102")
+    others = register(client, "13900002103")
+    create_event(
+        client,
+        mine,
+        {
+            "title": "我的评审会",
+            "startAt": "2026-10-05T10:00:00+08:00",
+            "endAt": "2026-10-05T11:00:00+08:00",
+        },
+    )
+    create_event(
+        client,
+        others,
+        {
+            "title": "别人的评审会",
+            "startAt": "2026-10-06T10:00:00+08:00",
+            "endAt": "2026-10-06T11:00:00+08:00",
+        },
+    )
+    create_task(client, mine, {"title": "评审会待办"})
+
+    assert [item["title"] for item in search(client, mine, "评审会")] == ["我的评审会", "评审会待办"]
+    assert [item["title"] for item in search(client, mine, "评审会", types="TASK")] == ["评审会待办"]
+    assert [item["title"] for item in search(client, mine, "评审会", types="EVENT")] == ["我的评审会"]
+
+
+def test_search_treats_wildcards_as_literals(client) -> None:
+    """关键字里的 % / _ 不是通配符：不转义就成了「搜什么都灵」（spec §4.1.7）。"""
+    tokens = register(client, "13900002104")
+    create_event(
+        client,
+        tokens,
+        {
+            "title": "50% 折扣复盘",
+            "startAt": "2026-10-05T10:00:00+08:00",
+            "endAt": "2026-10-05T11:00:00+08:00",
+        },
+    )
+    create_event(
+        client,
+        tokens,
+        {
+            "title": "普通复盘",
+            "startAt": "2026-10-06T10:00:00+08:00",
+            "endAt": "2026-10-06T11:00:00+08:00",
+        },
+    )
+
+    assert [item["title"] for item in search(client, tokens, "50%")] == ["50% 折扣复盘"]
+    assert search(client, tokens, "_") == []
+
+
+def test_search_resolves_upcoming_occurrence_for_recurring_event(client) -> None:
+    """命中的是重复序列时，要给出最近一次实例的日期，而不是序列起点。"""
+    tokens = register(client, "13900002105")
+    create_event(
+        client,
+        tokens,
+        {
+            "title": "周会",
+            "startAt": "2026-09-07T09:00:00+08:00",
+            "endAt": "2026-09-07T10:00:00+08:00",
+            "timezone": "Asia/Shanghai",
+            "rrule": "FREQ=WEEKLY;BYDAY=MO",
+        },
+    )
+
+    item = search(client, tokens, "周会")[0]
+
+    assert item["recurring"] is True
+    assert item["occurrenceDate"] is not None
+    # 断言「形态」而不是「具体哪一天」：最近一次实例随运行日期变化，
+    # 真正要守住的是「落在周一 09:00 的本地墙上时间」
+    start = datetime.fromisoformat(item["startAt"]).astimezone(SHANGHAI)
+    assert (start.hour, start.minute) == (9, 0)
+    assert start.isoweekday() == 1
+
+
+def test_search_rejects_blank_keyword(client) -> None:
+    tokens = register(client, "13900002106")
+    response = client.get("/api/v1/search", params={"keyword": "   "}, headers=auth(tokens)).json()
+    assert response["code"] != 0
+
+
+def test_holidays_are_returned_by_month_and_year(client, db) -> None:
+    """节假日按年月取，区分放假与调休上班（spec §5.11）。"""
+    for day, name, day_type in (
+        ("2026-09-25", "中秋节", "HOLIDAY"),
+        ("2026-09-27", "中秋节", "WORKDAY"),
+        ("2026-10-01", "国庆节", "HOLIDAY"),
+    ):
+        db.execute(
+            "INSERT INTO holiday (country_code, holiday_date, name, day_type)"
+            " VALUES ('zh-CN', %s::date, %s, %s)"
+            " ON CONFLICT (country_code, holiday_date)"
+            " DO UPDATE SET name = EXCLUDED.name, day_type = EXCLUDED.day_type",
+            (day, name, day_type),
+        )
+
+    tokens = register(client, "13900002107")
+    september = client.get(
+        "/api/v1/holidays", params={"year": 2026, "month": 9}, headers=auth(tokens)
+    ).json()["data"]
+    assert september["country"] == "zh-CN"
+    assert [(item["date"], item["dayType"]) for item in september["days"]] == [
+        ("2026-09-25", "HOLIDAY"),
+        ("2026-09-27", "WORKDAY"),
+    ]
+    assert september["days"][0]["name"] == "中秋节"
+
+    # 省略 month 返回全年：翻月不该被月度切片限制
+    whole_year = client.get(
+        "/api/v1/holidays", params={"year": 2026}, headers=auth(tokens)
+    ).json()["data"]
+    assert len(whole_year["days"]) == 3
+    assert whole_year["month"] is None
+
+    # country 大小写归一：zh-cn 与 zh-CN 命中同一份数据
+    lower = client.get(
+        "/api/v1/holidays", params={"year": 2026, "month": 9, "country": "zh-cn"}, headers=auth(tokens)
+    ).json()["data"]
+    assert len(lower["days"]) == 2
+
+
+def test_holiday_year_without_data_returns_empty(client) -> None:
+    """没有数据的年份返回空数组，不猜测也不硬编码兜底。"""
+    tokens = register(client, "13900002108")
+    data = client.get(
+        "/api/v1/holidays", params={"year": 2031}, headers=auth(tokens)
+    ).json()["data"]
+    assert data["year"] == 2031
+    assert data["days"] == []
+
+
 def test_weekly_recurrence_expands_in_event_timezone(client) -> None:
     tokens = register(client, "13900002001")
     create_event(client, tokens, WEEKLY_PAYLOAD)

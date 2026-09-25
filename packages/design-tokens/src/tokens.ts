@@ -54,8 +54,39 @@ export const colors: Record<ColorScheme, ColorTokens> = {
   },
 };
 
+/**
+ * 日历格子上「休 / 班」的标记色（spec §4.1.2 / §5.11）。
+ *
+ * 这是全项目**唯一**允许出现彩色通道的地方，而且是刻意为之：
+ * 主色系保持黑白灰（spec §7.6），但「哪几天不用上班」属于必须一眼扫出来的信息，
+ * 沿用中文日历的通用约定——放假用蓝、调休上班用红。
+ * 它同时满足无障碍要求：两种标记除了色相，字符本身（休 / 班）也不同，
+ * 色觉障碍用户不会因为分不清颜色而看错。
+ */
+export interface HolidayColors {
+  /** 放假 */
+  holiday: string;
+  /** 调休上班 */
+  workday: string;
+}
+
+export const holidayColors: Record<ColorScheme, HolidayColors> = {
+  light: {
+    holiday: '#1565C0',
+    workday: '#C62828',
+  },
+  dark: {
+    // 深色底上统一提亮，保证对比度
+    holiday: '#64B5F6',
+    workday: '#EF5350',
+  },
+};
+
 /** 语义色仅用于状态提示，且为降饱和版本；深色模式同色相提亮。 */
-export const semanticColors: Record<ColorScheme, Record<'success' | 'warning' | 'danger', string>> = {
+export const semanticColors: Record<
+  ColorScheme,
+  Record<'success' | 'warning' | 'danger', string>
+> = {
   light: {
     success: '#2E7D5B',
     warning: '#B58500',
@@ -167,6 +198,8 @@ export function schemeVariables(scheme: ColorScheme): Record<string, string> {
     '--xa-success': semantic.success,
     '--xa-warning': semantic.warning,
     '--xa-danger': semantic.danger,
+    '--xa-holiday': holidayColors[scheme].holiday,
+    '--xa-workday': holidayColors[scheme].workday,
     '--xa-shadow': elevation[scheme],
   };
 }

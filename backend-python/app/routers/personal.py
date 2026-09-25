@@ -10,7 +10,9 @@ from ..db import get_session
 from ..deps import current_identity
 from ..errors import envelope
 from ..security import IdentityPrincipal
+from ..services.holiday import HolidayService
 from ..services.personal import PersonalService
+from ..services.search import SearchService
 
 router = APIRouter(prefix="/api/v1", tags=["personal"])
 
@@ -327,3 +329,27 @@ def list_reminders(
     service=Depends(_service),
 ) -> dict:
     return envelope(service.list_reminders(principal.identity_id, targetType, targetId))
+
+
+@router.get("/search")
+def search(
+    keyword: str = Query(...),
+    types: list[str] | None = Query(default=None),
+    limit: int | None = Query(default=None),
+    principal: IdentityPrincipal = Depends(current_identity),
+    session: Session = Depends(get_session),
+) -> dict:
+    """跨日程与待办的关键字检索，不受当前月份限制（spec §4.1.7）。"""
+    return envelope(SearchService(session).search(principal.identity_id, keyword, types, limit))
+
+
+@router.get("/holidays")
+def holidays(
+    year: int = Query(...),
+    month: int | None = Query(default=None),
+    country: str | None = Query(default=None),
+    principal: IdentityPrincipal = Depends(current_identity),
+    session: Session = Depends(get_session),
+) -> dict:
+    """节假日与调休；省略 month 返回全年（spec §5.11）。"""
+    return envelope(HolidayService(session).query(country, year, month))

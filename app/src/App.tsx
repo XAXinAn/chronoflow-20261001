@@ -116,7 +116,14 @@ function MainTabs({
       }}
     >
       <Tabs.Screen name="Agenda" options={{ title: '日历', tabBarIcon: tabIcon('Agenda') }}>
-        {() => <AgendaScreen onCreateEvent={onCreateEvent} onOpenEvent={onOpenEvent} />}
+        {() => (
+          <AgendaScreen
+            onCreateEvent={onCreateEvent}
+            onOpenEvent={onOpenEvent}
+            // 日历页的检索会跨到待办，所以这里也要能直接打开待办编辑页（spec §4.1.7）
+            onOpenTask={onOpenTask}
+          />
+        )}
       </Tabs.Screen>
       <Tabs.Screen name="Tasks" options={{ title: '待办', tabBarIcon: tabIcon('Tasks') }}>
         {() => <TasksScreen onCreateTask={onCreateTask} onOpenTask={onOpenTask} />}

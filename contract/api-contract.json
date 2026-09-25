@@ -56,6 +56,9 @@
     { "method": "PUT", "path": "/api/v1/reminders", "auth": "access" },
     { "method": "GET", "path": "/api/v1/reminders", "auth": "access" },
 
+    { "method": "GET", "path": "/api/v1/holidays", "auth": "access" },
+    { "method": "GET", "path": "/api/v1/search", "auth": "access" },
+
     { "method": "GET", "path": "/api/v1/geo/places", "auth": "access" },
     { "method": "GET", "path": "/api/v1/geo/regeo", "auth": "access" },
     { "method": "GET", "path": "/api/v1/geo/config", "auth": "access" },
