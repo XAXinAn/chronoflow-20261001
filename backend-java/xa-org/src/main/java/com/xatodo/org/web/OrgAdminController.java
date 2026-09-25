@@ -7,17 +7,26 @@ import com.xatodo.org.dto.OrgDtos.DepartmentUpdateRequest;
 import com.xatodo.org.dto.OrgDtos.DeptManagerGrantRequest;
 import com.xatodo.org.dto.OrgDtos.OrgEventDispatchRequest;
 import com.xatodo.org.dto.OrgDtos.OrgEventResponse;
+import com.xatodo.org.dto.OrgDtos.OrgEventUpdateRequest;
 import com.xatodo.org.dto.OrgDtos.OrgMemberCreateRequest;
 import com.xatodo.org.dto.OrgDtos.OrgMemberResponse;
 import com.xatodo.org.dto.OrgDtos.OrgMemberUpdateRequest;
 import com.xatodo.org.dto.OrgDtos.ReceiptSummaryResponse;
+import com.xatodo.org.dto.OrgDtos.ImportBatchResponse;
 import com.xatodo.org.entity.Department;
+import com.xatodo.org.entity.ImportBatch;
 import com.xatodo.org.entity.OrgMember;
 import com.xatodo.org.service.DepartmentService;
+import com.xatodo.org.service.MemberImportService;
 import com.xatodo.org.service.OrgEventService;
 import com.xatodo.org.service.OrgMemberService;
 import com.xatodo.org.service.OrgPermissionService;
 import jakarta.validation.Valid;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -25,7 +34,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.List;
 
 /**
  * 组织管理端接口，对应 spec §6.3「组织管理员」分组。
@@ -40,15 +55,18 @@ public class OrgAdminController {
     private final DepartmentService departmentService;
     private final OrgMemberService orgMemberService;
     private final OrgEventService orgEventService;
+    private final MemberImportService memberImportService;
 
     public OrgAdminController(OrgPermissionService permission,
                               DepartmentService departmentService,
                               OrgMemberService orgMemberService,
-                              OrgEventService orgEventService) {
+                              OrgEventService orgEventService,
+                              MemberImportService memberImportService) {
         this.permission = permission;
         this.departmentService = departmentService;
         this.orgMemberService = orgMemberService;
         this.orgEventService = orgEventService;
+        this.memberImportService = memberImportService;
     }
 
     // ------------------------------------------------------------------ 部门
@@ -124,10 +142,74 @@ public class OrgAdminController {
         return ApiResponse.ok();
     }
 
+    @PatchMapping("/events/{id}")
+    public ApiResponse<OrgEventResponse> updateEvent(@PathVariable Long id,
+                                                     @Valid @RequestBody OrgEventUpdateRequest request) {
+        OrgMember actor = currentMember();
+        return ApiResponse.ok(orgEventService.update(actor, id, request));
+    }
+
+    @DeleteMapping("/events/{id}")
+    public ApiResponse<Void> deleteEvent(@PathVariable Long id) {
+        OrgMember actor = currentMember();
+        orgEventService.delete(actor, id);
+        return ApiResponse.ok();
+    }
+
     @GetMapping("/events/{id}/receipts")
     public ApiResponse<ReceiptSummaryResponse> receipts(@PathVariable Long id) {
         OrgMember actor = currentMember();
         return ApiResponse.ok(orgEventService.receiptSummary(actor, id));
+    }
+
+    // -------------------------------------------------------------- 成员导入
+
+    /**
+     * 上传模板文件批量导入成员，立即返回 batchId，逐行结果异步产出。
+     */
+    @PostMapping(value = "/members/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<ImportBatchResponse> importMembers(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(defaultValue = "false") boolean autoCreateDepartment) throws IOException {
+        OrgMember actor = currentMember();
+        if (file.isEmpty()) {
+            throw com.xatodo.common.exception.BizException.of(
+                    com.xatodo.common.api.ErrorCode.PARAM_INVALID, "上传文件为空");
+        }
+        ImportBatch batch = memberImportService.startImport(
+                actor, file.getOriginalFilename(), file.getBytes(), autoCreateDepartment);
+        return ApiResponse.ok(memberImportService.detail(actor, batch.getId()));
+    }
+
+    @GetMapping("/members/import/template")
+    public ResponseEntity<Resource> importTemplate() {
+        currentMember();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"member-import-template.xlsx\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(new ByteArrayResource(memberImportService.template()));
+    }
+
+    @GetMapping("/imports")
+    public ApiResponse<List<ImportBatch>> imports() {
+        OrgMember actor = currentMember();
+        return ApiResponse.ok(memberImportService.listBatches(actor));
+    }
+
+    @GetMapping("/imports/{id}")
+    public ApiResponse<ImportBatchResponse> importDetail(@PathVariable Long id) {
+        OrgMember actor = currentMember();
+        return ApiResponse.ok(memberImportService.detail(actor, id));
+    }
+
+    @GetMapping(value = "/imports/{id}/failures", produces = "text/csv;charset=UTF-8")
+    public ResponseEntity<String> importFailures(@PathVariable Long id) {
+        OrgMember actor = currentMember();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"import-failures-" + id + ".csv\"")
+                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
+                .body(memberImportService.failureCsv(actor, id));
     }
 
     private OrgMember currentMember() {

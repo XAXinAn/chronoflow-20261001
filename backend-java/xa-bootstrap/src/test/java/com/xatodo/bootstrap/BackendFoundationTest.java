@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -56,13 +57,16 @@ class BackendFoundationTest {
 
     @Test
     @DisplayName("Flyway 迁移全部执行且无失败记录")
-    void flywayAppliedAllMigrations() {
+    void flywayAppliedAllMigrations() throws Exception {
+        // 期望数量直接由 classpath 上的迁移文件推导，避免新增迁移后测试写死数字而失守
+        int expected = new PathMatchingResourcePatternResolver()
+                .getResources("classpath:db/migration/V*__*.sql").length;
         Integer applied = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = true", Integer.class);
         Integer failed = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = false", Integer.class);
 
-        assertThat(applied).isEqualTo(6);
+        assertThat(applied).isEqualTo(expected);
         assertThat(failed).isZero();
     }
 

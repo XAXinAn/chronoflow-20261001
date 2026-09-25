@@ -18,7 +18,27 @@ Java 21 + Spring Boot 3 实现，对应 [spec.md](../spec.md) 阶段一。阶段
 
 未实现部分：密码登录、微信登录、绑定第三方、账号设置（`PATCH /me`）、真实短信通道、推送、
 日程提醒（`/reminders`）、日程↔待办互转、节假日与调休数据、平台超管后台、
-**成员批量导入**、组织日程的编辑与删除（当前仅支持创建与撤回）。
+对象存储接入（导入原文件暂只记引用占位）。
+
+### 成员批量导入（spec §4.3）
+
+支持 `.xlsx` 与 `.csv`，模板列：姓名、手机号、邮箱（选填）、工号（选填）、部门路径、角色（选填）。
+
+| 端点 | 说明 |
+| --- | --- |
+| `POST /org-admin/members/import` | 上传文件（multipart），立即返回 `batchId` |
+| `GET /org-admin/members/import/template` | 下载 xlsx 模板 |
+| `GET /org-admin/imports` / `{id}` | 批次列表 / 详情与逐行结果 |
+| `GET /org-admin/imports/{id}/failures` | 导出失败明细 CSV |
+
+实现要点：
+
+- **异步执行**：上传后立即返回 `batchId`，逐行结果异步产出，前端轮询批次状态。
+- **逐行独立事务**：某一行失败只回滚该行。这里是刻意为之——PostgreSQL 中事务一旦出错即进入
+  aborted 状态，若整批一个事务，第一行失败会导致后续所有行无法继续（整个批次作废）。
+- **部门路径是绝对路径**：`技术中心/后端组` 从组织根开始逐级匹配；不存在的段仅在勾选
+  `autoCreateDepartment` 时逐级补建（该开关需组织管理员权限）。
+- **手机号被 Excel 当数字存**：读取时按整数还原，避免拿到 `1.38E+10` 这种科学计数法。
 
 ### 组织权限模型（spec §2.2）
 
@@ -149,7 +169,12 @@ mvn -pl xa-bootstrap spring-boot:run
 | GET/POST/PATCH | `/api/v1/org-admin/members[/{id}]` | 成员新增 / 编辑 / 停用 |
 | POST | `/api/v1/org-admin/events` | 创建组织日程并下发 |
 | POST | `/api/v1/org-admin/events/{id}/revoke` | 撤回下发 |
+| PATCH / DELETE | `/api/v1/org-admin/events/{id}` | 编辑（可带 `redispatch` 补投新成员）/ 删除 |
 | GET | `/api/v1/org-admin/events/{id}/receipts` | 回执统计与明细 |
+| POST | `/api/v1/org-admin/members/import` | 上传模板批量导入成员 |
+| GET | `/api/v1/org-admin/members/import/template` | 下载 xlsx 导入模板 |
+| GET | `/api/v1/org-admin/imports[/{id}]` | 导入批次列表 / 详情 |
+| GET | `/api/v1/org-admin/imports/{id}/failures` | 导出失败明细 CSV |
 | GET | `/actuator/health` | 健康检查 |
 | GET | `/swagger-ui.html` | OpenAPI 文档 |
 

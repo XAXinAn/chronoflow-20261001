@@ -147,18 +147,37 @@ public class OrgMemberService {
             permission.requireOrgAdmin(actor);
         }
 
+        OrgMember member = createMemberInternal(actor.getOrgId(), department.getId(),
+                request.phone(), request.realName(), request.memberNo(), null, request.jobTitle(), role);
+        return new OrgMemberResponse(member.getId(), member.getIdentityId(), department.getId(),
+                department.getName(), member.getRealName(), member.getMemberNo(),
+                member.getJobTitle(), member.getOrgRole(), member.getStatus(), false);
+    }
+
+    /**
+     * 创建成员的内部实现：不做权限校验（由调用方保证），供单条新增与批量导入共用。
+     *
+     * <p>手机号对应账号不存在时自动创建，实现「管理员批量导入成员，创建账号」（spec §3.1）。
+     */
+    @Transactional
+    public OrgMember createMemberInternal(Long orgId, Long departmentId, String phone, String realName,
+                                          String memberNo, String email, String jobTitle, String role) {
         Account account = accountMapper.selectOne(new LambdaQueryWrapper<Account>()
-                .eq(Account::getPhone, request.phone()));
+                .eq(Account::getPhone, phone));
         if (account == null) {
             account = new Account();
-            account.setPhone(request.phone());
+            account.setPhone(phone);
+            account.setEmail(email);
             account.setStatus("ACTIVE");
             accountMapper.insert(account);
+        } else if (StringUtils.hasText(email) && !StringUtils.hasText(account.getEmail())) {
+            account.setEmail(email);
+            accountMapper.updateById(account);
         }
 
         Long existingIdentity = identityMapper.selectCount(new LambdaQueryWrapper<Identity>()
                 .eq(Identity::getAccountId, account.getId())
-                .eq(Identity::getOrgId, actor.getOrgId()));
+                .eq(Identity::getOrgId, orgId));
         if (existingIdentity != null && existingIdentity > 0) {
             throw BizException.of(ErrorCode.MEMBER_ALREADY_EXISTS, "该手机号已是本组织成员");
         }
@@ -166,25 +185,22 @@ public class OrgMemberService {
         Identity identity = new Identity();
         identity.setAccountId(account.getId());
         identity.setIdentityType(Identity.TYPE_ORG_MEMBER);
-        identity.setOrgId(actor.getOrgId());
-        identity.setNickname(request.realName());
+        identity.setOrgId(orgId);
+        identity.setNickname(realName);
         identity.setStatus("ACTIVE");
         identityMapper.insert(identity);
 
         OrgMember member = new OrgMember();
-        member.setOrgId(actor.getOrgId());
+        member.setOrgId(orgId);
         member.setIdentityId(identity.getId());
-        member.setDepartmentId(department.getId());
-        member.setRealName(request.realName());
-        member.setMemberNo(request.memberNo());
-        member.setJobTitle(request.jobTitle());
+        member.setDepartmentId(departmentId);
+        member.setRealName(realName);
+        member.setMemberNo(StringUtils.hasText(memberNo) ? memberNo : null);
+        member.setJobTitle(jobTitle);
         member.setOrgRole(role);
         member.setStatus(OrgMember.STATUS_ACTIVE);
         orgMemberMapper.insert(member);
-
-        return new OrgMemberResponse(member.getId(), identity.getId(), department.getId(),
-                department.getName(), member.getRealName(), member.getMemberNo(),
-                member.getJobTitle(), member.getOrgRole(), member.getStatus(), false);
+        return member;
     }
 
     /**

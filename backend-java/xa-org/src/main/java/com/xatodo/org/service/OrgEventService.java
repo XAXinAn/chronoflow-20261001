@@ -5,6 +5,7 @@ import com.xatodo.common.api.ErrorCode;
 import com.xatodo.common.exception.BizException;
 import com.xatodo.org.dto.OrgDtos.OrgEventDispatchRequest;
 import com.xatodo.org.dto.OrgDtos.OrgEventResponse;
+import com.xatodo.org.dto.OrgDtos.OrgEventUpdateRequest;
 import com.xatodo.org.dto.OrgDtos.ReceiptItem;
 import com.xatodo.org.dto.OrgDtos.ReceiptRequest;
 import com.xatodo.org.dto.OrgDtos.ReceiptSummaryResponse;
@@ -15,6 +16,7 @@ import com.xatodo.org.entity.OrgMember;
 import com.xatodo.org.entity.Organization;
 import com.xatodo.org.mapper.EventDispatchMapper;
 import com.xatodo.org.mapper.EventRecipientMapper;
+import com.xatodo.org.mapper.DepartmentMapper;
 import com.xatodo.org.mapper.OrgMemberMapper;
 import com.xatodo.org.mapper.OrganizationMapper;
 import com.xatodo.personal.dto.EventOccurrence;
@@ -56,6 +58,7 @@ public class OrgEventService {
     private final DepartmentService departmentService;
     private final OrgMemberMapper orgMemberMapper;
     private final OrganizationMapper organizationMapper;
+    private final DepartmentMapper departmentMapper;
     private final EventDispatchMapper eventDispatchMapper;
     private final EventRecipientMapper eventRecipientMapper;
     private final EventMapper eventMapper;
@@ -67,6 +70,7 @@ public class OrgEventService {
                            DepartmentService departmentService,
                            OrgMemberMapper orgMemberMapper,
                            OrganizationMapper organizationMapper,
+                           DepartmentMapper departmentMapper,
                            EventDispatchMapper eventDispatchMapper,
                            EventRecipientMapper eventRecipientMapper,
                            EventMapper eventMapper,
@@ -77,6 +81,7 @@ public class OrgEventService {
         this.departmentService = departmentService;
         this.orgMemberMapper = orgMemberMapper;
         this.organizationMapper = organizationMapper;
+        this.departmentMapper = departmentMapper;
         this.eventDispatchMapper = eventDispatchMapper;
         this.eventRecipientMapper = eventRecipientMapper;
         this.eventMapper = eventMapper;
@@ -166,6 +171,114 @@ public class OrgEventService {
         }
         dispatch.setStatus(EventDispatch.STATUS_REVOKED);
         eventDispatchMapper.updateById(dispatch);
+    }
+
+    /**
+     * 修改组织日程。改动后标记「已更新」；{@code redispatch=true} 时按原范围补投新增成员，
+     * 已有成员的回执记录保持不变（spec §4.2.2）。
+     */
+    @Transactional
+    public OrgEventResponse update(OrgMember actor, Long eventId, OrgEventUpdateRequest request) {
+        EventDispatch dispatch = requireActiveDispatch(actor.getOrgId(), eventId);
+        requireCanViewDispatch(actor, dispatch);
+
+        Event event = eventMapper.selectById(eventId);
+        if (event == null || event.getDeletedAt() != null) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "日程不存在");
+        }
+
+        OffsetDateTime start = request.startAt() != null ? request.startAt() : event.getStartAt();
+        OffsetDateTime end = request.endAt() != null ? request.endAt() : event.getEndAt();
+        if (!end.isAfter(start)) {
+            throw BizException.of(ErrorCode.EVENT_TIME_INVALID);
+        }
+        if (StringUtils.hasText(request.title())) {
+            event.setTitle(request.title());
+        }
+        if (request.description() != null) {
+            event.setDescription(request.description());
+        }
+        if (request.location() != null) {
+            event.setLocation(request.location());
+        }
+        event.setStartAt(start);
+        event.setEndAt(end);
+        if (request.allDay() != null) {
+            event.setAllDay(request.allDay());
+        }
+        if (StringUtils.hasText(request.timezone())) {
+            event.setTimezone(request.timezone());
+        }
+        event.setUpdatedAfterDispatch(true);
+        eventMapper.updateById(event);
+
+        if (Boolean.TRUE.equals(request.redispatch())) {
+            redispatch(actor, dispatch);
+        }
+        return toResponse(event, dispatch, null);
+    }
+
+    /**
+     * 删除组织日程：软删日程并将下发记录置为 REVOKED，成员端随即不再展示。
+     */
+    @Transactional
+    public void delete(OrgMember actor, Long eventId) {
+        EventDispatch dispatch = requireActiveDispatch(actor.getOrgId(), eventId);
+        requireCanViewDispatch(actor, dispatch);
+
+        Event event = eventMapper.selectById(eventId);
+        if (event != null) {
+            event.setDeletedAt(OffsetDateTime.now(ZoneOffset.UTC));
+            event.setStatus(Event.STATUS_CANCELLED);
+            eventMapper.updateById(event);
+        }
+        dispatch.setStatus(EventDispatch.STATUS_REVOKED);
+        eventDispatchMapper.updateById(dispatch);
+    }
+
+    /**
+     * 重新下发：按原范围补齐新增成员，已存在的收件记录（含回执）原样保留。
+     */
+    private void redispatch(OrgMember actor, EventDispatch dispatch) {
+        if (EventDispatch.SCOPE_MEMBER.equals(dispatch.getScopeType())) {
+            return;   // 指定成员下发不自动扩充目标
+        }
+        List<OrgMember> targets;
+        if (EventDispatch.SCOPE_ALL.equals(dispatch.getScopeType())) {
+            targets = activeMembers(dispatch.getOrgId(), null);
+        } else {
+            Department department = departmentMapper.selectById(dispatch.getDepartmentId());
+            if (department == null) {
+                return;
+            }
+            Set<Long> scope = permission.resolveDepartmentScope(
+                    department, Boolean.TRUE.equals(dispatch.getIncludeSubDepartments()));
+            targets = activeMembers(dispatch.getOrgId(), scope);
+        }
+
+        Set<Long> existing = eventRecipientMapper.selectList(
+                        new LambdaQueryWrapper<EventRecipient>()
+                                .eq(EventRecipient::getDispatchId, dispatch.getId()))
+                .stream().map(EventRecipient::getOrgMemberId).collect(Collectors.toSet());
+
+        int added = 0;
+        for (OrgMember target : targets) {
+            if (existing.contains(target.getId())) {
+                continue;
+            }
+            EventRecipient row = new EventRecipient();
+            row.setDispatchId(dispatch.getId());
+            row.setEventId(dispatch.getEventId());
+            row.setOrgMemberId(target.getId());
+            row.setDepartmentId(target.getDepartmentId());
+            row.setReceiptStatus(EventRecipient.PENDING);
+            eventRecipientMapper.insert(row);
+            added++;
+        }
+        if (added > 0) {
+            dispatch.setRecipientCount(dispatch.getRecipientCount() + added);
+            eventDispatchMapper.updateById(dispatch);
+        }
     }
 
     // ------------------------------------------------------------ 成员侧读取

@@ -282,7 +282,8 @@ POST /auth/identity/select（凭 selectToken）→ 签发绑定该身份的 Toke
 - **成员管理**：单个新增、编辑、停用、调岗、重置密码、设为部门管理员。
 - **批量导入**：下载 Excel/CSV 模板 → 上传文件 → 同步校验并返回逐行结果。
   - 模板列：姓名、手机号、邮箱（选填）、工号（选填）、部门路径（如「技术中心/后端组」）、角色（选填）。
-  - 校验规则：手机号格式与唯一性、部门路径存在性（不存在则自动创建，需勾选开关）、必填项完整性。
+  - 部门路径为**从组织根开始的绝对路径**，按 `/` 逐级匹配；某一段不存在时，仅在勾选「自动创建部门」开关后逐级补建（该开关需组织管理员权限），否则该行失败。
+  - 校验规则：手机号格式与唯一性、部门路径存在性、必填项完整性。
   - 部分失败策略：成功行照常入库，失败行返回行号 + 错误原因，可下载失败明细后修正重传。
   - 单次导入上限 5000 行；异步执行并展示进度。
 - **部门管理**：树形增删改、调整上级、排序、设置部门负责人。
@@ -396,7 +397,7 @@ erDiagram
 
 | 表 | 关键字段 | 约束 / 说明 |
 | --- | --- | --- |
-| `import_batch` | `id`、`org_id`、`file_name`、`file_url`、`total_count`、`success_count`、`fail_count`、`status`、`created_by_admin_id`、`created_at`、`finished_at` | 异步执行 |
+| `import_batch` | `id`、`org_id`、`file_name`、`file_url`、`total_count`、`success_count`、`fail_count`、`status`、`created_by_member_id`、`created_by_admin_id`、`created_at`、`finished_at` | 异步执行。组织管理端导入由组织身份发起，记 `created_by_member_id`；`created_by_admin_id` 供平台超管后台使用，二者可空 |
 | `import_row_result` | `id`、`batch_id`、`row_no`、`raw_data`(jsonb)、`status`、`error_message`、`created_member_id`(可空) | 失败明细可导出 |
 | `audit_log` | `id`、`actor_type`(ACCOUNT/ADMIN)、`actor_id`、`actor_name`、`org_id`(可空)、`action`、`target_type`、`target_id`、`detail`(jsonb)、`ip`、`user_agent`、`created_at` | 仅追加，不可修改/删除 |
 | `system_config` | `id`、`config_key`(唯一)、`config_value`(jsonb)、`description`、`updated_by_admin_id`、`updated_at` | 全局配置 |
@@ -555,7 +556,8 @@ erDiagram
 | POST | `/org-admin/members/import` | 上传模板文件批量导入（返回 `batchId`） |
 | GET | `/org-admin/imports` | 导入批次列表 |
 | GET | `/org-admin/imports/{id}` | 批次详情与逐行结果 |
-| GET | `/org-admin/imports/{id}/template` | 下载导入模板 |
+| GET | `/org-admin/members/import/template` | 下载 xlsx 导入模板（与具体批次无关，故不挂在批次路径下） |
+| GET | `/org-admin/imports/{id}/failures` | 导出失败明细 CSV，便于修正后重传 |
 | GET / POST | `/org-admin/departments` | 部门树 / 新建部门 |
 | PATCH / DELETE | `/org-admin/departments/{id}` | 编辑 / 删除（有成员时禁止删除） |
 | POST | `/org-admin/departments/{id}/managers` | 设置部门管理员 |

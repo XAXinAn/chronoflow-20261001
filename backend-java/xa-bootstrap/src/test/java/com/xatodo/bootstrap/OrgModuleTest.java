@@ -15,6 +15,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.mock.web.MockMultipartFile;
 import redis.embedded.RedisServer;
 
 import java.io.IOException;
@@ -23,6 +24,9 @@ import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -295,6 +299,123 @@ class OrgModuleTest {
                 .andExpect(jsonPath("$.code").value(50002));
     }
 
+    @Test
+    @DisplayName("批量导入：成功行入库、失败行逐行回显原因，并可导出失败明细")
+    void importMembersFromCsvWithPartialFailure() throws Exception {
+        Fixture fixture = seedOrg("IMP", "13700001201");
+
+        String csv = "姓名,手机号,邮箱,工号,部门路径,角色\n"
+                + "张三,13700001202,zhangsan@example.com,E2201,总部,MEMBER\n"
+                + "李四,13700001203,,E2202,总部,\n"
+                + "王五,bad-phone,,E2203,总部,\n"
+                + "赵六,13700001202,,E2204,总部,\n";
+
+        JsonNode started = uploadMembers(fixture.ownerToken(), "members.csv", csv, false);
+        long batchId = started.path("data").path("batchId").asLong();
+        JsonNode finished = awaitImport(fixture.ownerToken(), batchId);
+
+        assertThat(finished.path("data").path("status").asText()).isEqualTo("PARTIAL_FAILED");
+        assertThat(finished.path("data").path("totalCount").asInt()).isEqualTo(4);
+        assertThat(finished.path("data").path("successCount").asInt()).isEqualTo(2);
+        assertThat(finished.path("data").path("failCount").asInt()).isEqualTo(2);
+
+        JsonNode rows = finished.path("data").path("rows");
+        assertThat(rows).hasSize(4);
+        assertThat(rows.get(2).path("status").asText()).isEqualTo("FAILED");
+        assertThat(rows.get(2).path("errorMessage").asText()).contains("手机号格式不正确");
+        assertThat(rows.get(3).path("status").asText()).isEqualTo("FAILED");
+        assertThat(rows.get(3).path("errorMessage").asText()).contains("已是本组织成员");
+
+        // 成功行的成员可以正常登录并读到自己的组织身份
+        String importedToken = loginOrgMember("13700001202");
+        assertThat(getJson("/api/v1/org/current", importedToken)
+                .path("data").path("realName").asText()).isEqualTo("张三");
+
+        String failures = mockMvc.perform(get("/api/v1/org-admin/imports/" + batchId + "/failures")
+                        .header("Authorization", "Bearer " + fixture.ownerToken()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(failures).contains("行号").contains("4").contains("5");
+    }
+
+    @Test
+    @DisplayName("批量导入：部门路径不存在时可自动逐级创建（需勾选开关）")
+    void importAutoCreatesDepartmentPath() throws Exception {
+        Fixture fixture = seedOrg("AUTO", "13700001211");
+
+        String csv = "姓名,手机号,邮箱,工号,部门路径,角色\n"
+                + "钱七,13700001212,,E2212,技术中心/后端组,MEMBER\n";
+
+        long batchId = uploadMembers(fixture.ownerToken(), "auto.csv", csv, true)
+                .path("data").path("batchId").asLong();
+        JsonNode finished = awaitImport(fixture.ownerToken(), batchId);
+        assertThat(finished.path("data").path("successCount").asInt())
+                .as("批次返回: %s", finished.path("data").toString())
+                .isEqualTo(1);
+
+        JsonNode tree = getJson("/api/v1/org/departments/tree", fixture.ownerToken());
+        // 部门路径是「从组织根开始」的绝对路径：首段不存在时会新建一个根级部门，
+        // 与既有的「总部」平级，而不是挂在它下面。
+        JsonNode tech = findByName(tree.path("data"), "技术中心");
+        assertThat(tech).as("部门树: %s", tree.path("data").toString()).isNotNull();
+        assertThat(tech.path("children")).hasSize(1);
+        assertThat(tech.path("children").get(0).path("name").asText()).isEqualTo("后端组");
+        assertThat(findByName(tree.path("data"), "总部")).isNotNull();
+
+        // 未勾选开关时，路径不存在应逐行失败而不是静默建部门
+        String csv2 = "姓名,手机号,邮箱,工号,部门路径,角色\n"
+                + "孙八,13700001213,,E2213,不存在的部门/子部门,MEMBER\n";
+        long batchId2 = uploadMembers(fixture.ownerToken(), "nofail.csv", csv2, false)
+                .path("data").path("batchId").asLong();
+        JsonNode finished2 = awaitImport(fixture.ownerToken(), batchId2);
+        assertThat(finished2.path("data").path("failCount").asInt()).isEqualTo(1);
+        assertThat(finished2.path("data").path("rows").get(0).path("errorMessage").asText())
+                .contains("部门路径不存在");
+    }
+
+    @Test
+    @DisplayName("可下载 xlsx 导入模板")
+    void importTemplateIsDownloadable() throws Exception {
+        Fixture fixture = seedOrg("TPL", "13700001221");
+
+        byte[] template = mockMvc.perform(get("/api/v1/org-admin/members/import/template")
+                        .header("Authorization", "Bearer " + fixture.ownerToken()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+
+        assertThat(template).isNotEmpty();
+        // xlsx 是 zip 容器，文件头魔数为 PK
+        assertThat(template[0]).isEqualTo((byte) 'P');
+        assertThat(template[1]).isEqualTo((byte) 'K');
+    }
+
+    @Test
+    @DisplayName("组织日程可修改并同步到成员端，删除后成员端不再展示")
+    void orgEventUpdateAndDelete() throws Exception {
+        Fixture fixture = seedOrg("EDIT", "13700001231");
+        long deptId = createDepartment(fixture, fixture.rootDepartmentId(), "编辑部");
+        createMember(fixture, "13700001232", "编辑同学", deptId);
+        String memberToken = loginOrgMember("13700001232");
+
+        long eventId = postJson("/api/v1/org-admin/events", fixture.ownerToken(),
+                dispatchBody("初版标题", "DEPARTMENT", deptId, true, null))
+                .path("data").path("eventId").asLong();
+
+        JsonNode updated = patchJson("/api/v1/org-admin/events/" + eventId, fixture.ownerToken(),
+                "{\"title\":\"改后标题\",\"location\":\"A 座 3F\"}");
+        assertThat(updated.path("data").path("title").asText()).isEqualTo("改后标题");
+
+        JsonNode memberView = rangeQuery("/api/v1/org/events", memberToken);
+        assertThat(memberView.path("data").get(0).path("title").asText()).isEqualTo("改后标题");
+
+        mockMvc.perform(delete("/api/v1/org-admin/events/" + eventId)
+                        .header("Authorization", "Bearer " + fixture.ownerToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        assertThat(rangeQuery("/api/v1/org/events", memberToken).path("data")).isEmpty();
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     private record Fixture(long orgId, long rootDepartmentId, String ownerToken) {
@@ -397,6 +518,15 @@ class OrgModuleTest {
         return 1 + depth(children.get(0));
     }
 
+    private JsonNode findByName(JsonNode array, String name) {
+        for (JsonNode node : array) {
+            if (name.equals(node.path("name").asText())) {
+                return node;
+            }
+        }
+        return null;
+    }
+
     private java.util.List<String> names(JsonNode array) {
         java.util.List<String> result = new java.util.ArrayList<>();
         array.forEach(node -> result.add(node.path("realName").asText()));
@@ -408,6 +538,44 @@ class OrgModuleTest {
                 .param("start", RANGE_START)
                 .param("end", RANGE_END)
                 .header("Authorization", "Bearer " + token));
+    }
+
+    private JsonNode uploadMembers(String token, String fileName, String csv, boolean autoCreate)
+            throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", fileName, "text/csv", csv.getBytes(StandardCharsets.UTF_8));
+        MockHttpServletRequestBuilder builder = multipart("/api/v1/org-admin/members/import")
+                .file(file)
+                .param("autoCreateDepartment", String.valueOf(autoCreate))
+                .header("Authorization", "Bearer " + token);
+        String body = mockMvc.perform(builder).andExpect(status().isOk()).andReturn()
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(body);
+    }
+
+    /**
+     * 导入异步执行，测试轮询批次状态直到不再是 PROCESSING。
+     */
+    private JsonNode awaitImport(String token, long batchId) throws Exception {
+        for (int attempt = 0; attempt < 200; attempt++) {
+            JsonNode detail = getJson("/api/v1/org-admin/imports/" + batchId, token);
+            if (!"PROCESSING".equals(detail.path("data").path("status").asText())) {
+                return detail;
+            }
+            Thread.sleep(50L);
+        }
+        throw new AssertionError("导入未在预期时间内完成: batchId=" + batchId);
+    }
+
+    private JsonNode patchJson(String path, String token, String body) throws Exception {
+        MockHttpServletRequestBuilder builder = patch(path)
+                .contentType(MediaType.APPLICATION_JSON).content(body);
+        if (token != null) {
+            builder.header("Authorization", "Bearer " + token);
+        }
+        String response = mockMvc.perform(builder).andExpect(status().isOk()).andReturn()
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(response);
     }
 
     private JsonNode getJson(String path, String token) throws Exception {

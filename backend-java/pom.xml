@@ -35,6 +35,8 @@
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <jjwt.version>0.13.0</jjwt.version>
         <lib-recur.version>0.17.1</lib-recur.version>
+        <poi.version>5.5.1</poi.version>
+        <commons-csv.version>1.14.1</commons-csv.version>
         <embedded-redis.version>1.4.4</embedded-redis.version>
         <zonky.embedded-postgres.version>2.2.2</zonky.embedded-postgres.version>
         <zonky.postgres-binaries.version>16.15.0</zonky.postgres-binaries.version>
@@ -66,6 +68,16 @@
                 <groupId>org.dmfs</groupId>
                 <artifactId>lib-recur</artifactId>
                 <version>${lib-recur.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.poi</groupId>
+                <artifactId>poi-ooxml</artifactId>
+                <version>${poi.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-csv</artifactId>
+                <version>${commons-csv.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>

@@ -159,4 +159,43 @@ public final class OrgDtos {
                                          int readCount,
                                          List<ReceiptItem> items) {
     }
+
+    // -------------------------------------------------------------- 成员导入
+
+    public record ImportRow(Integer rowNo,
+                            String realName,
+                            String phone,
+                            String email,
+                            String memberNo,
+                            String departmentPath,
+                            String role) {
+    }
+
+    public record ImportBatchResponse(Long batchId,
+                                      String fileName,
+                                      String status,
+                                      int totalCount,
+                                      int successCount,
+                                      int failCount,
+                                      OffsetDateTime createdAt,
+                                      OffsetDateTime finishedAt,
+                                      List<ImportRowResponse> rows) {
+    }
+
+    public record ImportRowResponse(Integer rowNo,
+                                    String status,
+                                    String errorMessage,
+                                    Long createdMemberId,
+                                    String rawData) {
+    }
+
+    public record OrgEventUpdateRequest(@Size(max = 200) String title,
+                                        String description,
+                                        @Size(max = 255) String location,
+                                        OffsetDateTime startAt,
+                                        OffsetDateTime endAt,
+                                        Boolean allDay,
+                                        @Size(max = 64) String timezone,
+                                        Boolean redispatch) {
+    }
 }
