@@ -47,6 +47,25 @@ describe('App API 客户端', () => {
     await expect(client.get<number[]>('/api/v1/tasks')).resolves.toEqual([1, 2, 3]);
   });
 
+  it('带 body 的请求必须显式声明 application/json', async () => {
+    // React Native 的 fetch 对字符串 body 默认发 application/octet-stream，
+    // 后端会以 415 拒绝——这个 bug 只在真机/模拟器上才会暴露，必须有测试守住。
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string>;
+      expect(headers['Content-Type']).toBe('application/json');
+      expect(init?.body).toBe(JSON.stringify({ phone: '13800000000' }));
+      return jsonResponse({ code: 0, message: 'ok', data: { ok: true } });
+    });
+
+    const client = createApiClient({
+      baseUrl: 'http://api.test',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await expect(
+      client.post('/api/v1/auth/sms/code', { phone: '13800000000' }, { skipAuthRetry: true }),
+    ).resolves.toEqual({ ok: true });
+  });
+
   it('收到 20001 时静默刷新并重放原请求，用户无感知', async () => {
     let call = 0;
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {

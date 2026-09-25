@@ -58,6 +58,15 @@ export function createApiClient(options: ApiClientOptions) {
       Accept: 'application/json',
       ...requestOptions.headers,
     };
+    let body: BodyInit | undefined;
+    if (requestOptions.body !== undefined) {
+      // 必须显式声明 Content-Type：React Native 的 fetch 对字符串 body
+      // 默认发送 application/octet-stream，后端会以 415 拒绝（Web 端 fetch 无此问题）。
+      if (!headers['Content-Type']) {
+        headers['Content-Type'] = 'application/json';
+      }
+      body = JSON.stringify(requestOptions.body);
+    }
     if (!headers.Authorization) {
       // getAccessToken 在令牌临近过期时会自行刷新；刷新失败必须在这里兜住，
       // 否则 SessionExpiredError 会绕过 request() 的重试与错误处理，用户看到原始异常。
@@ -74,7 +83,7 @@ export function createApiClient(options: ApiClientOptions) {
     const response = await fetchImpl(buildUrl(path, requestOptions.query), {
       method: requestOptions.method ?? 'GET',
       headers,
-      body: requestOptions.body === undefined ? undefined : JSON.stringify(requestOptions.body),
+      body,
     });
     const text = await response.text();
     try {

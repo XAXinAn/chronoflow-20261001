@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 import type { StoredSession } from '../auth/tokenStore';
+import type { TokenResponse } from '../api/types';
 import type { AppRuntime } from '../runtime';
 import { createTheme, type AppTheme } from '../theme';
 import type { ColorScheme } from '@xa-todo/design-tokens';
@@ -13,6 +14,8 @@ interface AppContextValue {
   toggleScheme: () => void;
   setRuntime: (runtime: AppRuntime | null) => void;
   setSession: (session: StoredSession | null) => void;
+  applyTokenResponse: (response: TokenResponse) => Promise<StoredSession>;
+  signOut: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -35,7 +38,33 @@ export function AppProvider({
   }, [systemScheme]);
 
   const value = useMemo<AppContextValue>(
-    () => ({ theme, scheme, runtime, session, toggleScheme, setRuntime, setSession }),
+    () => ({
+      theme,
+      scheme,
+      runtime,
+      session,
+      toggleScheme,
+      setRuntime,
+      setSession,
+      /**
+       * 登录 / 选定身份 / 切换身份都必须走这里。
+       *
+       * 不能直接用 setSession：那只是 React 状态，不会写入安全存储，
+       * 结果就是 App 一重启就要求重新登录——与「用户不感知重新登录」直接冲突。
+       */
+      applyTokenResponse: async (response: TokenResponse) => {
+        if (!runtime) {
+          throw new Error('运行时尚未初始化');
+        }
+        const stored = await runtime.session.setFromTokenResponse(response);
+        setSession(stored);
+        return stored;
+      },
+      signOut: async () => {
+        await runtime?.session.clear();
+        setSession(null);
+      },
+    }),
     [theme, scheme, runtime, session, toggleScheme],
   );
 
@@ -59,8 +88,8 @@ export function useAppScheme(): ColorScheme {
 }
 
 export function useAppSessionState() {
-  const { session, setSession, toggleScheme } = useAppContext();
-  return { session, setSession, toggleScheme };
+  const { session, setSession, toggleScheme, applyTokenResponse, signOut } = useAppContext();
+  return { session, setSession, toggleScheme, applyTokenResponse, signOut };
 }
 
 /** 已登录后才可使用；未就绪时抛错以便尽早暴露装配问题。 */

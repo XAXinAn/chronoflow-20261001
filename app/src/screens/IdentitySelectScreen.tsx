@@ -3,7 +3,6 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { IdentityView } from '../api/types';
 import { Card, PrimaryButton, Screen } from '../components/ui';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
-import { toStoredSession } from '../auth/session';
 import { ApiError } from '../api/client';
 import { useState } from 'react';
 
@@ -22,7 +21,7 @@ export function IdentitySelectScreen({
 }) {
   const theme = useAppTheme();
   const { api, deviceId } = useRuntime();
-  const { setSession } = useAppSessionState();
+  const { applyTokenResponse } = useAppSessionState();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,7 +30,7 @@ export function IdentitySelectScreen({
     setError(null);
     try {
       const token = await api.selectIdentity(selectToken, identityId, deviceId);
-      await setSession(toStoredSession(token, Date.now()));
+      await applyTokenResponse(token);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : '选择身份失败');
     } finally {

@@ -3,7 +3,6 @@ import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import type { IdentityView } from '../api/types';
 import { ApiError } from '../api/client';
-import { toStoredSession } from '../auth/session';
 import { Card, GhostButton, PrimaryButton, Screen } from '../components/ui';
 import { useAppScheme, useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 
@@ -11,7 +10,7 @@ export function SettingsScreen() {
   const theme = useAppTheme();
   const scheme = useAppScheme();
   const { api, baseUrl } = useRuntime();
-  const { session, setSession, toggleScheme } = useAppSessionState();
+  const { session, toggleScheme, applyTokenResponse, signOut } = useAppSessionState();
 
   const [identities, setIdentities] = useState<IdentityView[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +34,7 @@ export function SettingsScreen() {
     setError(null);
     try {
       const token = await api.switchIdentity(session.refreshToken, target.identityId, 'this-device');
-      await setSession(toStoredSession(token, Date.now()));
+      await applyTokenResponse(token);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : '切换身份失败');
     } finally {
@@ -51,7 +50,7 @@ export function SettingsScreen() {
         // 服务端吊销失败也要清掉本地会话
       }
     }
-    await setSession(null);
+    await signOut();
   };
 
   return (

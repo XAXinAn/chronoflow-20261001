@@ -3,7 +3,6 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '../api/client';
 import type { IdentityView, TokenResponse } from '../api/types';
-import { toStoredSession } from '../auth/session';
 import { Card, PrimaryButton, Screen } from '../components/ui';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 
@@ -14,7 +13,7 @@ interface LoginScreenProps {
 export function LoginScreen({ onNeedSelectIdentity }: LoginScreenProps) {
   const theme = useAppTheme();
   const { api, deviceId } = useRuntime();
-  const { setSession } = useAppSessionState();
+  const { applyTokenResponse } = useAppSessionState();
 
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -23,7 +22,7 @@ export function LoginScreen({ onNeedSelectIdentity }: LoginScreenProps) {
   const [error, setError] = useState<string | null>(null);
 
   const applyToken = async (token: TokenResponse) => {
-    await setSession(toStoredSession(token, Date.now()));
+    await applyTokenResponse(token);
   };
 
   const sendCode = async () => {
