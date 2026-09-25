@@ -424,7 +424,7 @@ export function AgendaScreen({
               },
             ]}
           >
-            <Ionicons name="calendar-outline" size={22} color={theme.color.textPrimary} />
+            <Ionicons name="calendar-outline" size={24} color={theme.color.textPrimary} />
           </Pressable>
 
           <Pressable
@@ -489,9 +489,10 @@ const styles = StyleSheet.create({
     right: 20,
     // 位于新建按钮上方，留出 12px 间隔
     bottom: 24 + 56 + 12,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    // 与新建按钮同尺寸：两个悬浮按钮一大一小会显得是没对齐的失误
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
