@@ -8,12 +8,34 @@ Java 21 + Spring Boot 3 实现，对应 [spec.md](../spec.md) 阶段一。阶段
 | --- | --- | --- |
 | `xa-common` | 统一响应体 `ApiResponse`、错误码 `ErrorCode`、分页 `PageResult`、`BizException`、`TraceIdFilter` | 已完成 |
 | `xa-auth` | 短信验证码登录、身份列表 / 选择 / 切换、JWT 与刷新令牌、个人身份创建 | 已完成 |
+| `xa-personal` | 个人日历、日程（RRULE 重复 + 例外 + THIS/FUTURE/ALL 范围）、待办与子任务 | 已完成 |
 | `xa-bootstrap` | 启动入口、安全配置、全局异常、OpenAPI、系统探活接口、Flyway 全量建表脚本 | 已完成 |
-| `personal` / `org` / `admin` 模块 | 日历日程待办、组织与下发、Web 后台（spec §8.5） | 待开发 |
+| `org` / `admin` 模块 | 组织与部门、成员管理、组织日历下发与回执、Web 后台（spec §8.5） | 待开发 |
 
-数据库结构已按 spec §5 全量落地（19 张表，V1–V6 六个迁移脚本）；认证链路端到端可用。
+数据库结构已按 spec §5 全量落地（19 张表，V1–V6 六个迁移脚本）；认证链路与个人日程 / 待办端到端可用。
 
-未实现部分：密码登录、微信登录、绑定第三方、账号设置（`PATCH /me`）、真实短信通道、推送。
+未实现部分：密码登录、微信登录、绑定第三方、账号设置（`PATCH /me`）、真实短信通道、推送、
+日程提醒（`/reminders`）、日程↔待办互转、节假日与调休数据。
+
+### 重复日程（spec §4.1.2）
+
+使用 `lib-recur` 展开标准 RRULE。两个容易踩的坑已在实现中处理并有测试锁定：
+
+- **按事件时区展开**：「每周一/三/五 09:00（Asia/Shanghai）」必须落在当地周一上午，
+  而不是 UTC 的周一。构造重复迭代器时携带事件时区。
+- **`timestamptz` 微秒精度**：`scope=FUTURE` 拆分时要把原序列截止到「本次出现之前」，
+  退让量必须大于数据库精度。退让 1 纳秒会被 PostgreSQL 四舍五入回原时刻导致截断失效，
+  因此实现中退让 1 毫秒。
+
+编辑范围语义：
+
+| scope | 行为 |
+| --- | --- |
+| `ALL` | 修改整条序列 |
+| `THIS` | 仅本次，写入 `event_exception`（MODIFIED / CANCELLED） |
+| `FUTURE` | 本次及以后：原序列截断到本次之前，从本次克隆出新序列并套用新值 |
+
+> 已知限制：若原 RRULE 使用 `COUNT`，`FUTURE` 拆分后新序列会重新计数，建议用 `UNTIL` 表达结束条件。
 
 ### 会话保持（spec §3.7）
 
@@ -80,6 +102,14 @@ mvn -pl xa-bootstrap spring-boot:run
 | GET | `/api/v1/auth/identities` | 当前账号的身份列表 |
 | POST | `/api/v1/identities/personal` | 创建个人身份（Bearer registerToken） |
 | GET | `/api/v1/me` | 当前身份信息 |
+| GET / POST | `/api/v1/calendars` | 个人日历列表 / 新建（首次访问自动创建默认日历） |
+| GET / PATCH / DELETE | `/api/v1/calendars/{id}` | 日历详情 / 编辑 / 停用 |
+| GET | `/api/v1/events` | 范围查询（展开重复日程），参数 `start`、`end`、`calendarIds` |
+| POST | `/api/v1/events` | 新建日程（支持 `rrule`） |
+| GET / PATCH / DELETE | `/api/v1/events/{id}` | 详情 / 编辑 / 删除，支持 `scope=ALL/THIS/FUTURE` 与 `occurrenceDate` |
+| GET / POST | `/api/v1/tasks` | 待办列表 / 新建 |
+| GET / PATCH / DELETE | `/api/v1/tasks/{id}` | 详情 / 编辑 / 删除 |
+| POST | `/api/v1/tasks/{id}/complete` | 完成 / 取消完成 |
 | GET | `/actuator/health` | 健康检查 |
 | GET | `/swagger-ui.html` | OpenAPI 文档 |
 

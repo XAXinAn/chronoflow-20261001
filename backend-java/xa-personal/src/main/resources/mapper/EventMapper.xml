@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xatodo.personal.mapper.EventMapper">
+
+    <select id="selectInRange" resultType="com.xatodo.personal.entity.Event">
+        SELECT *
+        FROM event
+        WHERE deleted_at IS NULL
+          AND status &lt;&gt; 'CANCELLED'
+          AND calendar_id IN
+        <foreach collection="calendarIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+          AND (
+            (rrule IS NOT NULL AND (rrule_until IS NULL OR rrule_until &gt; #{rangeStart}))
+            OR (rrule IS NULL AND start_at &lt; #{rangeEnd} AND end_at &gt; #{rangeStart})
+          )
+        ORDER BY start_at
+    </select>
+
+</mapper>

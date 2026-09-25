@@ -24,6 +24,10 @@
             <artifactId>xa-auth</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.xatodo</groupId>
+            <artifactId>xa-personal</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>

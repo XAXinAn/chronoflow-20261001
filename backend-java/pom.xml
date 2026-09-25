@@ -21,6 +21,7 @@
     <modules>
         <module>xa-common</module>
         <module>xa-auth</module>
+        <module>xa-personal</module>
         <module>xa-bootstrap</module>
     </modules>
 
@@ -32,6 +33,7 @@
         <springdoc.version>2.9.1</springdoc.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <jjwt.version>0.13.0</jjwt.version>
+        <lib-recur.version>0.17.1</lib-recur.version>
         <embedded-redis.version>1.4.4</embedded-redis.version>
         <zonky.embedded-postgres.version>2.2.2</zonky.embedded-postgres.version>
         <zonky.postgres-binaries.version>16.15.0</zonky.postgres-binaries.version>
@@ -48,6 +50,16 @@
                 <groupId>com.xatodo</groupId>
                 <artifactId>xa-auth</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.xatodo</groupId>
+                <artifactId>xa-personal</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.dmfs</groupId>
+                <artifactId>lib-recur</artifactId>
+                <version>${lib-recur.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
