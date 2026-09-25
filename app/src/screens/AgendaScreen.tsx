@@ -1,16 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError } from '../api/client';
 import type { EventOccurrence } from '../api/types';
-import { EventEditorModal } from '../components/EventEditorModal';
 import { MonthCalendar } from '../components/MonthCalendar';
 import { Card, EmptyState, Pill, Screen } from '../components/ui';
 import { useAppTheme, useRuntime } from '../context/AppContext';
 import { dayHeading, formatTimeRange, localDateKey } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
-import { buildCreatePayload, type EventDraft } from '../domain/eventDraft';
 
 function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
@@ -25,7 +24,13 @@ function todayKey(): string {
  *
  * 日历展示整月的日程分布（有日程的日子带圆点），下方是该日的详细日程。
  */
-export function AgendaScreen() {
+export function AgendaScreen({
+  onCreateEvent,
+  onOpenEvent,
+}: {
+  onCreateEvent: (dateKey: string) => void;
+  onOpenEvent: (eventId: number, dateKey: string, occurrenceDate: string | null) => void;
+}) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const { api } = useRuntime();
@@ -40,9 +45,6 @@ export function AgendaScreen() {
   const [occurrences, setOccurrences] = useState<EventOccurrence[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editorVisible, setEditorVisible] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [editorError, setEditorError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,9 +62,12 @@ export function AgendaScreen() {
     }
   }, [api, year, month]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // 从编辑页返回、或切回本 tab 时都要重新拉取，否则新建的日程不会出现
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const eventDates = useMemo(
     () => new Set(occurrences.map((item) => localDateKey(item.startAt, APP_TIMEZONE))),
@@ -84,20 +89,6 @@ export function AgendaScreen() {
     setSelectedDateKey(inThisMonth ? today : `${nextYear}-${pad(nextMonth)}-01`);
   };
 
-  const createEvent = async (draft: EventDraft) => {
-    setSaving(true);
-    setEditorError(null);
-    try {
-      // 日期取当前选中的那天，无需在弹窗里再选一次
-      await api.createEvent(buildCreatePayload(selectedDateKey, draft));
-      setEditorVisible(false);
-      await load();
-    } catch (cause) {
-      setEditorError(cause instanceof ApiError ? cause.message : '保存失败');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   return (
     <Screen>
@@ -134,23 +125,31 @@ export function AgendaScreen() {
 
         {dayEvents.map((item) => (
           <View key={`${item.eventId}-${item.startAt}`} style={{ marginBottom: theme.spacing.sm }}>
-            <Card>
-              <View style={styles.eventRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>
-                    {item.title}
-                  </Text>
-                  <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 2 }}>
-                    {formatTimeRange(item.startAt, item.endAt, item.allDay, item.timezone || APP_TIMEZONE)}
-                    {item.location ? ` · ${item.location}` : ''}
-                  </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`日程-${item.title}`}
+              onPress={() =>
+                onOpenEvent(item.eventId, localDateKey(item.startAt, APP_TIMEZONE), item.occurrenceDate)
+              }
+            >
+              <Card>
+                <View style={styles.eventRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>
+                      {item.title}
+                    </Text>
+                    <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 2 }}>
+                      {formatTimeRange(item.startAt, item.endAt, item.allDay, item.timezone || APP_TIMEZONE)}
+                      {item.locationName ? ` · ${item.locationName}` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.pills}>
+                    {item.recurring ? <Pill text="重复" /> : null}
+                    {item.modified ? <Pill text="已改期" tone="warning" /> : null}
+                  </View>
                 </View>
-                <View style={styles.pills}>
-                  {item.recurring ? <Pill text="重复" /> : null}
-                  {item.modified ? <Pill text="已改期" tone="warning" /> : null}
-                </View>
-              </View>
-            </Card>
+              </Card>
+            </Pressable>
           </View>
         ))}
       </ScrollView>
@@ -158,7 +157,7 @@ export function AgendaScreen() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="新建日程"
-        onPress={() => setEditorVisible(true)}
+        onPress={() => onCreateEvent(selectedDateKey)}
         style={({ pressed }) => [
           styles.fab,
           {
@@ -171,14 +170,6 @@ export function AgendaScreen() {
         <Text style={[styles.fabPlus, { color: theme.color.accentContrast }]}>＋</Text>
       </Pressable>
 
-      <EventEditorModal
-        visible={editorVisible}
-        dateKey={selectedDateKey}
-        saving={saving}
-        error={editorError}
-        onCancel={() => setEditorVisible(false)}
-        onSubmit={(draft) => void createEvent(draft)}
-      />
     </Screen>
   );
 }

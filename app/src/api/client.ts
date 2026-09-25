@@ -125,7 +125,8 @@ export function createApiClient(options: ApiClientOptions) {
     post: <T>(path: string, body?: unknown, extra: ApiRequestOptions = {}) =>
       request<T>(path, { ...extra, method: 'POST', body }),
     patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
-    del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+    del: <T>(path: string, query?: ApiRequestOptions['query']) =>
+      request<T>(path, { method: 'DELETE', query }),
   };
 }
 

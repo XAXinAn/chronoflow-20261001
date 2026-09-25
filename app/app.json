@@ -12,12 +12,24 @@
     },
     "ios": {
       "bundleIdentifier": "com.xatodo.app",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "用于在地图选点中定位到你的当前位置"
+      }
     },
     "android": {
       "package": "com.xatodo.app",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
     },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "用于在地图选点中定位到你的当前位置"
+        }
+      ]
+    ],
     "extra": {
       "apiBaseUrl": "http://10.0.2.2:8080"
     }

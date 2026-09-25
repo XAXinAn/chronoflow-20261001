@@ -4,6 +4,7 @@ import {
   addMinutes,
   buildCreatePayload,
   emptyDraft,
+  parseTravelTime,
   parseTime,
   toIso,
   validateDraft,
@@ -51,7 +52,7 @@ describe('新建日程草稿', () => {
 
   it('validateDraft 对全天日程不校验时刻', () => {
     expect(
-      validateDraft({ title: '年会', startTime: '乱写', endTime: '乱写', allDay: true }),
+      validateDraft({ ...emptyDraft(), title: '年会', startTime: '乱写', endTime: '乱写', allDay: true }),
     ).toEqual({ ok: true });
   });
 
@@ -62,22 +63,90 @@ describe('新建日程草稿', () => {
         startAt: '2026-10-05T14:00:00+08:00',
         endAt: '2026-10-05T15:30:00+08:00',
         allDay: false,
+        description: null,
+        locationName: null,
+        locationAddress: null,
+        latitude: null,
+        longitude: null,
+        poiId: null,
+        priority: 'NORMAL',
+        availability: 'BUSY',
+        status: 'CONFIRMED',
+        category: null,
+        url: null,
+        travelTimeMinutes: null,
       });
   });
 
   it('buildCreatePayload 全天日程跨到次日 00:00', () => {
     // 后端约束 end_at > start_at，因此全天不能用同一个时刻
-    expect(buildCreatePayload('2026-10-05', { ...emptyDraft(), title: '团建', allDay: true })).toEqual({
-      title: '团建',
-      startAt: '2026-10-05T00:00:00+08:00',
-      endAt: '2026-10-06T00:00:00+08:00',
-      allDay: true,
-    });
+    const payload = buildCreatePayload('2026-10-05', { ...emptyDraft(), title: '团建', allDay: true });
+    expect(payload.startAt).toBe('2026-10-05T00:00:00+08:00');
+    expect(payload.endAt).toBe('2026-10-06T00:00:00+08:00');
+    expect(payload.allDay).toBe(true);
   });
 
   it('buildCreatePayload 全天日程跨月正确进位', () => {
     expect(buildCreatePayload('2026-10-31', { ...emptyDraft(), title: '月末', allDay: true }).endAt).toBe(
       '2026-11-01T00:00:00+08:00',
     );
+  });
+
+  it('结构化地点与扩展字段原样进载荷，空的文本字段送 null', () => {
+    const payload = buildCreatePayload('2026-10-05', {
+      ...emptyDraft(),
+      title: '季度评审',
+      description: ' 带上 OKR ',
+      url: 'https://example.com/meet',
+      category: ' 会议 ',
+      priority: 'HIGH',
+      availability: 'FREE',
+      status: 'TENTATIVE',
+      travelTimeMinutes: '30',
+      place: {
+        poiId: 'BJ-NAN',
+        name: '北京南站',
+        address: '北京市丰台区永外街',
+        latitude: 39.8654,
+        longitude: 116.3787,
+      },
+    });
+
+    expect(payload.locationName).toBe('北京南站');
+    expect(payload.locationAddress).toBe('北京市丰台区永外街');
+    expect(payload.latitude).toBe(39.8654);
+    expect(payload.longitude).toBe(116.3787);
+    expect(payload.poiId).toBe('BJ-NAN');
+    expect(payload.description).toBe('带上 OKR');
+    expect(payload.category).toBe('会议');
+    expect(payload.url).toBe('https://example.com/meet');
+    expect(payload.priority).toBe('HIGH');
+    expect(payload.availability).toBe('FREE');
+    expect(payload.status).toBe('TENTATIVE');
+    expect(payload.travelTimeMinutes).toBe(30);
+  });
+
+  it('出行时间只接受 0-1440 的整数分钟', () => {
+    expect(parseTravelTime('')).toEqual({ ok: true, minutes: null });
+    expect(parseTravelTime(' 45 ')).toEqual({ ok: true, minutes: 45 });
+    expect(parseTravelTime('1440')).toEqual({ ok: true, minutes: 1440 });
+    expect(parseTravelTime('1441').ok).toBe(false);
+    expect(parseTravelTime('-5').ok).toBe(false);
+    expect(parseTravelTime('半小时').ok).toBe(false);
+
+    expect(validateDraft({ ...emptyDraft(), title: '开会', travelTimeMinutes: '很久' })).toEqual({
+      ok: false,
+      message: '出行时间需为 0-1440 的分钟数',
+    });
+  });
+
+  it('链接必须是 http(s)，避免存进库后无法打开', () => {
+    expect(validateDraft({ ...emptyDraft(), title: '开会', url: 'example.com' })).toEqual({
+      ok: false,
+      message: '链接需以 http:// 或 https:// 开头',
+    });
+    expect(validateDraft({ ...emptyDraft(), title: '开会', url: 'https://example.com' })).toEqual({
+      ok: true,
+    });
   });
 });

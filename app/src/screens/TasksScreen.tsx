@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError } from '../api/client';
@@ -16,13 +17,12 @@ const PRIORITY_LABEL: Record<Task['priority'], string | null> = {
   URGENT: '紧急',
 };
 
-export function TasksScreen() {
+export function TasksScreen({ onCreateTask }: { onCreateTask: () => void }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const { api } = useRuntime();
 
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,24 +38,12 @@ export function TasksScreen() {
     }
   }, [api]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const add = async () => {
-    const title = draft.trim();
-    if (!title) {
-      return;
-    }
-    setDraft('');
-    try {
-      await api.createTask({ title });
-      await load();
-    } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '创建失败');
-      setDraft(title);
-    }
-  };
+  // 从编辑页返回时重新拉取，新建的待办才会立刻出现
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const toggle = async (task: Task) => {
     // 乐观更新：先改本地状态，失败再回滚，避免勾选时有网络等待感
@@ -152,32 +140,20 @@ export function TasksScreen() {
           paddingHorizontal: theme.spacing.md,
           paddingTop: insets.top + theme.spacing.sm,
           paddingBottom: theme.spacing.xxl,
+          // 空态要能撑满剩余高度才能垂直居中，否则它会贴在顶部很突兀
+          flexGrow: 1,
         }}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} />}
       >
-        {/* 快速添加：整行可点，不带按钮，回车即提交 */}
-        <View style={[styles.quickAdd, { borderBottomColor: theme.color.border }]}>
-          <Text style={[styles.plus, { color: theme.color.textTertiary }]}>＋</Text>
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            onSubmitEditing={() => void add()}
-            returnKeyType="done"
-            blurOnSubmit={false}
-            placeholder="添加待办…"
-            accessibilityLabel="新待办标题"
-            placeholderTextColor={theme.color.textTertiary}
-            style={[styles.input, { color: theme.color.textPrimary }]}
-          />
-        </View>
-
         {error ? (
           <Text style={{ color: theme.color.danger, fontSize: 13, marginBottom: 12 }}>{error}</Text>
         ) : null}
 
         {!loading && tasks.length === 0 ? (
-          <EmptyState title="还没有待办" hint="在上面输入内容，回车即可添加" />
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <EmptyState title="还没有待办" hint="点右下角 ＋ 新建" />
+          </View>
         ) : null}
 
         {open.length > 0 ? (
@@ -194,20 +170,27 @@ export function TasksScreen() {
           </View>
         ) : null}
       </ScrollView>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="新建待办"
+        onPress={onCreateTask}
+        style={({ pressed }) => [
+          styles.fab,
+          {
+            backgroundColor: theme.color.accent,
+            opacity: pressed ? 0.85 : 1,
+            transform: [{ scale: pressed ? 0.96 : 1 }],
+          },
+        ]}
+      >
+        <Text style={[styles.fabPlus, { color: theme.color.accentContrast }]}>＋</Text>
+      </Pressable>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  quickAdd: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    paddingBottom: 10,
-    marginBottom: 20,
-  },
-  plus: { fontSize: 20, marginRight: 8 },
-  input: { flex: 1, fontSize: 16, paddingVertical: 6 },
   checkbox: {
     width: 22,
     height: 22,
@@ -216,4 +199,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabPlus: { fontSize: 28, lineHeight: 32 },
 });

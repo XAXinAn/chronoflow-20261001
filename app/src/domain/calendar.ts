@@ -80,4 +80,25 @@ export function monthLabel(year: number, month: number): string {
   return `${year} 年 ${month} 月`;
 }
 
+/**
+ * 校验 `YYYY-MM-DD`，并且必须是真实存在的一天。
+ *
+ * 只做正则不够：`2026-02-30` 形状正确但不存在，
+ * 放过去会在后端变成一个莫名其妙的 400，用户完全不知道哪里错了。
+ */
+export function isValidDateKey(value: string): boolean {
+  const matched = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!matched) {
+    return false;
+  }
+  const [year, month, day] = [Number(matched[1]), Number(matched[2]), Number(matched[3])];
+  if (month < 1 || month > 12 || day < 1) {
+    return false;
+  }
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+}
+
 export const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'] as const;

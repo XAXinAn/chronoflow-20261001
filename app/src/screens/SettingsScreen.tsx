@@ -1,22 +1,27 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, Switch, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { ApiError } from '../api/client';
 import type { IdentityView } from '../api/types';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
 import { useAppScheme, useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 
-export function SettingsScreen() {
+/**
+ * 「我的」页。
+ *
+ * 结构对齐商用 App 的通行做法：**顶部个人信息区 + 若干带图标的分组列表**。
+ * 之前那版是一行行纯文字，读起来像配置文件——分组、图标、层级都是靠视觉建立的，
+ * 不该让用户去逐行读文字。
+ */
+export function SettingsScreen({ onOpenIdentitySwitch }: { onOpenIdentitySwitch: () => void }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const scheme = useAppScheme();
-  const { api, baseUrl, deviceId } = useRuntime();
-  const { session, toggleScheme, applyTokenResponse, signOut } = useAppSessionState();
+  const { api, baseUrl } = useRuntime();
+  const { session, toggleScheme, signOut } = useAppSessionState();
 
   const [identities, setIdentities] = useState<IdentityView[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [switching, setSwitching] = useState(false);
 
   const loadIdentities = useCallback(async () => {
     try {
@@ -30,22 +35,6 @@ export function SettingsScreen() {
     void loadIdentities();
   }, [loadIdentities]);
 
-  const switchTo = async (target: IdentityView) => {
-    if (!session) {
-      return;
-    }
-    setSwitching(true);
-    setError(null);
-    try {
-      const token = await api.switchIdentity(session.refreshToken, target.identityId, deviceId);
-      await applyTokenResponse(token);
-    } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '切换身份失败');
-    } finally {
-      setSwitching(false);
-    }
-  };
-
   const logout = async () => {
     if (session) {
       try {
@@ -58,7 +47,8 @@ export function SettingsScreen() {
   };
 
   const isOrg = session?.identityType === 'ORG_MEMBER';
-  const otherIdentities = identities.filter((item) => item.identityId !== session?.identityId);
+  const nickname = session?.nickname ?? '未命名';
+  const otherIdentityCount = identities.filter((item) => item.identityId !== session?.identityId).length;
 
   return (
     <ScrollView
@@ -69,49 +59,51 @@ export function SettingsScreen() {
       }}
       style={{ backgroundColor: theme.color.bg }}
     >
+      {/* 个人信息区：头像只放昵称首字，黑白模式下不需要真头像也不显空 */}
+      <View style={[styles.profile, { marginBottom: theme.spacing.lg }]}>
+        <View
+          style={[
+            styles.avatar,
+            { backgroundColor: theme.color.accent, borderColor: theme.color.border },
+          ]}
+        >
+          <Text style={{ color: theme.color.accentContrast, fontSize: 24, fontWeight: '600' }}>
+            {[...nickname][0] ?? '·'}
+          </Text>
+        </View>
+        <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+          <Text style={{ color: theme.color.textPrimary, fontSize: 22, fontWeight: '600' }} numberOfLines={1}>
+            {nickname}
+          </Text>
+          <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 4 }}>
+            {isOrg ? '组织身份' : '个人身份'} · 身份 #{session?.identityId ?? '-'}
+          </Text>
+          <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: 2 }}>
+            账号 #{session?.accountId ?? '-'}
+          </Text>
+        </View>
+      </View>
+
       <View style={{ marginBottom: theme.spacing.lg }}>
         <SectionHeader title="账号" />
         <ListGroup>
-          <ListRow title={session?.nickname ?? '未命名'} subtitle={isOrg ? '组织身份' : '个人身份'} />
-          <ListSeparator />
           <ListRow
-            title="身份 ID"
-            subtitle={`账号 #${session?.accountId ?? '-'}`}
-            trailing={
-              <Text style={{ color: theme.color.textTertiary, fontSize: 13 }}>#{session?.identityId}</Text>
-            }
+            leading={<RowIcon name="swap-horizontal-outline" />}
+            title="切换身份"
+            subtitle={otherIdentityCount > 0 ? `还可切换 ${otherIdentityCount} 个身份` : '暂无其他身份'}
+            onPress={onOpenIdentitySwitch}
+            trailing={<Chevron />}
           />
         </ListGroup>
       </View>
-
-      {otherIdentities.length > 0 ? (
-        <View style={{ marginBottom: theme.spacing.lg }}>
-          <SectionHeader title="切换身份" caption="无需重新登录" />
-          <ListGroup>
-            {otherIdentities.map((identity, index) => (
-              <View key={identity.identityId}>
-                {index > 0 ? <ListSeparator /> : null}
-                <ListRow
-                  title={
-                    identity.identityType === 'PERSONAL'
-                      ? `个人身份 · ${identity.nickname ?? ''}`
-                      : `组织 · ${identity.orgName ?? ''}`
-                  }
-                  subtitle={identity.identityType === 'PERSONAL' ? undefined : identity.departmentName ?? undefined}
-                  onPress={switching ? undefined : () => void switchTo(identity)}
-                  trailing={<Text style={{ color: theme.color.textTertiary, fontSize: 16 }}>›</Text>}
-                />
-              </View>
-            ))}
-          </ListGroup>
-        </View>
-      ) : null}
 
       <View style={{ marginBottom: theme.spacing.lg }}>
         <SectionHeader title="偏好" />
         <ListGroup>
           <ListRow
+            leading={<RowIcon name="moon-outline" />}
             title="深色模式"
+            subtitle={scheme === 'dark' ? '已开启' : '跟随浅色'}
             trailing={
               <Switch
                 value={scheme === 'dark'}
@@ -128,21 +120,56 @@ export function SettingsScreen() {
       <View style={{ marginBottom: theme.spacing.lg }}>
         <SectionHeader title="关于" />
         <ListGroup>
-          <ListRow title="接口地址" subtitle={baseUrl} />
-          <ListSeparator />
-          <ListRow title="版本" subtitle="0.1.0" />
+          <ListRow
+            leading={<RowIcon name="link-outline" />}
+            title="接口地址"
+            subtitle={baseUrl}
+          />
+          <ListSeparator inset={52} />
+          <ListRow leading={<RowIcon name="information-circle-outline" />} title="版本" subtitle="0.1.0" />
         </ListGroup>
       </View>
 
-      {error ? (
-        <Text style={{ color: theme.color.danger, fontSize: 13, marginBottom: theme.spacing.md }}>
-          {error}
-        </Text>
-      ) : null}
-
       <ListGroup>
-        <ListRow title="退出登录" tone="danger" onPress={() => void logout()} />
+        <ListRow
+          leading={<RowIcon name="log-out-outline" tone="danger" />}
+          title="退出登录"
+          tone="danger"
+          onPress={() => void logout()}
+        />
       </ListGroup>
     </ScrollView>
   );
 }
+
+/** 行首图标：统一线性图标 + 统一的尺寸与颜色，避免每行各写一套。 */
+function RowIcon({ name, tone = 'default' }: { name: string; tone?: 'default' | 'danger' }) {
+  const theme = useAppTheme();
+  return (
+    <View style={styles.rowIcon}>
+      <Ionicons
+        name={name as never}
+        size={20}
+        color={tone === 'danger' ? theme.color.danger : theme.color.textSecondary}
+      />
+    </View>
+  );
+}
+
+function Chevron() {
+  const theme = useAppTheme();
+  return <Text style={{ color: theme.color.textTertiary, fontSize: 16 }}>›</Text>;
+}
+
+const styles = StyleSheet.create({
+  profile: { flexDirection: 'row', alignItems: 'center' },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowIcon: { width: 36, alignItems: 'flex-start' },
+});
