@@ -294,6 +294,19 @@ POST /auth/identity/select（凭 selectToken）→ 签发绑定该身份的 Toke
 - 搜索走**服务端全量检索**，不受当前显示月份限制——否则「搜上个月那个会」永远搜不到。
 - 日历页提供**「跳到指定日期」**入口（悬浮按钮，位于新建按钮上方），选中后日历切到该月并选中该日。
 
+#### 4.1.8 头像
+
+- 「我的」页顶部头像可点击 → 选择图片 → 上传 → 回填到当前身份。
+- 复用已有的 `PATCH /me`（`avatarUrl` 字段已支持），**只缺图片上传通道**（见 §5.10）。
+- 头像是**身份级**属性（`identity.avatar_url`）：切到组织身份时用的是该组织身份的头像。
+
+#### 4.1.9 意见反馈
+
+- 「我的」页提供**「意见反馈」**入口，进入独立页面填写并提交给平台超管。
+- 内容：分类（功能异常 / 体验建议 / 其他）、文字描述（必填）、**图片附件（可多张，可选）**。
+- 提交后进入 `OPEN` 状态，供超管在后台查阅与处理。
+- 用户端只提交与查看自己的历史反馈，不展示处理过程。
+
 ### 4.2 组织端（App）
 
 #### 4.2.1 组织结构
@@ -494,6 +507,28 @@ erDiagram
 
 ---
 
+### 5.10 图片上传与反馈
+
+**图片上传**：头像与反馈图片都需要「把本地图片变成一个可访问 URL」的通道。
+对象存储（MinIO/OSS）属外部依赖（见 §8），因此首版用**可替换的存储实现**：
+
+| 项 | 约定 |
+| --- | --- |
+| 接口 | `POST /uploads/images`，`multipart/form-data`，字段名 `file` |
+| 校验 | 仅 `image/jpeg`、`image/png`、`image/webp`、`image/gif`；单文件 ≤ 5 MB |
+| 存储 | 可配置目录（`XATODO_UPLOAD_DIR`）；文件名取内容哈希，天然去重 |
+| 对外 | 返回相对 URL（如 `/uploads/ab12cd34.jpg`），由服务端映射 `/uploads/**` 静态目录 |
+| 演进 | 换成 MinIO/OSS 时**接口不变**，只替换存储实现；业务侧不感知 |
+
+> 图片走相对 URL 而不是绝对地址：域名换了、换 CDN 了都不用改数据。
+> `/uploads/**` 需要免鉴权（`<Image>` 直接加载时带不了 Authorization），因此目录内不放任何私有内容。
+
+| 表 | 关键字段 | 约束 / 说明 |
+| --- | --- | --- |
+| `feedback` | `id`、`account_id`、`identity_id`、`category`、`content`、`images`(jsonb)、`status`、`created_at`、`handled_at` | `content` 必填；`status` ∈ `OPEN`/`HANDLED`；`images` 存上传后的相对 URL 数组 |
+
+---
+
 ## 6. API 设计
 
 ### 6.1 通用约定
@@ -587,6 +622,14 @@ erDiagram
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/search` | 跨日程与待办的关键字检索。入参 `keyword`、可选 `types`（`EVENT`/`TASK`）、`limit`；返回统一条目（类型、id、标题、时间、地点/截止、是否命中重复实例）。**服务端全量检索**，不受客户端当前月份限制（spec §4.1.7） |
+
+**上传与反馈**
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/uploads/images` | 上传单张图片（`multipart/form-data`，字段 `file`）；返回 `{ url, size, contentType }`，见 §5.10 |
+| POST | `/feedback` | 提交意见反馈：`category`、`content`、`images[]`（§4.1.9） |
+| GET | `/feedback` | 我提交过的反馈列表 |
 
 **地点与地图**
 
