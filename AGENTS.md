@@ -6,6 +6,28 @@
 
 ---
 
+## 0. 新会话开工三步（先看这里）
+
+1. **看 §3「未做完的」清单决定做什么**。需求都在 `spec.md` 里（本项目约定：需求先写 spec 再写代码）。
+2. **确认环境在不在跑，在跑就别重启**：
+
+   ```bash
+   curl -s -m 5 http://localhost:8080/actuator/health   # 后端
+   ss -ltn | grep -E ':5432|:6379|:8080|:8081'          # PG / Redis / 后端 / Metro
+   adb devices                                          # 模拟器（需提权）
+   ```
+
+   都在跑的话直接接着干；缺哪个按 §4.4 起。**注意**：沙箱里的 `ss` 看不到宿主机进程，
+   必须提权才准（这几条命令都要 `require_escalated`）。
+3. **在模拟器里点之前，先关掉 Expo Go 的元素检查器**（dev 菜单 → Toggle element inspector）。
+   它开着的时候会盖住顶部 ~340px 并吃掉所有 `input tap` / `input text`，还会误触出
+   「放弃未保存」弹窗——我在这上面浪费过好几轮，详见 §5。
+
+当前环境（2026-09-25 收尾时）**全部在跑**：PG 5432 / Redis 6379 / 后端 8080（带高德 Key）/ Metro 8081 / `emulator-5554`。
+高德凭据在 `/home/jiang/develop/xa-todo/.env.local`（已被 gitignore）。
+
+---
+
 ## 1. 这个项目是什么
 
 XaTodo（心安待办），智能日程与待办 App。项目代号 `xa-todo`。
@@ -181,6 +203,9 @@ export PATH="/home/jiang/.local/bin:$PATH"
 
 # 3) 后端（用 fat jar，不要用 mvn spring-boot:run，原因见 §5）
 cd /home/jiang/develop/xa-todo/backend-java/xa-bootstrap
+# 先加载本地凭据（高德 Key）——**漏了这步不会报错**，只是地点服务静默降级成内置地点集，
+# 表现是「搜不到真实 POI / 地图空白」，很容易误判成代码问题
+set -a; . /home/jiang/develop/xa-todo/.env.local; set +a
 setsid nohup /home/jiang/tools/jdk-21.0.12.1+1/bin/java -jar target/xa-bootstrap-0.1.0-SNAPSHOT.jar > /tmp/xa-backend.log 2>&1 < /dev/null & disown
 
 # 4) 模拟器（Windows 侧，需提权）
