@@ -1,6 +1,7 @@
 package com.xatodo.bootstrap.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xatodo.admin.security.AdminAuthenticationFilter;
 import com.xatodo.auth.security.AuthAttributes;
 import com.xatodo.auth.security.JwtAuthenticationFilter;
 import com.xatodo.common.api.ApiResponse;
@@ -34,7 +35,9 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    ObjectMapper objectMapper,
-                                                   JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+                                                   JwtAuthenticationFilter jwtAuthenticationFilter,
+                                                   AdminAuthenticationFilter adminAuthenticationFilter)
+            throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
@@ -43,6 +46,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(registry -> registry
                         .requestMatchers("/api/v1/system/**").permitAll()
+                        .requestMatchers("/api/v1/admin/auth/login").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // 登录链路的入口接口自身校验受限令牌（注册令牌 / 选择身份令牌 / 刷新令牌）
@@ -59,6 +63,9 @@ public class SecurityConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(restAuthenticationEntryPoint(objectMapper))
                         .accessDeniedHandler(restAccessDeniedHandler(objectMapper)))
+                // 两个自定义过滤器锚定同一个标准过滤器；它们通过 shouldNotFilter 各自跳过对方路径，
+                // 因此相互顺序无关紧要（也避免了对未注册的自定义过滤器做排序而报错）。
+                .addFilterBefore(adminAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

@@ -9,5 +9,7 @@ public enum TokenScope {
     /** 首次登录后用于创建个人身份的临时令牌 */
     REGISTER,
     /** 登录成功后用于选择身份的临时令牌 */
-    IDENTITY_SELECT
+    IDENTITY_SELECT,
+    /** 后台管理员令牌（独立于 C 端身份体系） */
+    ADMIN
 }

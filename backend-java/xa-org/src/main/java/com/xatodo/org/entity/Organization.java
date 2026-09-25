@@ -27,6 +27,20 @@ public class Organization {
 
     private String status;
 
+    private Integer maxMembers;
+
+    private String contactName;
+
+    private String contactPhone;
+
+    private Long createdByAdminId;
+
+    private java.time.OffsetDateTime createdAt;
+
+    private java.time.OffsetDateTime updatedAt;
+
+    private java.time.OffsetDateTime deletedAt;
+
     public Long getId() {
         return id;
     }
@@ -73,5 +87,61 @@ public class Organization {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Integer getMaxMembers() {
+        return maxMembers;
+    }
+
+    public void setMaxMembers(Integer maxMembers) {
+        this.maxMembers = maxMembers;
+    }
+
+    public String getContactName() {
+        return contactName;
+    }
+
+    public void setContactName(String contactName) {
+        this.contactName = contactName;
+    }
+
+    public String getContactPhone() {
+        return contactPhone;
+    }
+
+    public void setContactPhone(String contactPhone) {
+        this.contactPhone = contactPhone;
+    }
+
+    public Long getCreatedByAdminId() {
+        return createdByAdminId;
+    }
+
+    public void setCreatedByAdminId(Long createdByAdminId) {
+        this.createdByAdminId = createdByAdminId;
+    }
+
+    public java.time.OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(java.time.OffsetDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public java.time.OffsetDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(java.time.OffsetDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public java.time.OffsetDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(java.time.OffsetDateTime deletedAt) {
+        this.deletedAt = deletedAt;
     }
 }

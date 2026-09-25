@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.xatodo.org.support.JsonbStringTypeHandler;
+import com.xatodo.common.persistence.JsonbStringTypeHandler;
 
 /**
  * 导入的逐行结果。成功行记录新建成员 id，失败行记录原因，便于下载失败明细后修正重传。

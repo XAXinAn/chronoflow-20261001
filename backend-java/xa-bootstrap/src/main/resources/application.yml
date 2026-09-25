@@ -68,6 +68,10 @@ mybatis-plus:
 
 xatodo:
   version: ${XATODO_VERSION:0.1.0-SNAPSHOT}
+  admin:
+    # 首次启动且 admin_user 表为空时创建初始超管；生产环境务必用环境变量覆盖密码
+    bootstrap-username: ${ADMIN_BOOTSTRAP_USERNAME:admin}
+    bootstrap-password: ${ADMIN_BOOTSTRAP_PASSWORD:admin123456}
   auth:
     jwt-secret: ${JWT_SECRET:xa-todo-development-secret-key-change-me-in-production}
     # 会话保持策略见 spec §3.7：刷新令牌滑动续期，正常使用不会被打断

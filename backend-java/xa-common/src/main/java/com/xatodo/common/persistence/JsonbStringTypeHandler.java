@@ -1,4 +1,4 @@
-package com.xatodo.org.support;
+package com.xatodo.common.persistence;
 
 import org.apache.ibatis.type.BaseTypeHandler;
 import org.apache.ibatis.type.JdbcType;

@@ -1,9 +1,7 @@
-package com.xatodo.auth.security;
+package com.xatodo.admin.security;
 
-import com.xatodo.auth.service.TokenService;
 import com.xatodo.common.api.ErrorCode;
-import io.jsonwebtoken.ExpiredJwtException;
-import io.jsonwebtoken.JwtException;
+import com.xatodo.common.exception.BizException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,29 +17,23 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * 解析 {@code Authorization: Bearer <access_token>} 并写入安全上下文。
- *
- * <p>只接受 {@link TokenScope#ACCESS} 令牌；注册令牌与选择身份令牌由对应接口自行校验。
- * 解析失败时不直接返回响应，而是记录原因，交由 {@code AuthenticationEntryPoint} 统一输出。
+ * 后台接口（{@code /api/v1/admin/**}）的令牌解析。只处理该前缀，不影响 C 端接口。
  */
 @Component
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
+public class AdminAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ADMIN_PATH_PREFIX = "/api/v1/admin/";
 
-    private final TokenService tokenService;
+    private final AdminTokenService adminTokenService;
 
-    public JwtAuthenticationFilter(TokenService tokenService) {
-        this.tokenService = tokenService;
+    public AdminAuthenticationFilter(AdminTokenService adminTokenService) {
+        this.adminTokenService = adminTokenService;
     }
 
-    /**
-     * 后台接口由 {@code AdminAuthenticationFilter} 负责，两边路径互斥，避免令牌语义互相干扰。
-     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return request.getRequestURI().startsWith(ADMIN_PATH_PREFIX);
+        return !request.getRequestURI().startsWith(ADMIN_PATH_PREFIX);
     }
 
     @Override
@@ -50,17 +42,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         String header = request.getHeader("Authorization");
         if (StringUtils.hasText(header) && header.startsWith(BEARER_PREFIX)) {
-            String token = header.substring(BEARER_PREFIX.length()).trim();
             try {
-                IdentityPrincipal principal = tokenService.parseAccessToken(token);
+                AdminPrincipal principal = adminTokenService.parse(header.substring(BEARER_PREFIX.length()).trim());
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(
-                                principal, null, List.of(new SimpleGrantedAuthority("ROLE_IDENTITY")));
+                                principal, null,
+                                List.of(new SimpleGrantedAuthority("ROLE_" + principal.role())));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-            } catch (ExpiredJwtException ex) {
-                request.setAttribute(AuthAttributes.AUTH_ERROR_CODE, ErrorCode.TOKEN_EXPIRED);
-            } catch (JwtException | IllegalArgumentException ex) {
-                request.setAttribute(AuthAttributes.AUTH_ERROR_CODE, ErrorCode.UNAUTHENTICATED);
+            } catch (BizException ex) {
+                request.setAttribute(com.xatodo.auth.security.AuthAttributes.AUTH_ERROR_CODE,
+                        ex.getErrorCode() == null ? ErrorCode.UNAUTHENTICATED : ex.getErrorCode());
             }
         }
         filterChain.doFilter(request, response);

@@ -23,6 +23,7 @@
         <module>xa-auth</module>
         <module>xa-personal</module>
         <module>xa-org</module>
+        <module>xa-admin</module>
         <module>xa-bootstrap</module>
     </modules>
 
@@ -62,6 +63,11 @@
             <dependency>
                 <groupId>com.xatodo</groupId>
                 <artifactId>xa-org</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.xatodo</groupId>
+                <artifactId>xa-admin</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

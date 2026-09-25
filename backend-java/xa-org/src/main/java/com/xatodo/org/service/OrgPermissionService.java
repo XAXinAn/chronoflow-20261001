@@ -7,9 +7,11 @@ import com.xatodo.common.exception.BizException;
 import com.xatodo.org.entity.Department;
 import com.xatodo.org.entity.DepartmentManager;
 import com.xatodo.org.entity.OrgMember;
+import com.xatodo.org.entity.Organization;
 import com.xatodo.org.mapper.DepartmentManagerMapper;
 import com.xatodo.org.mapper.DepartmentMapper;
 import com.xatodo.org.mapper.OrgMemberMapper;
+import com.xatodo.org.mapper.OrganizationMapper;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
@@ -29,13 +31,16 @@ public class OrgPermissionService {
     private final OrgMemberMapper orgMemberMapper;
     private final DepartmentMapper departmentMapper;
     private final DepartmentManagerMapper departmentManagerMapper;
+    private final OrganizationMapper organizationMapper;
 
     public OrgPermissionService(OrgMemberMapper orgMemberMapper,
                                 DepartmentMapper departmentMapper,
-                                DepartmentManagerMapper departmentManagerMapper) {
+                                DepartmentManagerMapper departmentManagerMapper,
+                                OrganizationMapper organizationMapper) {
         this.orgMemberMapper = orgMemberMapper;
         this.departmentMapper = departmentMapper;
         this.departmentManagerMapper = departmentManagerMapper;
+        this.organizationMapper = organizationMapper;
     }
 
     /**
@@ -44,6 +49,12 @@ public class OrgPermissionService {
     public OrgMember requireMembership(IdentityPrincipal principal) {
         if (principal.orgId() == null) {
             throw BizException.of(ErrorCode.FORBIDDEN, "该接口需要组织身份");
+        }
+        // 组织被平台停用 / 禁用后，成员不得再访问组织接口（spec §10.1 必测场景 10）
+        Organization organization = organizationMapper.selectById(principal.orgId());
+        if (organization == null || organization.getDeletedAt() != null
+                || !Organization.STATUS_ACTIVE.equals(organization.getStatus())) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "组织已停用");
         }
         OrgMember member = orgMemberMapper.selectOne(new LambdaQueryWrapper<OrgMember>()
                 .eq(OrgMember::getOrgId, principal.orgId())

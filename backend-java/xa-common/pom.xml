@@ -27,5 +27,18 @@
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-core</artifactId>
         </dependency>
+        <!-- jsonb 类型处理需要 PGobject，驱动由运行模块提供，这里仅编译期使用 -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!-- TypeHandler 基类来自 MyBatis；具体实现由各业务模块引入 mybatis-plus starter 提供 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-core</artifactId>
+            <version>${mybatis-plus.version}</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 </project>

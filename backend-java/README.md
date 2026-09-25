@@ -10,15 +10,47 @@ Java 21 + Spring Boot 3 实现，对应 [spec.md](../spec.md) 阶段一。阶段
 | `xa-auth` | 短信验证码登录、身份列表 / 选择 / 切换、JWT 与刷新令牌、个人身份创建 | 已完成 |
 | `xa-personal` | 个人日历、日程（RRULE 重复 + 例外 + THIS/FUTURE/ALL 范围）、待办与子任务 | 已完成 |
 | `xa-org` | 组织、部门树、成员管理、组织日历下发与回执 | 已完成 |
+| `xa-admin` | 平台超管后台：组织、账号、管理员、全局配置、看板、审计 | 已完成 |
 | `xa-bootstrap` | 启动入口、安全配置、全局异常、OpenAPI、系统探活接口、Flyway 全量建表脚本 | 已完成 |
-| `admin` 模块 | 平台超管 Web 后台（组织创建、账号封禁、全局配置、看板、审计） | 待开发 |
 
 数据库结构已按 spec §5 全量落地（19 张表，V1–V6 六个迁移脚本）；
-认证、个人日程 / 待办、组织下发与回执端到端可用。
+认证、个人日程 / 待办、组织下发与回执、平台超管后台端到端可用。
 
 未实现部分：密码登录、微信登录、绑定第三方、账号设置（`PATCH /me`）、真实短信通道、推送、
-日程提醒（`/reminders`）、日程↔待办互转、节假日与调休数据、平台超管后台、
-对象存储接入（导入原文件暂只记引用占位）。
+日程提醒（`/reminders`）、日程↔待办互转、节假日与调休数据、
+对象存储接入（导入原文件暂只记引用占位）、后台双因素认证（TOTP）。
+
+### 平台超管后台（spec §4.4）
+
+后台是**独立账号密码体系**（用户名 + BCrypt），与 C 端手机号体系完全隔离：
+管理员令牌作用域为 `ADMIN`，无法访问 C 端业务接口，反之亦然。
+
+首次启动且 `admin_user` 表为空时，会自动创建初始超管，可用环境变量覆盖：
+
+```bash
+export ADMIN_BOOTSTRAP_USERNAME=admin
+export ADMIN_BOOTSTRAP_PASSWORD=<强密码>   # 默认 admin123456，仅限本地开发
+```
+
+| 分组 | 端点 |
+| --- | --- |
+| 登录 | `POST /admin/auth/login`、`GET /admin/me`、`PUT /admin/me/password` |
+| 组织 | `GET/POST /admin/organizations`、`GET/PATCH/DELETE /{id}`、`POST /{id}/status` |
+| 账号 | `GET /admin/accounts`、`POST /accounts/{id}/status`、`POST /identities/{id}/status`、`POST /accounts/{id}/force-logout` |
+| 管理员 | `GET/POST /admin/admins`、`PATCH /admin/admins/{id}`、`POST /{id}/reset-password` |
+| 配置 | `GET /admin/configs`、`PUT /admin/configs/{key}` |
+| 看板审计 | `GET /admin/dashboard/stats`、`GET /admin/audit-logs`、`GET /admin/audit-logs/export` |
+
+实现要点：
+
+- 创建组织时**同步创建首位组织管理员**，避免出现无人能登录的空组织。
+- 组织管理员只能读自己组织的数据；所有超管专属接口在 Service 层校验角色，越权返回 `20003`。
+- 封禁账号 / 停用身份会**吊销该账号全部刷新令牌**，线上会话无法续期。
+- 停用组织后，该组织成员访问组织接口直接返回 `20003`（组织状态在权限判定入口统一校验）。
+- 所有超管写操作写入 `audit_log`，支持按动作、操作人、组织、时间检索与导出 CSV。
+- 后台登录连续失败 5 次锁定 15 分钟，并记录登录日志（`login_log`）。
+
+> 看板目前是即席 `count` 查询；数据量上升后应改为预聚合表，README 已记录该演进方向。
 
 ### 成员批量导入（spec §4.3）
 

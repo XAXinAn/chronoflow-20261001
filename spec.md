@@ -149,6 +149,9 @@ POST /auth/identity/select（凭 selectToken）→ 签发绑定该身份的 Toke
 - 管理员角色：`SUPER_ADMIN`（`org_id` 为空）、`ORG_ADMIN`（绑定单个 `org_id`）。
 - 超管可创建/停用其他超管；组织拥有者可创建/停用本组织的组织管理员。
 - 后台登录失败 5 次锁定 15 分钟，并记录登录日志。
+- 首次启动且 `admin_user` 表为空时自动创建初始超管，账号密码由环境变量注入。
+- 管理员令牌作用域为 `ADMIN`，与 C 端身份的 `ACCESS` 令牌互不通用。
+- **TOTP 双因素为阶段一后续项**：首版仅提供密码登录，字段（`mfa_enabled` / `mfa_secret`）已在库表中预留。
 
 ### 3.5 Token 方案
 
