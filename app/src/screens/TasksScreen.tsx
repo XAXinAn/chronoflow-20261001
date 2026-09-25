@@ -82,14 +82,20 @@ export function TasksScreen({
               // 点整行进编辑；左侧复选框自己拦截点击，互不干扰
               onPress={() => onOpenTask(task.id)}
               subtitle={
-                task.dueAt
-                  ? new Date(task.dueAt).toLocaleString('zh-CN', {
-                      month: 'numeric',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  : '待安排'
+                [
+                  task.dueAt
+                    ? new Date(task.dueAt).toLocaleString('zh-CN', {
+                        month: 'numeric',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '待安排',
+                  // 关联的日程直接显示在副标题里，一眼看出这条待办是为哪个安排服务的
+                  task.eventTitle ? `关联「${task.eventTitle}」` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
               }
               leading={
                 <Pressable

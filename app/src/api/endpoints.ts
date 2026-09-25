@@ -49,6 +49,10 @@ export interface EventWritePayload {
 export interface TaskWritePayload {
   title: string;
   description?: string | null;
+  /** 关联的日程 id；null 表示不修改 */
+  eventId?: number | null;
+  /** 显式解除日程关联（null 在 PATCH 里表示「不修改」） */
+  clearEvent?: boolean;
   dueAt?: string | null;
   /**
    * 显式清空截止时间。

@@ -59,8 +59,14 @@ public class TaskController {
     public ApiResponse<List<TaskResponse>> list(@RequestParam(required = false) Long calendarId,
                                                 @RequestParam(required = false) String status) {
         Long identityId = CurrentIdentity.require().identityId();
-        return ApiResponse.ok(taskService.list(identityId, calendarId, status).stream()
-                .map(TaskController::toResponse).toList());
+        var tasks = taskService.list(identityId, calendarId, status);
+        // 关联日程的标题一次批量取出来：逐条查就是 N+1
+        var titles = taskService.eventTitles(tasks.stream().map(Task::getEventId).toList());
+        return ApiResponse.ok(tasks.stream()
+                // 未关联日程时不要拿 null 去查表：不可变 Map 的 get(null) 会抛 NPE
+                .map(task -> TaskResponse.from(
+                        task, task.getEventId() == null ? null : titles.get(task.getEventId())))
+                .toList());
     }
 
     @PostMapping
@@ -96,9 +102,7 @@ public class TaskController {
         return ApiResponse.ok();
     }
 
-    private static TaskResponse toResponse(Task task) {
-        return new TaskResponse(task.getId(), task.getCalendarId(), task.getParentTaskId(),
-                task.getTitle(), task.getDescription(), task.getDueAt(), task.getAllDay(),
-                task.getStatus(), task.getCompletedAt(), task.getPriority(), task.getSortOrder());
+    private TaskResponse toResponse(Task task) {
+        return TaskResponse.from(task, taskService.eventTitle(task.getEventId()));
     }
 }

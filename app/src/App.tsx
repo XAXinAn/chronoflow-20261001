@@ -12,6 +12,7 @@ import { AppProvider, useAppSessionState, useAppTheme, useRuntimeState } from '.
 import { createRuntime } from './runtime';
 import { AgendaScreen } from './screens/AgendaScreen';
 import { EventEditorScreen, type PlaceSelection } from './screens/EventEditorScreen';
+import { EventPickerScreen, type PickedEvent } from './screens/EventPickerScreen';
 import { IdentitySelectScreen } from './screens/IdentitySelectScreen';
 import { IdentitySwitchScreen } from './screens/IdentitySwitchScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -139,6 +140,7 @@ type AppStackParamList = {
   EventEditor: { dateKey: string; eventId?: number; occurrenceDate?: string | null };
   TaskEditor: { taskId?: number };
   LocationPicker: undefined;
+  EventPicker: undefined;
   IdentitySwitch: undefined;
 };
 
@@ -155,6 +157,11 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
  */
 function MainStack() {
   const [placeSelection, setPlaceSelection] = useState<PlaceSelection>({ version: 0, place: null });
+  // 待办关联日程的回传，和地点一样用 version 表达「又选了一次」
+  const [eventSelection, setEventSelection] = useState<{ version: number; event: PickedEvent | null }>({
+    version: 0,
+    event: null,
+  });
   const today = useMemo(() => localDateKey(new Date().toISOString(), APP_TIMEZONE), []);
 
   return (
@@ -172,8 +179,14 @@ function MainStack() {
               setPlaceSelection({ version: 0, place: null });
               navigation.navigate('EventEditor', { dateKey, eventId, occurrenceDate });
             }}
-            onCreateTask={() => navigation.navigate('TaskEditor')}
-            onOpenTask={(taskId) => navigation.navigate('TaskEditor', { taskId })}
+            onCreateTask={() => {
+              setEventSelection({ version: 0, event: null });
+              navigation.navigate('TaskEditor');
+            }}
+            onOpenTask={(taskId) => {
+              setEventSelection({ version: 0, event: null });
+              navigation.navigate('TaskEditor', { taskId });
+            }}
             onOpenIdentitySwitch={() => navigation.navigate('IdentitySwitch')}
           />
         )}
@@ -198,8 +211,22 @@ function MainStack() {
           <TaskEditorScreen
             todayKey={today}
             taskId={route.params?.taskId}
+            eventSelection={eventSelection}
+            onPickEvent={() => navigation.navigate('EventPicker')}
             onCancel={() => navigation.goBack()}
             onSaved={() => navigation.goBack()}
+          />
+        )}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="EventPicker">
+        {({ navigation }) => (
+          <EventPickerScreen
+            onCancel={() => navigation.goBack()}
+            onPick={(event) => {
+              setEventSelection((current) => ({ version: current.version + 1, event }));
+              navigation.goBack();
+            }}
           />
         )}
       </AppStack.Screen>

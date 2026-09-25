@@ -116,6 +116,10 @@ export interface Task {
   id: number;
   calendarId: number;
   parentTaskId: number | null;
+  /** 关联的日程（spec §4.1.6）：一个日程可关联多个待办，待办至多关联一个日程 */
+  eventId: number | null;
+  /** 关联日程的标题，由服务端带出，列表直接展示 */
+  eventTitle: string | null;
   title: string;
   description: string | null;
   dueAt: string | null;

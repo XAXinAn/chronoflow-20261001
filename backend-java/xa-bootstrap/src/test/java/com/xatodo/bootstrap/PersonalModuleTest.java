@@ -428,6 +428,65 @@ class PersonalModuleTest {
     }
 
     @Test
+    @DisplayName("待办关联日程：一个日程可挂多个待办，解绑与「删日程不删待办」都要成立")
+    void taskLinksToEvent() throws Exception {
+        String token = registerAccount("13800000243");
+        long eventId = postJson("/api/v1/events", token,
+                "{\"title\":\"季度评审\",\"startAt\":\"2026-10-20T09:00:00+08:00\","
+                        + "\"endAt\":\"2026-10-20T11:00:00+08:00\"}")
+                .path("data").path("id").asLong();
+
+        // 一个日程可以关联多个待办
+        long first = postJson("/api/v1/tasks", token,
+                "{\"title\":\"准备材料\",\"eventId\":" + eventId + "}").path("data").path("id").asLong();
+        long second = postJson("/api/v1/tasks", token,
+                "{\"title\":\"订会议室\",\"eventId\":" + eventId + "}").path("data").path("id").asLong();
+
+        JsonNode list = getJson("/api/v1/tasks", token).path("data");
+        assertThat(list).hasSize(2);
+        for (JsonNode task : list) {
+            assertThat(task.path("eventId").asLong()).isEqualTo(eventId);
+            // 标题由服务端带出来，省掉客户端再查一次日程
+            assertThat(task.path("eventTitle").asText()).isEqualTo("季度评审");
+        }
+
+        // 解绑：null 在 PATCH 里是「不修改」，必须靠 clearEvent
+        JsonNode unlinked = patchJson("/api/v1/tasks/" + first, token, "{\"clearEvent\":true}").path("data");
+        assertThat(unlinked.path("eventId").isMissingNode() || unlinked.path("eventId").isNull()).isTrue();
+        JsonNode reread = getJson("/api/v1/tasks/" + first, token).path("data");
+        assertThat(reread.path("eventId").isMissingNode() || reread.path("eventId").isNull()).isTrue();
+
+        // 删日程只解除关联，不删待办
+        mockMvc.perform(delete("/api/v1/events/" + eventId).header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.code").value(0));
+        JsonNode remaining = getJson("/api/v1/tasks", token).path("data");
+        assertThat(remaining).hasSize(2);
+        for (JsonNode task : remaining) {
+            assertThat(task.path("eventId").isMissingNode() || task.path("eventId").isNull()).isTrue();
+        }
+        assertThat(getJson("/api/v1/tasks/" + second, token).path("data").path("title").asText())
+                .isEqualTo("订会议室");
+    }
+
+    @Test
+    @DisplayName("待办不能关联到别人的日程")
+    void taskCannotLinkToOthersEvent() throws Exception {
+        String owner = registerAccount("13800000244");
+        String stranger = registerAccount("13800000245");
+        long eventId = postJson("/api/v1/events", owner,
+                "{\"title\":\"私人日程\",\"startAt\":\"2026-10-21T09:00:00+08:00\","
+                        + "\"endAt\":\"2026-10-21T10:00:00+08:00\"}")
+                .path("data").path("id").asLong();
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .header("Authorization", "Bearer " + stranger)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"越权关联\",\"eventId\":" + eventId + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(20003));
+    }
+
+    @Test
     @DisplayName("待办可编辑：改标题/优先级，且截止时间能被显式清空回到「待安排」")
     void taskUpdateAndClearDueAt() throws Exception {
         String token = registerAccount("13800000241");

@@ -1,6 +1,7 @@
 package com.xatodo.personal.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.xatodo.common.api.ErrorCode;
 import com.xatodo.common.exception.BizException;
 import com.xatodo.personal.dto.EventOccurrence;
@@ -10,8 +11,10 @@ import com.xatodo.personal.dto.PersonalDtos.EventUpdateRequest;
 import com.xatodo.personal.entity.Calendar;
 import com.xatodo.personal.entity.Event;
 import com.xatodo.personal.entity.EventException;
+import com.xatodo.personal.entity.Task;
 import com.xatodo.personal.mapper.EventExceptionMapper;
 import com.xatodo.personal.mapper.EventMapper;
+import com.xatodo.personal.mapper.TaskMapper;
 import com.xatodo.personal.recurrence.RecurrenceExpander;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -44,6 +47,7 @@ public class EventService {
     private final EventExceptionMapper eventExceptionMapper;
     private final CalendarService calendarService;
     private final RecurrenceExpander expander;
+    private final TaskMapper taskMapper;
 
     private static final Set<String> STATUSES =
             Set.of(Event.STATUS_CONFIRMED, Event.STATUS_TENTATIVE, Event.STATUS_CANCELLED);
@@ -54,11 +58,13 @@ public class EventService {
     public EventService(EventMapper eventMapper,
                         EventExceptionMapper eventExceptionMapper,
                         CalendarService calendarService,
-                        RecurrenceExpander expander) {
+                        RecurrenceExpander expander,
+                        TaskMapper taskMapper) {
         this.eventMapper = eventMapper;
         this.eventExceptionMapper = eventExceptionMapper;
         this.calendarService = calendarService;
         this.expander = expander;
+        this.taskMapper = taskMapper;
     }
 
     // ------------------------------------------------------------------ 写入
@@ -442,6 +448,11 @@ public class EventService {
         event.setDeletedAt(OffsetDateTime.now(ZoneOffset.UTC));
         event.setStatus(Event.STATUS_CANCELLED);
         eventMapper.updateById(event);
+        // 删除日程**不删除**关联的待办，只解除关联（spec §4.1.6）：
+        // 待办是用户自己的事，不该被日程的删除带崩。
+        taskMapper.update(null, new LambdaUpdateWrapper<Task>()
+                .eq(Task::getEventId, event.getId())
+                .set(Task::getEventId, null));
     }
 
     private void requireRecurring(Event event, EventScope scope) {

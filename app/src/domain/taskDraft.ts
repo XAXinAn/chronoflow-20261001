@@ -18,6 +18,9 @@ export interface TaskDraft {
   dueDate: string;
   dueTime: string;
   allDay: boolean;
+  /** 关联的日程（spec §4.1.6）。标题一并留着，编辑页不必再查一次 */
+  eventId: number | null;
+  eventTitle: string | null;
 }
 
 export const TASK_PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
@@ -36,6 +39,8 @@ export function emptyTaskDraft(todayKey: string): TaskDraft {
     dueDate: todayKey,
     dueTime: '09:00',
     allDay: false,
+    eventId: null,
+    eventTitle: null,
   };
 }
 
@@ -66,6 +71,7 @@ export function buildCreateTaskPayload(draft: TaskDraft) {
     dueAt: draft.hasDue ? toIso(draft.dueDate, draft.allDay ? '00:00' : draft.dueTime) : null,
     allDay: draft.hasDue ? draft.allDay : false,
     priority: draft.priority,
+    eventId: draft.eventId,
   };
 }
 
@@ -82,6 +88,10 @@ export function draftFromTask(task: Task, todayKey: string): TaskDraft {
       dueDate: todayKey,
       dueTime: '09:00',
       allDay: false,
+      // 后端开了 non_null 序列化：为空时字段会整个消失，拿到的是 undefined 而不是 null。
+      // 必须在这里归一到 null，否则界面上「是否已关联」的判断会被 undefined 带偏。
+      eventId: task.eventId ?? null,
+      eventTitle: task.eventTitle ?? null,
     };
   }
   return {
@@ -92,6 +102,8 @@ export function draftFromTask(task: Task, todayKey: string): TaskDraft {
     dueDate: localDateKey(task.dueAt, TASK_TIMEZONE),
     dueTime: timeInZone(task.dueAt),
     allDay: task.allDay,
+    eventId: task.eventId ?? null,
+    eventTitle: task.eventTitle ?? null,
   };
 }
 
@@ -105,6 +117,9 @@ export function buildUpdateTaskPayload(draft: TaskDraft) {
     dueAt: base.dueAt,
     allDay: base.allDay,
     clearDueAt: !draft.hasDue,
+    eventId: base.eventId,
+    // 解绑必须显式表达：null 在 PATCH 里是「不修改」
+    clearEvent: draft.eventId === null,
   };
 }
 

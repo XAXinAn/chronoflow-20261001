@@ -29,6 +29,15 @@ public class Task {
 
     private Long parentTaskId;
 
+    /**
+     * 关联的日程（一个日程可关联多个待办，spec §4.1.6）。
+     *
+     * <p>同样需要 ALWAYS：解除关联时要把这一列写成 null，
+     * 而 updateById 默认会忽略 null 字段，那就成了「解绑按钮点了没用」。
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private Long eventId;
+
     private String title;
 
     private String description;
@@ -98,6 +107,14 @@ public class Task {
 
     public void setParentTaskId(Long parentTaskId) {
         this.parentTaskId = parentTaskId;
+    }
+
+    public Long getEventId() {
+        return eventId;
+    }
+
+    public void setEventId(Long eventId) {
+        this.eventId = eventId;
     }
 
     public String getTitle() {

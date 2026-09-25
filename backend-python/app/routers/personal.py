@@ -80,6 +80,8 @@ class EventUpdate(BaseModel):
 class TaskCreate(BaseModel):
     calendarId: int | None = None
     parentTaskId: int | None = None
+    # 关联的日程 id，可空（spec §4.1.6）
+    eventId: int | None = None
     title: str
     description: str | None = None
     dueAt: datetime | None = None
@@ -91,6 +93,9 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
+    eventId: int | None = None
+    # 显式解除日程关联：null 在 PATCH 里是「不修改」
+    clearEvent: bool | None = None
     dueAt: datetime | None = None
     # 显式清空截止时间（回到「待安排」）。null 在 PATCH 里表示「不修改」，
     # 只靠 dueAt=null 的话，用户一旦设过截止时间就再也去不掉了。

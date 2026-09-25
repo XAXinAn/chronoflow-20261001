@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from app.errors import ErrorCode
 from test_auth_flow import auth, register, send_code
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -94,6 +95,68 @@ def test_future_scope_truncates_and_clones_series(client) -> None:
     # 原序列剩 3 次在 09:00，克隆出的新序列 3 次在 10:00
     assert hours == [9, 9, 9, 10, 10, 10], occurrences
     assert occurrences[3]["title"] == "新节奏站会"
+
+
+def test_task_links_to_event(client) -> None:
+    """一个日程可挂多个待办；解绑与「删日程不删待办」都要成立。"""
+    tokens = register(client, "13800000311")
+    event = create_event(
+        client,
+        tokens,
+        {
+            "title": "季度评审",
+            "startAt": "2026-10-20T09:00:00+08:00",
+            "endAt": "2026-10-20T11:00:00+08:00",
+        },
+    )
+
+    first = client.post(
+        "/api/v1/tasks",
+        json={"title": "准备材料", "eventId": event["id"]},
+        headers=auth(tokens),
+    ).json()["data"]
+    client.post(
+        "/api/v1/tasks", json={"title": "订会议室", "eventId": event["id"]}, headers=auth(tokens)
+    )
+
+    listed = client.get("/api/v1/tasks", headers=auth(tokens)).json()["data"]
+    assert len(listed) == 2
+    for task in listed:
+        assert task["eventId"] == event["id"]
+        # 标题由服务端带出来，客户端不必再查一次日程
+        assert task["eventTitle"] == "季度评审"
+
+    # 解绑：null 在 PATCH 里是「不修改」，必须靠 clearEvent
+    client.patch(f"/api/v1/tasks/{first['id']}", json={"clearEvent": True}, headers=auth(tokens))
+    reread = client.get(f"/api/v1/tasks/{first['id']}", headers=auth(tokens)).json()["data"]
+    assert reread["eventId"] is None
+
+    # 删日程只解除关联，不删待办
+    client.delete(f"/api/v1/events/{event['id']}", headers=auth(tokens))
+    remaining = client.get("/api/v1/tasks", headers=auth(tokens)).json()["data"]
+    assert len(remaining) == 2
+    assert all(task["eventId"] is None for task in remaining)
+
+
+def test_task_cannot_link_to_others_event(client) -> None:
+    owner = register(client, "13800000312")
+    stranger = register(client, "13800000313")
+    event = create_event(
+        client,
+        owner,
+        {
+            "title": "私人日程",
+            "startAt": "2026-10-21T09:00:00+08:00",
+            "endAt": "2026-10-21T10:00:00+08:00",
+        },
+    )
+
+    response = client.post(
+        "/api/v1/tasks",
+        json={"title": "越权关联", "eventId": event["id"]},
+        headers=auth(stranger),
+    ).json()
+    assert response["code"] == ErrorCode.FORBIDDEN
 
 
 def test_task_update_and_clear_due_at(client) -> None:

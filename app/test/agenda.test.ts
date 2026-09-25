@@ -57,7 +57,16 @@ describe('日程领域逻辑', () => {
   });
 
   it('sortTasks 未完成在前、按截止时间、无时间排最后', () => {
-    const base = { calendarId: 1, parentTaskId: null, description: null, allDay: false, completedAt: null, sortOrder: 0 };
+    const base = {
+      calendarId: 1,
+      parentTaskId: null,
+      eventId: null,
+      eventTitle: null,
+      description: null,
+      allDay: false,
+      completedAt: null,
+      sortOrder: 0,
+    };
     const tasks: Task[] = [
       { ...base, id: 1, title: '无时间', dueAt: null, status: 'TODO', priority: 'HIGH' },
       { ...base, id: 2, title: '已完成', dueAt: '2026-10-01T00:00:00Z', status: 'DONE', priority: 'NORMAL' },

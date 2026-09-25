@@ -10,6 +10,7 @@ schema 由 **Flyway 迁移文件**直接应用，与 Java 版共用同一份 DDL
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -139,11 +140,19 @@ def databases() -> Iterator[dict[str, str]]:
 def _apply_migrations(dsn: str) -> None:
     import psycopg
 
-    files = sorted(MIGRATION_DIR.glob("V*__*.sql"))
+    # 按版本号**数值**排序，与 Flyway 一致。
+    # 直接 sorted() 是字典序，V10__ 会排在 V4__ 前面，于是「在 task 表还不存在时
+    # 就执行 ALTER TABLE task」——这个坑只在加了两位数版本号之后才会暴露。
+    files = sorted(MIGRATION_DIR.glob("V*__*.sql"), key=_migration_version)
     assert files, f"未找到迁移文件: {MIGRATION_DIR}"
     with psycopg.connect(dsn, autocommit=True) as conn:
         for path in files:
             conn.execute(path.read_text(encoding="utf-8"))
+
+
+def _migration_version(path) -> int:
+    matched = re.match(r"V(\d+)__", path.name)
+    return int(matched.group(1)) if matched else 0
 
 
 @pytest.fixture(scope="session")

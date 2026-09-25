@@ -5,6 +5,7 @@ import { ApiError } from '../api/client';
 import { Card, Screen } from '../components/ui';
 import { EditorHeader, FormInput, FormRow, FormRowText, FormTextArea, SegmentedControl } from '../components/form';
 import { useAppTheme, useRuntime } from '../context/AppContext';
+import type { PickedEvent } from './EventPickerScreen';
 import {
   TASK_PRIORITY_OPTIONS,
   buildCreateTaskPayload,
@@ -25,12 +26,17 @@ import {
 export function TaskEditorScreen({
   todayKey,
   taskId,
+  eventSelection,
+  onPickEvent,
   onCancel,
   onSaved,
 }: {
   todayKey: string;
   /** 传了就是编辑已有待办 */
   taskId?: number;
+  /** 从「选择日程」页回传的关联结果 */
+  eventSelection: { version: number; event: PickedEvent | null };
+  onPickEvent: () => void;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -70,6 +76,18 @@ export function TaskEditorScreen({
   }, [api, isEdit, taskId, todayKey]);
 
   const patch = (next: Partial<TaskDraft>) => setDraft((current) => ({ ...current, ...next }));
+
+  // 从「选择日程」页返回时把结果并进草稿；依赖 version，因为连续两次选「不关联」时值都是 null
+  useEffect(() => {
+    if (eventSelection.version === 0) {
+      return;
+    }
+    setDraft((current) => ({
+      ...current,
+      eventId: eventSelection.event?.eventId ?? null,
+      eventTitle: eventSelection.event?.title ?? null,
+    }));
+  }, [eventSelection.version, eventSelection.event]);
 
   const save = async () => {
     const validation = validateTaskDraft(draft);
@@ -196,10 +214,25 @@ export function TaskEditorScreen({
                 ) : null}
               </>
             ) : (
-              <FormRow label="归属">
-                <Text style={{ color: theme.color.textTertiary, fontSize: 13 }}>待安排</Text>
-              </FormRow>
+              // 这里原来放了一个叫「归属」的只读行，长得像表单字段却点不动，容易误解。
+              // 「待安排」是截止时间开关推导出来的结果，用一句说明表达就够了。
+              <View />
             )}
+
+            {/* 关联日程：这是可点击的入口，选完在下方显示关联对象并支持解除 */}
+            <FormRow label="关联日程" onPress={onPickEvent}>
+              <Text
+                style={{
+                  color: draft.eventTitle ? theme.color.textPrimary : theme.color.textTertiary,
+                  fontSize: 15,
+                  flex: 1,
+                  textAlign: 'right',
+                }}
+              >
+                {draft.eventTitle ?? '选择日程'}
+              </Text>
+              <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+            </FormRow>
 
             <FormRow label="优先级" last>
               <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>
@@ -214,6 +247,12 @@ export function TaskEditorScreen({
           </Card>
         </View>
 
+        {!draft.hasDue ? (
+          <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: 6, marginLeft: 4 }}>
+            未设截止时间的待办会归入「待安排」
+          </Text>
+        ) : null}
+
         <View style={{ marginTop: theme.spacing.md }}>
           <Card>
             <FormTextArea
@@ -226,6 +265,18 @@ export function TaskEditorScreen({
 
         {error ? (
           <Text style={{ color: theme.color.danger, fontSize: 13, marginTop: theme.spacing.md }}>{error}</Text>
+        ) : null}
+
+        {draft.eventId !== null ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="解除日程关联"
+            onPress={() => patch({ eventId: null, eventTitle: null })}
+          >
+            <Text style={{ color: theme.color.textTertiary, fontSize: 13, marginTop: theme.spacing.sm }}>
+              解除日程关联
+            </Text>
+          </Pressable>
         ) : null}
 
         {isEdit ? (

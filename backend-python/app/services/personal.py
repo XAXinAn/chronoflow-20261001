@@ -361,6 +361,12 @@ class PersonalService:
                 ),
                 {"id": event_id},
             )
+            # 删除日程**不删除**关联的待办，只解除关联（spec §4.1.6）：
+            # 待办是用户自己的事，不该被日程的删除带崩。
+            self._session.execute(
+                text("UPDATE task SET event_id = NULL, updated_at = now() WHERE event_id = :id"),
+                {"id": event_id},
+            )
             self._session.commit()
             return
         target = _require_occurrence_date(occurrence_date, effective)
@@ -456,15 +462,39 @@ class PersonalService:
     def list_tasks(self, identity_id: int, status: str | None = None) -> list[dict]:
         rows = self._session.execute(
             text(
-                "SELECT * FROM task WHERE owner_identity_id = :identity AND deleted_at IS NULL"
+                # LEFT JOIN 一次把关联日程的标题带出来，避免逐条待办再查一次日程
+                "SELECT t.*, e.title AS event_title FROM task t"
+                " LEFT JOIN event e ON e.id = t.event_id AND e.deleted_at IS NULL"
+                " WHERE t.owner_identity_id = :identity AND t.deleted_at IS NULL"
                 # 显式 CAST：不写类型时 PG 无法推断 NULL 参数的类型，
                 # 不带 status 参数查列表会直接 500（AmbiguousParameter）
-                " AND (CAST(:status AS text) IS NULL OR status = CAST(:status AS text))"
-                " ORDER BY sort_order, due_at NULLS LAST"
+                " AND (CAST(:status AS text) IS NULL OR t.status = CAST(:status AS text))"
+                " ORDER BY t.sort_order, t.due_at NULLS LAST"
             ),
             {"identity": identity_id, "status": status},
         ).mappings()
         return [_task_view(row) for row in rows]
+
+    def _task_row(self, task_id: int):
+        """按 id 读一条待办（带关联日程标题），供写操作返回最新状态。"""
+        return self._session.execute(
+            text(
+                "SELECT t.*, e.title AS event_title FROM task t"
+                " LEFT JOIN event e ON e.id = t.event_id AND e.deleted_at IS NULL"
+                " WHERE t.id = :id"
+            ),
+            {"id": task_id},
+        ).mappings().one()
+
+    def require_owned_event(self, identity_id: int, event_id: int) -> None:
+        """关联的日程必须是当前身份自己的，不能挂到别人的日程上（spec §4.1.6）。"""
+        row = self._session.execute(
+            text("SELECT id, calendar_id FROM event WHERE id = :id AND deleted_at IS NULL"),
+            {"id": event_id},
+        ).mappings().first()
+        if row is None:
+            raise ApiError(ErrorCode.PARAM_INVALID, "关联的日程不存在")
+        self.require_calendar(identity_id, row["calendar_id"])
 
     def require_task(self, identity_id: int, task_id: int) -> dict:
         row = self._session.execute(
@@ -487,17 +517,21 @@ class PersonalService:
             if parent["parent_task_id"] is not None:
                 raise ApiError(ErrorCode.PARAM_INVALID, "子任务不支持再嵌套子任务")
             calendar_id = parent["calendar_id"]
+        event_id = payload.get("eventId")
+        if event_id is not None:
+            self.require_owned_event(identity_id, event_id)
         row = self._session.execute(
             text(
                 "INSERT INTO task (calendar_id, owner_identity_id, parent_task_id, title,"
-                " description, due_at, all_day, status, priority, rrule, sort_order)"
-                " VALUES (:calendar_id, :identity, :parent_id, :title, :description, :due_at,"
-                " :all_day, 'TODO', :priority, :rrule, 0) RETURNING *"
+                " description, event_id, due_at, all_day, status, priority, rrule, sort_order)"
+                " VALUES (:calendar_id, :identity, :parent_id, :title, :description, :event_id,"
+                " :due_at, :all_day, 'TODO', :priority, :rrule, 0) RETURNING *"
             ),
             {
                 "calendar_id": calendar_id,
                 "identity": identity_id,
                 "parent_id": parent_id,
+                "event_id": event_id,
                 "title": payload["title"],
                 "description": payload.get("description"),
                 "due_at": payload.get("dueAt"),
@@ -507,17 +541,27 @@ class PersonalService:
             },
         ).mappings().one()
         self._session.commit()
-        return _task_view(row)
+        return _task_view(self._task_row(row["id"]))
 
     def update_task(self, identity_id: int, task_id: int, payload: dict) -> dict:
         self.require_task(identity_id, task_id)
         completed = payload.get("status") == "DONE"
         # 先看「显式清空」再看赋值：否则一旦设过截止时间就再也回不到「待安排」
         clear_due = bool(payload.get("clearDueAt"))
+        # 关联同理：null 在 PATCH 里是「不修改」，解绑必须靠 clearEvent 显式表达
+        if payload.get("clearEvent"):
+            event_id = None
+            clear_event = True
+        else:
+            event_id = payload.get("eventId")
+            clear_event = False
+            if event_id is not None:
+                self.require_owned_event(identity_id, event_id)
         row = self._session.execute(
             text(
                 "UPDATE task SET title = COALESCE(:title, title),"
                 " description = COALESCE(:description, description),"
+                " event_id = CASE WHEN :clear_event THEN NULL ELSE COALESCE(:event_id, event_id) END,"
                 " due_at = CASE WHEN :clear_due THEN NULL ELSE COALESCE(:due_at, due_at) END,"
                 " all_day = CASE WHEN :clear_due THEN false ELSE COALESCE(:all_day, all_day) END,"
                 " priority = COALESCE(:priority, priority), status = COALESCE(:status, status),"
@@ -529,6 +573,8 @@ class PersonalService:
             {
                 "id": task_id,
                 "clear_due": clear_due,
+                "clear_event": clear_event,
+                "event_id": event_id,
                 "title": payload.get("title"),
                 "description": payload.get("description"),
                 "due_at": payload.get("dueAt"),
@@ -540,7 +586,7 @@ class PersonalService:
             },
         ).mappings().one()
         self._session.commit()
-        return _task_view(row)
+        return _task_view(self._task_row(task_id))
 
     def complete_task(self, identity_id: int, task_id: int, completed: bool) -> dict:
         self.require_task(identity_id, task_id)
@@ -720,10 +766,16 @@ def _num(value):
 
 
 def _task_view(row) -> dict:
+    # event_title 来自 LEFT JOIN；单条读写时由 _task_row 补上，缺失即视为未关联
+    keys = row.keys() if hasattr(row, "keys") else []
+    event_title = row["event_title"] if "event_title" in keys else None
     return {
         "id": row["id"],
         "calendarId": row["calendar_id"],
         "parentTaskId": row["parent_task_id"],
+        "eventId": row["event_id"],
+        # 关联日程的标题由服务端带出来，列表就不必再逐条查日程（避免 N+1）
+        "eventTitle": event_title,
         "title": row["title"],
         "description": row["description"],
         "dueAt": row["due_at"],

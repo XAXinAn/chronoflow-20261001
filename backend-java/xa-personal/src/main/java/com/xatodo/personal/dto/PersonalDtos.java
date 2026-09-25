@@ -140,6 +140,8 @@ public final class PersonalDtos {
     public record TaskCreateRequest(
             Long calendarId,
             Long parentTaskId,
+            /** 关联的日程 id，可空；为空表示不关联（spec §4.1.6） */
+            Long eventId,
             @NotBlank(message = "待办标题不能为空")
             @Size(max = 200, message = "标题最长 200 个字符") String title,
             String description,
@@ -160,6 +162,10 @@ public final class PersonalDtos {
              * 否则用户一旦设过截止时间就再也去不掉了。
              */
             Boolean clearDueAt,
+            /** 关联/改绑日程；null 表示不修改 */
+            Long eventId,
+            /** 显式解除日程关联：null 在 PATCH 里是「不修改」，解绑必须靠这个开关 */
+            Boolean clearEvent,
             Boolean allDay,
             String priority,
             String status,
@@ -172,6 +178,9 @@ public final class PersonalDtos {
     public record TaskResponse(Long id,
                                Long calendarId,
                                Long parentTaskId,
+                               Long eventId,
+                               /** 关联日程的标题，便于列表直接展示；未关联或日程已删则为 null */
+                               String eventTitle,
                                String title,
                                String description,
                                OffsetDateTime dueAt,
@@ -180,6 +189,15 @@ public final class PersonalDtos {
                                OffsetDateTime completedAt,
                                String priority,
                                Integer sortOrder) {
+
+        /** 实体 → 响应。eventTitle 由服务层批量查出来传入，避免逐条查库。 */
+        public static TaskResponse from(com.xatodo.personal.entity.Task task, String eventTitle) {
+            return new TaskResponse(
+                    task.getId(), task.getCalendarId(), task.getParentTaskId(),
+                    task.getEventId(), eventTitle,
+                    task.getTitle(), task.getDescription(), task.getDueAt(), task.getAllDay(),
+                    task.getStatus(), task.getCompletedAt(), task.getPriority(), task.getSortOrder());
+        }
     }
 
     /**

@@ -10,6 +10,7 @@ import com.xatodo.personal.dto.PersonalDtos.EventUpdateRequest;
 import com.xatodo.personal.entity.Event;
 import com.xatodo.personal.service.EventService;
 import com.xatodo.personal.service.ConversionService;
+import com.xatodo.personal.service.TaskService;
 import com.xatodo.personal.dto.PersonalDtos.TaskResponse;
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -38,10 +39,14 @@ public class EventController {
 
     private final EventService eventService;
     private final ConversionService conversionService;
+    private final TaskService taskService;
 
-    public EventController(EventService eventService, ConversionService conversionService) {
+    public EventController(EventService eventService,
+                           ConversionService conversionService,
+                           TaskService taskService) {
         this.eventService = eventService;
         this.conversionService = conversionService;
+        this.taskService = taskService;
     }
 
     /**
@@ -51,9 +56,7 @@ public class EventController {
     public ApiResponse<TaskResponse> convertToTask(@PathVariable Long id) {
         Long identityId = CurrentIdentity.require().identityId();
         var task = conversionService.convertEventToTask(identityId, id);
-        return ApiResponse.ok(new TaskResponse(task.getId(), task.getCalendarId(), task.getParentTaskId(),
-                task.getTitle(), task.getDescription(), task.getDueAt(), task.getAllDay(),
-                task.getStatus(), task.getCompletedAt(), task.getPriority(), task.getSortOrder()));
+        return ApiResponse.ok(TaskResponse.from(task, taskService.eventTitle(task.getEventId())));
     }
 
     /**
