@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildDispatchPayload,
+  buildUpdatePayload,
   canDispatch,
   nextDateKey,
   validateDispatchForm,
@@ -68,5 +69,22 @@ describe('组织日程下发', () => {
     const payload = buildDispatchPayload(form({ location: '   ', description: '' }), 'Asia/Shanghai');
     expect(payload.location).toBeUndefined();
     expect(payload.description).toBeUndefined();
+  });
+
+  it('编辑组织日程：不改下发名单，只提交内容与时间（空串表示清空）', () => {
+    const payload = buildUpdatePayload(
+      form({ title: '改后标题', description: '', location: 'A 座 3F' }),
+      'Asia/Shanghai',
+    );
+    expect(payload).toMatchObject({
+      title: '改后标题',
+      description: '',
+      location: 'A 座 3F',
+      startAt: '2026-09-26T09:00:00+08:00',
+      endAt: '2026-09-26T10:00:00+08:00',
+      allDay: false,
+    });
+    // 编辑请求体里没有 memberIds：范围只能靠「撤回 + 重新下发」改
+    expect(payload).not.toHaveProperty('memberIds');
   });
 });

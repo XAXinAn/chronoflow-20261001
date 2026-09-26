@@ -103,7 +103,7 @@ public class OrgEventService {
             throw BizException.of(ErrorCode.PARAM_INVALID, "首版组织日程暂不支持重复规则");
         }
 
-        List<OrgMember> recipients = resolveRecipients(actor, request);
+        List<OrgMember> recipients = withInitiator(resolveRecipients(actor, request), actor);
         if (recipients.isEmpty()) {
             throw BizException.of(ErrorCode.DISPATCH_TARGET_EMPTY);
         }
@@ -166,7 +166,7 @@ public class OrgEventService {
     @Transactional
     public void revoke(OrgActor actor, Long eventId) {
         EventDispatch dispatch = requireActiveDispatch(actor.getOrgId(), eventId);
-        requireCanViewDispatch(actor, dispatch);
+        requireIsInitiator(actor, dispatch);
 
         Long receipted = eventRecipientMapper.selectCount(new LambdaQueryWrapper<EventRecipient>()
                 .eq(EventRecipient::getDispatchId, dispatch.getId())
@@ -185,7 +185,7 @@ public class OrgEventService {
     @Transactional
     public OrgEventResponse update(OrgActor actor, Long eventId, OrgEventUpdateRequest request) {
         EventDispatch dispatch = requireActiveDispatch(actor.getOrgId(), eventId);
-        requireCanViewDispatch(actor, dispatch);
+        requireIsInitiator(actor, dispatch);
 
         Event event = eventMapper.selectById(eventId);
         if (event == null || event.getDeletedAt() != null) {
@@ -229,7 +229,7 @@ public class OrgEventService {
     @Transactional
     public void delete(OrgActor actor, Long eventId) {
         EventDispatch dispatch = requireActiveDispatch(actor.getOrgId(), eventId);
-        requireCanViewDispatch(actor, dispatch);
+        requireIsInitiator(actor, dispatch);
 
         Event event = eventMapper.selectById(eventId);
         if (event != null) {
@@ -341,7 +341,8 @@ public class OrgEventService {
                         OffsetDateTime.ofInstant(occurrence.endAt(), ZoneOffset.UTC),
                         occurrence.allDay(), occurrence.timezone(), event.getRrule(),
                         dispatch.getRequireReceipt(), receipt.getReceiptStatus(), receipt.getReceiptAt(),
-                        receipt.getRemark(), receipt.getReadAt() != null));
+                        receipt.getRemark(), receipt.getReadAt() != null,
+                        isInitiator(permission.memberActor(member), dispatch)));
             }
         }
         result.sort(Comparator.comparing(OrgEventResponse::startAt)
@@ -381,7 +382,8 @@ public class OrgEventService {
                 event.getDescription(), event.getLocationName(), event.getStartAt(), event.getEndAt(),
                 event.getAllDay(), event.getTimezone(), event.getRrule(),
                 dispatch.getRequireReceipt(), recipient.getReceiptStatus(), recipient.getReceiptAt(),
-                recipient.getRemark(), true);
+                recipient.getRemark(), true,
+                isInitiator(permission.memberActor(member), dispatch));
     }
 
     @Transactional
@@ -463,7 +465,7 @@ public class OrgEventService {
 
     public ReceiptSummaryResponse receiptSummary(OrgActor actor, Long eventId) {
         EventDispatch dispatch = requireActiveDispatch(actor.getOrgId(), eventId);
-        requireCanViewDispatch(actor, dispatch);
+        requireCanViewDispatchStats(actor, dispatch);
 
         List<EventRecipient> rows = eventRecipientMapper.selectList(
                 new LambdaQueryWrapper<EventRecipient>()
@@ -554,16 +556,68 @@ public class OrgEventService {
         return orgMemberMapper.selectList(query);
     }
 
-    private void requireCanViewDispatch(OrgActor actor, EventDispatch dispatch) {
-        if (permission.isOrgAdmin(actor)) {
-            return;
+    /**
+     * 下发对象里永远包含**发起人自己**（spec §4.2.2）。
+     *
+     * <p>组织 tab 的列表口径是「发给我 / 我参与的」：发起人如果不在收件名单里，
+     * 自己刚下发的东西下一秒在自己日历里就看不见了——自己的日程自己看不到，说不过去。
+     * 后台管理员没有 {@code org_member} 记录，自然不参与。
+     */
+    private List<OrgMember> withInitiator(List<OrgMember> recipients, OrgActor actor) {
+        if (actor.getId() == null) {
+            return recipients;
         }
-        if (EventDispatch.SCOPE_DEPARTMENT.equals(dispatch.getScopeType())
+        if (recipients.stream().anyMatch(member -> actor.getId().equals(member.getId()))) {
+            return recipients;
+        }
+        OrgMember self = orgMemberMapper.selectById(actor.getId());
+        if (self == null || !OrgMember.STATUS_ACTIVE.equals(self.getStatus())) {
+            return recipients;
+        }
+        List<OrgMember> merged = new ArrayList<>(recipients);
+        merged.add(self);
+        return merged;
+    }
+
+    /**
+     * 我是不是这条下发的**发起人**（spec §4.2.2）。
+     *
+     * <p>发起人由谁下发决定：App 里是组织身份（可能是部门管理员），Web 组织管理端是后台管理员。
+     */
+    private boolean isInitiator(OrgActor actor, EventDispatch dispatch) {
+        if (actor.isAdminActor()) {
+            return actor.getAdminId().equals(dispatch.getCreatedByAdminId());
+        }
+        return actor.getId() != null && actor.getId().equals(dispatch.getCreatedByMemberId());
+    }
+
+    /**
+     * 修改类操作（改 / 撤 / 删）**只有发起人本人**能做，组织管理员也不行：
+     * 已经发给别人的通知，内容该由发的人负责；管理员要改就自己另发一条。
+     */
+    private void requireIsInitiator(OrgActor actor, EventDispatch dispatch) {
+        if (!isInitiator(actor, dispatch)) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "只有下发者本人可以修改这条组织日程");
+        }
+    }
+
+    /**
+     * 回执统计是**读**：组织管理员、被授权部门的负责人、以及发起人自己都看得到。
+     * （「其他人只读」指的是不能改内容，不代表连回执都看不到。）
+     */
+    private boolean canViewDispatchStats(OrgActor actor, EventDispatch dispatch) {
+        if (permission.isOrgAdmin(actor) || isInitiator(actor, dispatch)) {
+            return true;
+        }
+        return EventDispatch.SCOPE_DEPARTMENT.equals(dispatch.getScopeType())
                 && dispatch.getDepartmentId() != null
-                && permission.manageableDepartmentIds(actor).contains(dispatch.getDepartmentId())) {
-            return;
+                && permission.manageableDepartmentIds(actor).contains(dispatch.getDepartmentId());
+    }
+
+    private void requireCanViewDispatchStats(OrgActor actor, EventDispatch dispatch) {
+        if (!canViewDispatchStats(actor, dispatch)) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "无权查看该下发的回执");
         }
-        throw BizException.of(ErrorCode.FORBIDDEN, "无权查看该下发的回执");
     }
 
     private EventDispatch requireActiveDispatch(Long orgId, Long eventId) {
@@ -611,6 +665,8 @@ public class OrgEventService {
                 receipt == null ? null : receipt.getReceiptStatus(),
                 receipt == null ? null : receipt.getReceiptAt(),
                 receipt == null ? null : receipt.getRemark(),
-                receipt != null && receipt.getReadAt() != null);
+                receipt != null && receipt.getReadAt() != null,
+                // 能走到这里的调用者已经过了权限校验（下发/修改的返回体）：对自己刚动过的东西当然可编辑
+                true);
     }
 }

@@ -263,6 +263,12 @@ export interface OrgEvent {
   receiptAt: string | null;
   remark: string | null;
   read: boolean;
+  /**
+   * 我能不能改这条（spec §4.2.2：**只有发起人本人**能改自己下发的）。
+   *
+   * 由服务端判定——App 只负责按它显示「编辑」入口，不自己猜权限。
+   */
+  canEdit: boolean;
 }
 
 /**

@@ -245,10 +245,11 @@ class OrgModuleTest {
         assertThat(receipt.path("data").path("receiptStatus").asText()).isEqualTo("ACCEPTED");
 
         JsonNode summary = getJson("/api/v1/org-admin/events/" + eventId + "/receipts", fixture.ownerToken());
-        assertThat(summary.path("data").path("total").asInt()).isEqualTo(2);
+        // 3 = 产品部 2 人 + 发起人自己：下发者也要看得到自己发的日程（spec §4.2.2）
+        assertThat(summary.path("data").path("total").asInt()).isEqualTo(3);
         assertThat(summary.path("data").path("accepted").asInt()).isEqualTo(1);
-        assertThat(summary.path("data").path("pending").asInt()).isEqualTo(1);
-        assertThat(summary.path("data").path("items")).hasSize(2);
+        assertThat(summary.path("data").path("pending").asInt()).isEqualTo(2);
+        assertThat(summary.path("data").path("items")).hasSize(3);
     }
 
     @Test
@@ -536,8 +537,60 @@ class OrgModuleTest {
     }
 
     @Test
-    @DisplayName("组织管理端：后台令牌只作用于自己那个组织，普通成员不能调管理端接口")
-    void orgConsoleTokenIsScopedAndMemberIsRejected() throws Exception {
+    @DisplayName("发起人自己也收得到、也管得了自己下发的组织日程")
+    void initiatorSeesAndManagesOwnDispatch() throws Exception {
+        Fixture fixture = seedOrg("SELF", "13700001601");
+        long deptId = createDepartment(fixture, fixture.rootDepartmentId(), "研发部");
+        long targetId = createMember(fixture, "13700001602", "研发同学", deptId);
+        String managerKey = "13700001603";
+        long managerId = createMember(fixture, managerKey, "部门负责人", deptId);
+        grantManager(fixture, deptId, managerId);
+        String managerToken = claimOrgAccount(fixture.orgCode(), managerKey);
+        String bystanderToken = claimOrgAccount(fixture.orgCode(), "13700001602");
+
+        // 部门管理员用「指定成员」下发给同事：目标里没有他自己
+        long eventId = postJson("/api/v1/org-admin/events", managerToken,
+                "{\"title\":\"组内同步\",\"startAt\":\"" + RANGE_START + "\","
+                        + "\"endAt\":\"2026-10-01T09:00:00+08:00\",\"scopeType\":\"MEMBER\","
+                        + "\"memberIds\":[" + targetId + "],\"requireReceipt\":true}")
+                .path("data").path("eventId").asLong();
+
+        // ① 发起人自己也要看得到：组织 tab 的口径是「发给我 / 我参与的」
+        JsonNode mine = rangeQuery("/api/v1/org/events", managerToken);
+        assertThat(mine.path("data")).as("发起人应该能看到自己下发的日程").hasSize(1);
+        assertThat(mine.path("data").get(0).path("canEdit").asBoolean()).isTrue();
+        // 收件人里包含发起人自己（同事 + 自己 = 2）
+        assertThat(getJson("/api/v1/org/events/" + eventId + "/recipients", managerToken)
+                .path("data").path("total").asInt()).isEqualTo(2);
+
+        // ② 发起人能改、能撤自己下发的（原来「指定成员」范围会让他被判无权限）
+        JsonNode updated = patchJson("/api/v1/org-admin/events/" + eventId, managerToken,
+                "{\"title\":\"组内同步（改）\"}");
+        assertThat(updated.path("code").asInt()).as("发起人应能编辑: %s", updated).isZero();
+
+        // 同事只是收件人，不是发起人也不是管理员 → 不能改
+        JsonNode denied = patchJson("/api/v1/org-admin/events/" + eventId, bystanderToken,
+                "{\"title\":\"我要改别人的\"}");
+        assertThat(denied.path("code").asInt()).isEqualTo(20003);
+        assertThat(rangeQuery("/api/v1/org/events", bystanderToken)
+                .path("data").get(0).path("canEdit").asBoolean()).isFalse();
+
+        // 组织管理员也不行：只有发起人能改自己那条（spec §4.2.2）
+        JsonNode adminDenied = patchJson("/api/v1/org-admin/events/" + eventId, fixture.ownerToken(),
+                "{\"title\":\"管理员替人改\"}");
+        assertThat(adminDenied.path("code").asInt()).isEqualTo(20003);
+        // 但回执统计属于「读」，组织管理员仍然看得到
+        assertThat(getJson("/api/v1/org/events/" + eventId + "/recipients", fixture.ownerToken())
+                .path("code").asInt()).isZero();
+
+        // 撤回同样按发起人放行
+        JsonNode revoked = postJson("/api/v1/org-admin/events/" + eventId + "/revoke", managerToken, "{}");
+        assertThat(revoked.path("code").asInt()).as("发起人应能撤回: %s", revoked).isZero();
+    }
+
+    @Test
+    @DisplayName("组织管理端：后台令牌只作用于自己那个组织（跨组织与成员令牌都挡住）")
+    void orgConsoleTokenIsScopedAcrossOrganizations() throws Exception {
         String superToken = adminLogin("admin", "admin123456");
         long orgA = postJson("/api/v1/admin/organizations", superToken,
                 "{\"name\":\"组织A\",\"code\":\"SCOPEA\",\"adminUsername\":\"scopea_admin\","

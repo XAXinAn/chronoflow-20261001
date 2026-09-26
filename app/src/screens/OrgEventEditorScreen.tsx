@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { ApiError } from '../api/client';
-import type { OrgCurrent } from '../api/types';
+import type { OrgCurrent, OrgEvent } from '../api/types';
 import { EditorHeader, FormInput, FormRow, FormRowText, FormTextArea } from '../components/form';
 import { Card, Screen } from '../components/ui';
 import { useAppSessionState, useAppTheme } from '../context/AppContext';
+import { timeInZone } from '../domain/eventDraft';
 import {
   buildDispatchPayload,
+  buildUpdatePayload,
   canDispatch,
   validateDispatchForm,
   withStartTime,
@@ -25,12 +27,15 @@ import {
  */
 export function OrgEventEditorScreen({
   dateKey,
+  event,
   selectedMemberIds,
   onPickRecipients,
   onCancel,
   onSaved,
 }: {
   dateKey: string;
+  /** 传了就是编辑模式：只有发起人能进来（`canEdit` 由服务端给，spec §4.2.2） */
+  event?: OrgEvent;
   /** 选人页回填的下发对象（成员 id 列表） */
   selectedMemberIds: number[];
   onPickRecipients: () => void;
@@ -38,19 +43,20 @@ export function OrgEventEditorScreen({
   onSaved: (summary: string) => void;
 }) {
   const theme = useAppTheme();
+  const isEdit = Boolean(event);
   const { orgApi, activeOrgIdentityId } = useAppSessionState();
   const api = activeOrgIdentityId != null ? orgApi(activeOrgIdentityId) : null;
 
   const [org, setOrg] = useState<OrgCurrent | null>(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<DispatchForm>({
-    title: '',
-    description: '',
-    location: '',
+    title: event?.title ?? '',
+    description: event?.description ?? '',
+    location: event?.location ?? '',
     dateKey,
-    allDay: false,
-    startTime: '09:00',
-    endTime: '10:00',
+    allDay: event?.allDay ?? false,
+    startTime: event ? timeInZone(event.startAt, event.timezone || 'Asia/Shanghai') : '09:00',
+    endTime: event ? timeInZone(event.endAt, event.timezone || 'Asia/Shanghai') : '10:00',
     memberIds: [],
     requireReceipt: true,
   });
@@ -87,9 +93,40 @@ export function OrgEventEditorScreen({
 
   const canSubmit = Boolean(api && org && canDispatch(org));
 
+  /** 撤回 / 删除是同一套收尾：成功后回到组织页（列表会在重新聚焦时刷新）。 */
+  const mutate = async (action: () => Promise<unknown>, done: string) => {
+    try {
+      await action();
+      onSaved(done);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : '操作失败');
+    }
+  };
+
   const save = async () => {
     if (!api || !org) {
       setError('组织上下文还没准备好');
+      return;
+    }
+    if (isEdit && event) {
+      const checked = validateDispatchForm({ ...form, memberIds: [1] });
+      if (!checked.ok) {
+        setError(checked.message);
+        return;
+      }
+      setSaving(true);
+      setError(null);
+      try {
+        await api.updateOrgEvent(
+          event.eventId,
+          buildUpdatePayload(form, org.orgTimezone || 'Asia/Shanghai'),
+        );
+        onSaved(`「${form.title.trim()}」已更新，收件人看到的还是同一条`);
+      } catch (cause) {
+        setError(cause instanceof ApiError ? cause.message : '保存失败');
+      } finally {
+        setSaving(false);
+      }
       return;
     }
     const checked = validateDispatchForm({ ...form, memberIds: recipients });
@@ -105,7 +142,8 @@ export function OrgEventEditorScreen({
         org.orgTimezone || 'Asia/Shanghai',
       );
       await api.dispatchOrgEvent(payload);
-      onSaved(`「${payload.title}」已下发给 ${recipients.length} 人`);
+      // 服务端保证发起人也在名单里（spec §4.2.2），提示里说清楚，免得用户以为漏了自己
+      onSaved(`「${payload.title}」已下发给 ${recipients.length} 人（含你自己）`);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : '下发失败');
     } finally {
@@ -116,9 +154,9 @@ export function OrgEventEditorScreen({
   return (
     <Screen>
       <EditorHeader
-        title="新建组织日程"
-        saveLabel="下发"
-        savingLabel="下发中…"
+        title={isEdit ? '编辑组织日程' : '新建组织日程'}
+        saveLabel={isEdit ? '保存' : '下发'}
+        savingLabel={isEdit ? '保存中…' : '下发中…'}
         onCancel={onCancel}
         onSave={() => void save()}
         saving={saving}
@@ -194,7 +232,13 @@ export function OrgEventEditorScreen({
 
         <Text style={[styles.sectionTitle, { color: theme.color.textSecondary }]}>下发对象</Text>
         <Card>
-          {loading ? (
+          {isEdit ? (
+            <FormRow label="下发给" last>
+              <Text style={{ color: theme.color.textSecondary, fontSize: 14, flex: 1, textAlign: 'right' }}>
+                已发出的名单不可修改
+              </Text>
+            </FormRow>
+          ) : loading ? (
             <Text style={{ color: theme.color.textSecondary, fontSize: 14 }}>正在读取组织信息…</Text>
           ) : !canSubmit ? (
             <View>
@@ -244,8 +288,53 @@ export function OrgEventEditorScreen({
         {error ? (
           <Text style={{ color: theme.color.danger, marginTop: theme.spacing.md }}>{error}</Text>
         ) : null}
+
+        {/* 编辑模式下的破坏性操作：撤回（成员端不再展示，已有回执时服务端会拒绝）与删除 */}
+        {isEdit && event ? (
+          <View style={{ marginTop: theme.spacing.lg, gap: theme.spacing.sm }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="撤回下发"
+              onPress={() =>
+                Alert.alert('撤回下发？', '撤回后成员不再看到这条日程；已有成员回执时无法撤回。', [
+                  { text: '取消', style: 'cancel' },
+                  {
+                    text: '撤回',
+                    style: 'destructive',
+                    onPress: () => void mutate(() => api!.revokeOrgEvent(event.eventId), '已撤回'),
+                  },
+                ])
+              }
+            >
+              <Text style={{ color: theme.color.accent, fontSize: 15, textAlign: 'center' }}>
+                撤回下发
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="删除组织日程"
+              onPress={() =>
+                Alert.alert('删除这条组织日程？', '删除后成员端不再展示，且无法恢复。', [
+                  { text: '取消', style: 'cancel' },
+                  {
+                    text: '删除',
+                    style: 'destructive',
+                    onPress: () => void mutate(() => api!.deleteOrgEvent(event.eventId), '已删除'),
+                  },
+                ])
+              }
+            >
+              <Text style={{ color: theme.color.danger, fontSize: 15, textAlign: 'center' }}>
+                删除
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: theme.spacing.sm }}>
-          下发后选中的成员会在各自的组织日历里看到它；组织日程对成员只读。
+          {isEdit
+            ? '只有下发者本人能修改这条日程，其他成员只读。'
+            : '下发后选中的成员会在各自的组织日历里看到它；你自己也会收到（发起人始终在名单内）。'}
         </Text>
       </ScrollView>
     </Screen>

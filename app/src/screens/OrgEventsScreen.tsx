@@ -55,6 +55,7 @@ export function OrgEventsScreen({
   onOpenAccounts,
   onCreateOrgEvent,
   onOpenRecognized,
+  onEditOrgEvent,
   focusDateKey,
   onFocusApplied,
 }: {
@@ -72,6 +73,8 @@ export function OrgEventsScreen({
     deviceFallbackReason: string | null;
     origin: 'ORG';
   }) => void;
+  /** 发起人编辑自己下发的日程（`canEdit` 由服务端判定，spec §4.2.2） */
+  onEditOrgEvent: (event: OrgEvent) => void;
   /** 从检索结果跳进来时要定位的日期（消费一次后由上层清空） */
   focusDateKey?: string | null;
   onFocusApplied?: () => void;
@@ -302,6 +305,17 @@ export function OrgEventsScreen({
                   {/* 组织日程对成员只读，这里只暴露「我的回执」状态 */}
                   {item.receiptStatus ? (
                     <Pill text={receiptLabel(item.receiptStatus)} tone={RECEIPT_TONE[item.receiptStatus]} />
+                  ) : null}
+                  {/* 只有发起人本人能改（其他人只读，spec §4.2.2） */}
+                  {item.canEdit ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`编辑-${item.title}`}
+                      onPress={() => onEditOrgEvent(item)}
+                      hitSlop={8}
+                    >
+                      <Text style={{ color: theme.color.accent, fontSize: 13 }}>编辑</Text>
+                    </Pressable>
                   ) : null}
                 </View>
               </View>

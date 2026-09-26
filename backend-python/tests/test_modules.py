@@ -1207,6 +1207,95 @@ def test_org_console_token_can_open_up_a_new_organization(client, db) -> None:
 
 
 def test_org_console_token_is_scoped_and_member_is_rejected(client, db) -> None:
+    """发起人自己也收得到、也管得了自己下发的组织日程（spec §4.2.2）。"""
+    org_id = create_org(client, admin_login(client), "PYSELF", "py_self_admin")
+    console = admin_headers(
+        client.post(
+            "/api/v1/admin/auth/login",
+            json={"username": "py_self_admin", "password": "pyadmin123"},
+        ).json()["data"]["accessToken"]
+    )
+    root = client.post(
+        "/api/v1/org-admin/departments", json={"name": "总部"}, headers=console
+    ).json()["data"]["id"]
+    dept = client.post(
+        "/api/v1/org-admin/departments",
+        json={"parentId": root, "name": "研发部"},
+        headers=console,
+    ).json()["data"]["id"]
+    manager_id = client.post(
+        "/api/v1/org-admin/members",
+        json={"memberKey": "PY-M01", "realName": "部门负责人", "departmentId": dept},
+        headers=console,
+    ).json()["data"]["id"]
+    target_id = client.post(
+        "/api/v1/org-admin/members",
+        json={"memberKey": "PY-M02", "realName": "研发同学", "departmentId": dept},
+        headers=console,
+    ).json()["data"]["id"]
+    client.post(
+        f"/api/v1/org-admin/departments/{dept}/managers",
+        json={"orgMemberId": manager_id},
+        headers=console,
+    )
+    manager = claim_org_account(client, register(client, "13900004001"), org_id, "PY-M01")
+    viewer = claim_org_account(client, register(client, "13900004002"), org_id, "PY-M02")
+
+    # 部门管理员用「指定成员」下发给同事：目标里没有他自己
+    dispatched = client.post(
+        "/api/v1/org-admin/events",
+        json={
+            "title": "组内同步",
+            "startAt": "2026-10-08T09:00:00+08:00",
+            "endAt": "2026-10-08T10:00:00+08:00",
+            "scopeType": "MEMBER",
+            "memberIds": [target_id],
+            "requireReceipt": True,
+        },
+        headers=manager,
+    ).json()
+    assert dispatched["code"] == 0, dispatched
+    event_id = dispatched["data"]["eventId"]
+
+    # ① 发起人自己也要看得到（组织 tab 的口径是「发给我 / 我参与的」）
+    mine = client.get(
+        "/api/v1/org/events",
+        params={"start": "2026-10-01T00:00:00+08:00", "end": "2026-11-01T00:00:00+08:00"},
+        headers=manager,
+    ).json()["data"]
+    assert len(mine) == 1
+    assert mine[0]["canEdit"] is True
+    # 收件人是「同事 + 自己」两个人
+    assert client.get(
+        f"/api/v1/org/events/{event_id}/recipients", headers=manager
+    ).json()["data"]["total"] == 2
+    # 同事只是收件人：看得到，但不能改
+    seen = client.get(
+        "/api/v1/org/events",
+        params={"start": "2026-10-01T00:00:00+08:00", "end": "2026-11-01T00:00:00+08:00"},
+        headers=viewer,
+    ).json()["data"]
+    assert len(seen) == 1 and seen[0]["canEdit"] is False
+
+    # ② 只有发起人能改自己下发的：组织管理员也不行，但回执统计（读）仍然能看到
+    assert client.patch(
+        f"/api/v1/org-admin/events/{event_id}", json={"title": "组内同步（改）"}, headers=manager
+    ).json()["code"] == 0
+    assert client.patch(
+        f"/api/v1/org-admin/events/{event_id}", json={"title": "管理员替人改"}, headers=console
+    ).json()["code"] == 20003
+    # 后台管理员走的是组织管理端的回执接口（/org/** 只认组织身份令牌）
+    assert client.get(
+        f"/api/v1/org-admin/events/{event_id}/receipts", headers=console
+    ).json()["code"] == 0
+    assert client.patch(
+        f"/api/v1/org-admin/events/{event_id}", json={"title": "同事改别人的"}, headers=viewer
+    ).json()["code"] == 20003
+    # 撤回同样按发起人放行
+    assert client.post(f"/api/v1/org-admin/events/{event_id}/revoke", headers=manager).json()["code"] == 0
+
+
+def test_org_console_token_is_scoped_across_organizations(client, db) -> None:
     """后台令牌只作用于自己那个组织；普通成员的组织身份令牌不能调管理端接口（spec §2.2）。"""
     super_token = admin_login(client)
     org_a = create_org(client, super_token, "PYSCOPEA", "py_scope_a")

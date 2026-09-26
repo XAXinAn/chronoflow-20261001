@@ -26,6 +26,7 @@ import { TasksScreen } from './screens/TasksScreen';
 import { localDateKey } from './domain/agenda';
 import { APP_TIMEZONE } from './domain/calendar';
 import type { RecognizedEventDraft } from './domain/vision';
+import type { OrgEvent } from './api/types';
 import { RecognizedEventsScreen } from './screens/RecognizedEventsScreen';
 
 type AuthStackParamList = {
@@ -84,6 +85,8 @@ type MainTabsProps = {
     deviceFallbackReason: string | null;
     origin: 'ORG';
   }) => void;
+  /** 编辑自己下发的组织日程（spec §4.2.2：只有发起人能改） */
+  onEditOrgEvent: (event: OrgEvent) => void;
   onOpenOrgEvent: (identityId: number, dateKey: string) => void;
   onOpenRecognized: (payload: {
     drafts: RecognizedEventDraft[];
@@ -102,6 +105,7 @@ function MainTabs({
   onOpenOrgAccounts,
   onCreateOrgEvent,
   onOpenOrgRecognized,
+  onEditOrgEvent,
   onOpenOrgEvent,
   onOpenRecognized,
   onOpenFeedback,
@@ -150,6 +154,7 @@ function MainTabs({
             onOpenAccounts={onOpenOrgAccounts}
             onCreateOrgEvent={onCreateOrgEvent}
             onOpenRecognized={onOpenOrgRecognized}
+            onEditOrgEvent={onEditOrgEvent}
           />
         )}
       </Tabs.Screen>
@@ -168,7 +173,7 @@ type AppStackParamList = {
   Main: undefined;
   EventEditor: { dateKey: string; eventId?: number; occurrenceDate?: string | null };
   TaskEditor: { taskId?: number };
-  OrgEventEditor: { dateKey: string };
+  OrgEventEditor: { dateKey: string; event?: OrgEvent };
   OrgRecipientPicker: undefined;
   LocationPicker: undefined;
   EventPicker: undefined;
@@ -249,6 +254,12 @@ function MainStack() {
             }}
             onOpenOrgAccounts={() => navigation.navigate('OrgAccounts')}
             onCreateOrgEvent={(dateKey) => navigation.navigate('OrgEventEditor', { dateKey })}
+            onEditOrgEvent={(event) =>
+              navigation.navigate('OrgEventEditor', {
+                dateKey: localDateKey(event.startAt, APP_TIMEZONE),
+                event,
+              })
+            }
             onOpenOrgRecognized={(payload) => navigation.navigate('RecognizedEvents', payload)}
             // 检索命中的组织日程：切到那个组织、定位到那天、跳到组织 tab
             onOpenOrgEvent={(identityId, dateKey) => {
@@ -297,6 +308,7 @@ function MainStack() {
         {({ navigation, route }) => (
           <OrgEventEditorScreen
             dateKey={route.params.dateKey}
+            event={route.params.event}
             selectedMemberIds={recipients.memberIds}
             onPickRecipients={() => navigation.navigate('OrgRecipientPicker')}
             onCancel={() => navigation.goBack()}

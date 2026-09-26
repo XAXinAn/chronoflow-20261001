@@ -247,7 +247,8 @@ export function buildUpdatePayload(dateKey: string, draft: EventDraft) {
   };
 }
 
-function timeInZone(iso: string, timeZone: string): string {
+/** 把 ISO 时刻转成该时区的 HH:mm（编辑回填用；导出给组织日程编辑页共用）。 */
+export function timeInZone(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', {
     timeZone,
     hour: '2-digit',

@@ -157,7 +157,7 @@ public final class OrgDtos {
                                    String description,
                                    String location,
                                    OffsetDateTime startAt,
-                                   OffsetDateTime endAt,
+                                  OffsetDateTime endAt,
                                    Boolean allDay,
                                    String timezone,
                                    String rrule,
@@ -165,7 +165,13 @@ public final class OrgDtos {
                                    String receiptStatus,
                                    OffsetDateTime receiptAt,
                                    String remark,
-                                   boolean read) {
+                                   boolean read,
+                                   /**
+                                    * 当前身份能不能改这条组织日程（发起人 / 组织管理员 / 被授权部门的管理者）。
+                                    *
+                                    * <p>由服务端判定：App 里「编辑」入口显不显示靠它，而不是靠前端猜权限。
+                                    */
+                                   boolean canEdit) {
     }
 
     public record ReceiptRequest(

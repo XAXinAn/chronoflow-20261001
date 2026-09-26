@@ -112,11 +112,11 @@ XaTodo（心安待办），智能日程与待办 App。项目代号 `xa-todo`。
 | --- | --- | --- |
 | spec.md | 完成（v1.2） | — |
 | 跨语言契约 | `contract/api-contract.json`，**104 个端点** | Java 与 Python 各自校验 |
-| backend-java（7 模块，含新增 `xa-support`） | 完成 | **89 项集成测试全绿** |
-| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **50 项全绿** |
+| backend-java（7 模块，含新增 `xa-support`） | 完成 | **90 项集成测试全绿** |
+| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **51 项全绿** |
 | packages/design-tokens | 完成 | 8 个用例（1 个测试文件；`node --test` 汇总会显示 1） |
 | web-admin（React + Vite + AntD） | 完成：超管六页 + **组织管理端五页** + 意见反馈 | 18 项 |
-| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程与回执、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记/拍照入口、头像上传、意见反馈、组织账号认领与账户管理、小安 tab、深色模式偏好持久化 | **98 项**（**仅纯逻辑层，组件未做渲染测试**） |
+| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程与回执、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记/拍照入口、头像上传、意见反馈、组织账号认领与账户管理、小安 tab、深色模式偏好持久化 | **99 项**（**仅纯逻辑层，组件未做渲染测试**） |
 
 最近几次提交（倒序）：
 
@@ -174,7 +174,8 @@ abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，�
 | 6 | **组织管理端的审计日志** | 新增 `OrgAuditSink`（定义在 xa-org，实现在 xa-admin，避免 xa-org 反向依赖）+ `OrgAuditRecorder`；Python 侧 `OrgService.record_org_audit`；在 controller/router 层逐端点记录 | 冒烟测试里 `GET /org-admin/logs` 返回 `ORG_DEPARTMENT_CREATE`、`ORG_MEMBER_CREATE` |
 | 7 | **V15 迁移** | `event.creator_identity_id`、`event_dispatch.created_by_member_id` 放开非空；`event_dispatch` 新增 `created_by_admin_id` + CHECK（发起方恰有一列非空） | 开发库启动日志：`Successfully applied 2 migrations ... now at version v15` |
 | 8 | 顺带修 | ①多部分请求缺 `file` → 现在 400/10001（原来掉进兜底返回 90001）；②批量导入补 `requireOrgAdmin`（spec §2.2）；③Python 导入模板从老的 6 列改回 4 列，与 Java 版和 spec §4.3 一致 | 冒烟时实测到 90001 才发现的第①条；②有 Java/Python 用例；③两版 `template()` 现在同列 |
-| 9 | **组织管理员在 App 里下发日程**（spec §4.2.2 / §4.2.3） | 组织 tab 的悬浮按钮与日历页**同一套**（拍照 / 跳到指定日期 / 新建）；新建进整页表单（`OrgEventEditorScreen`），**下发对象 = 选人**：点那一行 push 到独立选人页（`OrgRecipientPickerScreen`）——按二级单位分组、可搜姓名/工号/部门、可整组全选、多选，**顶部常驻已选列表**（可逐个移除）。提交的是**成员级名单**（`scopeType=MEMBER` + `memberIds`）。**没有下发权限的人不出现、也不能选**：可选范围 = `/org/current` 的 `manageableDepartmentIds`（`GET /org/members` 对普通成员会返回他自己，必须在选择阶段就按这条规则过滤，否则就是「能选但一点下发必然 403」）。一个可下发的人都没有时，「新建」按钮根本不显示 | `app/test/orgDispatch.test.ts` 8 项 + `app/test/orgRecipients.test.ts` 6 项（按二级单位分组 / 搜索 / 整组全选 / **无权限的人不出现在列表**）；**模拟器实机走通**：浙海大 OWNER 选人下发 → 事件出现在组织日历并带「待回执」与回执按钮 |
+| 9 | **组织管理员在 App 里下发日程**（spec §4.2.2 / §4.2.3） | 组织 tab 的悬浮按钮与日历页**同一套**（拍照 / 跳到指定日期 / 新建）；新建进整页表单（`OrgEventEditorScreen`），**下发对象 = 选人**：点那一行 push 到独立选人页（`OrgRecipientPickerScreen`）——按二级单位分组、可搜姓名/工号/部门、可整组全选、多选，**顶部常驻已选列表**（可逐个移除）。提交的是**成员级名单**（`scopeType=MEMBER` + `memberIds`）。**没有下发权限的人不出现、也不能选**：可选范围 = `/org/current` 的 `manageableDepartmentIds`（`GET /org/members` 对普通成员会返回他自己，必须在选择阶段就按这条规则过滤，否则就是「能选但一点下发必然 403」）。一个可下发的人都没有时，「新建」按钮根本不显示 | `app/test/orgDispatch.test.ts` 9 项 + `app/test/orgRecipients.test.ts` 6 项（按二级单位分组 / 搜索 / 整组全选 / **无权限的人不出现在列表**）；**模拟器实机走通**：浙海大 OWNER 选人下发 → 事件出现在组织日历并带「待回执」与回执按钮 |
+| 11 | **发起人自己也收得到、也管得了自己下发的那条**（spec §4.2.2） | ①服务端展开收件人时**始终带上发起人自己**（组织 tab 的口径是「发给我 / 我参与的」，否则自己刚发的下一秒就看不见）；②**改 / 撤 / 删只有发起人本人**，其他成员只读——**组织管理员也不行**（已发给别人的通知，内容该由发的人负责）；③回执统计属于「读」：组织管理员、被授权部门负责人、发起人都能看到；④下发名单在编辑时**不可修改**（换收件人 = 撤回 + 重新下发）；⑤`OrgEventResponse` 新增 `canEdit`，App 的「编辑」入口按它显示，不自己猜权限 | Java `OrgModuleTest.initiatorSeesAndManagesOwnDispatch`（发起人可见 + 可改 + 同事 20003 + **管理员替人改也 20003** + 撤回放行 + 组织管理员仍能看回执统计）、Python 同名用例；既有 `dispatchToDepartmentAndMemberReceipt` 的期望从 2 改成 3（多出来的正是发起人） |
 | 10 | 拍照入口在组织页也对齐（spec §4.1.9） | 组织页的拍照同样走「拍照/相册 → 上传 → 识别」，组织模式的识别确认页多一行「下发给」（点进同一个选人页），确认后批量下发；识别不可用时如实提示并给「手动新建组织日程」兜底。识别成功分支在模型接入前**无法端到端验证**（与日历页现状相同） | 实机确认按钮与入口存在；成功分支未验证（端侧模型未接入，后端返回 90002） |
 
 ### 3.2 节假日数据（2026-09-25 的新约定，别搞混）
@@ -253,6 +254,9 @@ App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File
 - **可管理部门集合不要缓存成快照**：批量导入会在过程中自动补建部门，执行者对象里那份集合会立刻过期，
   结果「刚建出来的那一层把自己挡住了」。`requireCanManageDepartment(OrgActor, …)` 每次都按库里当前结构重算
   （Python 侧天然每次查库，没有这个问题）。
+- **同一条权限规则不要抄两遍**：Python 的 `receipt_summary` 里原本照抄了一份「组织管理员 / 部门范围」的判断，
+  这次加「发起人也能看回执」时它没跟着改，表现成「发起人看不了自己下发的回执」。现在两版都收敛到
+  `can_view_dispatch_stats` / `require_is_initiator` 这两个函数，改规则只改一处。
 
 ### 3.7 演示数据集（2026-09-26 第三轮换成了两个真实形态的组织）
 
@@ -563,17 +567,17 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 
 ```bash
 # 后端（测试自带嵌入式 PG/Redis，无需外部依赖）
-cd backend-java && mvn -B clean verify          # 期望 89 项全绿（需提权：沙箱不让绑端口）
+cd backend-java && mvn -B clean verify          # 期望 90 项全绿（需提权：沙箱不让绑端口）
 
 # Python 后端（需要先跑 ./backend-python/scripts/setup-test-deps.sh）
 # 注意：嵌入式 PG 要占 5432，跑之前先停开发库，跑完再启回来
-cd backend-python && .venv/bin/python -m pytest  # 期望 50 项全绿
+cd backend-python && .venv/bin/python -m pytest  # 期望 51 项全绿
 
 # 前端
 npm run build -w @xa-todo/design-tokens
 npm run build -w @xa-todo/web-admin
 npm run typecheck -w @xa-todo/app
-npm test                                        # 期望 design-tokens 8 例 + web-admin 18 项 + app 98 项全绿
+npm test                                        # 期望 design-tokens 8 例 + web-admin 18 项 + app 99 项全绿
 ```
 
 CI 在 `.github/workflows/ci.yml`，三个 job：Java / Python / 前端。

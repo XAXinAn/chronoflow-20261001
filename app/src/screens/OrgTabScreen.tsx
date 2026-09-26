@@ -20,6 +20,7 @@ export function OrgTabScreen({
   onOpenAccounts,
   onCreateOrgEvent,
   onOpenRecognized,
+  onEditOrgEvent,
 }: {
   onOpenAccounts: () => void;
   /** 新建并下发组织日程（spec §4.2.2）；只有能下发的人才会在组织页看到入口 */
@@ -32,6 +33,8 @@ export function OrgTabScreen({
     deviceFallbackReason: string | null;
     origin: 'ORG';
   }) => void;
+  /** 编辑自己下发的组织日程（只有发起人能改） */
+  onEditOrgEvent: (event: import('../api/types').OrgEvent) => void;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -114,6 +117,7 @@ export function OrgTabScreen({
       onOpenAccounts={onOpenAccounts}
       onCreateOrgEvent={onCreateOrgEvent}
       onOpenRecognized={onOpenRecognized}
+      onEditOrgEvent={onEditOrgEvent}
       focusDateKey={orgFocusDateKey}
       onFocusApplied={() => setOrgFocusDateKey(null)}
     />

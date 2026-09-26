@@ -442,7 +442,7 @@ class OrgService:
             raise ApiError(ErrorCode.EVENT_TIME_INVALID)
         if payload.get("rrule"):
             raise ApiError(ErrorCode.PARAM_INVALID, "首版组织日程暂不支持重复规则")
-        recipients = self._resolve_recipients(member, payload)
+        recipients = self._with_initiator(self._resolve_recipients(member, payload), member)
         if not recipients:
             raise ApiError(ErrorCode.DISPATCH_TARGET_EMPTY)
         calendar_id = self._ensure_org_calendar(member)
@@ -551,6 +551,24 @@ class OrgService:
             params["dept_ids"] = department_ids
         return [dict(row) for row in self._session.execute(text(sql), params).mappings()]
 
+    def _with_initiator(self, recipients: list[dict], member: dict) -> list[dict]:
+        """下发对象里永远包含**发起人自己**（spec §4.2.2）。
+
+        组织 tab 的列表口径是「发给我 / 我参与的」：发起人不在收件名单里，
+        自己刚下发的东西下一秒在自己日历里就看不见了。后台管理员没有 org_member 记录，自然不参与。
+        """
+        if member.get("id") is None:
+            return recipients
+        if any(item["id"] == member["id"] for item in recipients):
+            return recipients
+        self_row = self._session.execute(
+            text("SELECT * FROM org_member WHERE id = :id AND status = 'ACTIVE'"),
+            {"id": member["id"]},
+        ).mappings().first()
+        if self_row is None:
+            return recipients
+        return [*recipients, dict(self_row)]
+
     def _ensure_org_calendar(self, member: dict) -> int:
         existing = self._session.execute(
             text(
@@ -575,7 +593,8 @@ class OrgService:
     def list_org_events(self, member: dict, start: datetime, end: datetime) -> list[dict]:
         rows = self._session.execute(
             text(
-                "SELECT r.*, d.scope_type, d.require_receipt, e.* FROM event_recipient r"
+                "SELECT r.*, d.scope_type, d.department_id, d.require_receipt,"
+                " d.created_by_member_id, d.created_by_admin_id, e.* FROM event_recipient r"
                 " JOIN event_dispatch d ON d.id = r.dispatch_id"
                 " JOIN event e ON e.id = r.event_id"
                 " WHERE r.org_member_id = :member_id AND d.status = 'ACTIVE'"
@@ -585,6 +604,8 @@ class OrgService:
         ).mappings().all()
         result: list[dict] = []
         for row in rows:
+            # 「编辑」入口显不显示由服务端判定，App 不猜权限（spec §4.2.2）
+            can_edit = self.is_initiator(member, row)
             event = {
                 "id": row["event_id"],
                 "calendar_id": row["calendar_id"],
@@ -615,6 +636,7 @@ class OrgService:
                         "receiptAt": row["receipt_at"],
                         "remark": row["remark"],
                         "read": row["read_at"] is not None,
+                        "canEdit": can_edit,
                     }
                 )
         result.sort(key=lambda item: (item["startAt"], item["eventId"]))
@@ -677,12 +699,8 @@ class OrgService:
 
     def receipt_summary(self, member: dict, event_id: int) -> dict:
         dispatch = self._require_active_dispatch(member["org_id"], event_id)
-        if not self.is_org_admin(member):
-            if not (
-                dispatch["scope_type"] == "DEPARTMENT"
-                and dispatch["department_id"] in self.manageable_department_ids(member)
-            ):
-                raise ApiError(ErrorCode.FORBIDDEN, "无权查看该下发的回执")
+        # 走共用判定：这里原来是照抄一遍的权限规则，加了「发起人」之后立刻就不一致了
+        self._require_can_view_dispatch(member, dispatch)
         rows = self._session.execute(
             text(
                 "SELECT r.*, m.real_name, d.name AS department_name FROM event_recipient r"
@@ -738,7 +756,7 @@ class OrgService:
 
     def revoke_dispatch(self, member: dict, event_id: int) -> None:
         dispatch = self._require_active_dispatch(member["org_id"], event_id)
-        self._require_can_view_dispatch(member, dispatch)
+        self.require_is_initiator(member, dispatch)
         receipted = self._session.execute(
             text(
                 "SELECT count(*) FROM event_recipient WHERE dispatch_id = :id"
@@ -755,7 +773,7 @@ class OrgService:
 
     def update_org_event(self, member: dict, event_id: int, payload: dict) -> dict:
         dispatch = self._require_active_dispatch(member["org_id"], event_id)
-        self._require_can_view_dispatch(member, dispatch)
+        self.require_is_initiator(member, dispatch)
         row = self._session.execute(
             text(
                 "UPDATE event SET title = COALESCE(:title, title),"
@@ -782,7 +800,7 @@ class OrgService:
 
     def delete_org_event(self, member: dict, event_id: int) -> None:
         dispatch = self._require_active_dispatch(member["org_id"], event_id)
-        self._require_can_view_dispatch(member, dispatch)
+        self.require_is_initiator(member, dispatch)
         self._session.execute(
             text(
                 "UPDATE event SET deleted_at = now(), status = 'CANCELLED' WHERE id = :id"
@@ -795,15 +813,32 @@ class OrgService:
         self._session.commit()
 
     def _require_can_view_dispatch(self, member: dict, dispatch: dict) -> None:
-        if self.is_org_admin(member):
+        if self.can_view_dispatch_stats(member, dispatch):
             return
-        if (
+        raise ApiError(ErrorCode.FORBIDDEN, "无权查看该下发的回执")
+
+    def is_initiator(self, member: dict, dispatch: dict) -> bool:
+        """我是不是这条下发的**发起人**（spec §4.2.2）。"""
+        if member.get("admin_id") is not None:
+            return dispatch.get("created_by_admin_id") == member["admin_id"]
+        return member.get("id") is not None and dispatch.get("created_by_member_id") == member["id"]
+
+    def require_is_initiator(self, member: dict, dispatch: dict) -> None:
+        """改 / 撤 / 删**只有发起人本人**能做，组织管理员也不行：
+        已经发给别人的通知，内容该由发的人负责。
+        """
+        if not self.is_initiator(member, dispatch):
+            raise ApiError(ErrorCode.FORBIDDEN, "只有下发者本人可以修改这条组织日程")
+
+    def can_view_dispatch_stats(self, member: dict, dispatch: dict) -> bool:
+        """回执统计是**读**：组织管理员、被授权部门的负责人、以及发起人都看得到。"""
+        if self.is_org_admin(member) or self.is_initiator(member, dispatch):
+            return True
+        return (
             dispatch["scope_type"] == "DEPARTMENT"
             and dispatch["department_id"] is not None
             and dispatch["department_id"] in self.manageable_department_ids(member)
-        ):
-            return
-        raise ApiError(ErrorCode.FORBIDDEN, "无权查看该下发的回执")
+        )
 
     # ------------------------------------------------------- 组织管理端（Web）
     def admin_event_list(self, member: dict, start: datetime, end: datetime) -> list[dict]:
@@ -1293,7 +1328,12 @@ def _member_view(row, department_names: dict, is_manager: bool) -> dict:
     }
 
 
-def _org_event_view(event, dispatch, receipt) -> dict:
+def _org_event_view(event, dispatch, receipt, can_edit: bool = True) -> dict:
+    """组织日程的响应体。
+
+    `can_edit` 默认 True：调用方能拿到这个返回体，说明刚刚通过了权限校验
+    （下发 / 修改 / 提交回执），对自己刚动过的东西当然可编辑。
+    """
     return {
         "eventId": event["id"],
         "dispatchId": dispatch["id"],
@@ -1310,4 +1350,5 @@ def _org_event_view(event, dispatch, receipt) -> dict:
         "receiptAt": receipt["receipt_at"] if receipt else None,
         "remark": receipt["remark"] if receipt else None,
         "read": bool(receipt and receipt["read_at"]),
+        "canEdit": can_edit,
     }

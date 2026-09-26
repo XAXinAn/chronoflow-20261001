@@ -240,6 +240,25 @@ export function createEndpoints(client: ApiClient) {
      */
     dispatchOrgEvent: (payload: OrgDispatchRequest) =>
       client.post<OrgEvent>('/api/v1/org-admin/events', payload),
+    /** 改组织日程：只有发起人本人能改（spec §4.2.2），服务端会拦其他人。 */
+    updateOrgEvent: (
+      eventId: number,
+      payload: {
+        title?: string;
+        description?: string;
+        location?: string;
+        startAt?: string;
+        endAt?: string;
+        allDay?: boolean;
+        timezone?: string;
+      },
+    ) => client.patch<OrgEvent>(`/api/v1/org-admin/events/${eventId}`, payload),
+    /** 删组织日程（软删 + 下发记录置为已撤回）；同样只有发起人能删。 */
+    deleteOrgEvent: (eventId: number) =>
+      client.del<void>(`/api/v1/org-admin/events/${eventId}`),
+    /** 撤回下发：成员端随即不再展示。已有回执时服务端会拒绝（spec §4.2.2）。 */
+    revokeOrgEvent: (eventId: number) =>
+      client.post<void>(`/api/v1/org-admin/events/${eventId}/revoke`),
     submitReceipt: (eventId: number, status: string, remark?: string) =>
       client.post<OrgEvent>(`/api/v1/org/events/${eventId}/receipt`, { status, remark }),
     markOrgEventRead: (eventId: number) =>

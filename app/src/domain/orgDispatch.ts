@@ -88,6 +88,25 @@ export function withStartTime(form: DispatchForm, startTime: string): DispatchFo
   return { ...form, startTime, endTime: addMinutes(startTime, 60) };
 }
 
+/**
+ * 编辑组织日程的请求体（只有发起人能改，spec §4.2.2）。
+ *
+ * 与新建的差别：**下发对象改不了**——已经发出去的通知，改范围等于换一批收件人，
+ * 语义上是「撤回 + 重新下发」，服务端也不接受在 PATCH 里改目标。
+ */
+export function buildUpdatePayload(form: DispatchForm, timezone: string) {
+  return {
+    title: form.title.trim(),
+    // PATCH 的语义：null 表示不修改，空串才是清空（与个人日程编辑页一致）
+    description: form.description.trim(),
+    location: form.location.trim(),
+    startAt: form.allDay ? toIso(form.dateKey, '00:00') : toIso(form.dateKey, form.startTime),
+    endAt: form.allDay ? toIso(nextDateKey(form.dateKey), '00:00') : toIso(form.dateKey, form.endTime),
+    allDay: form.allDay,
+    timezone,
+  };
+}
+
 export function nextDateKey(dateKey: string): string {
   const [year, month, day] = dateKey.split('-').map(Number) as [number, number, number];
   const next = new Date(Date.UTC(year, month - 1, day + 1));
