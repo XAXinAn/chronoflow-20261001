@@ -53,6 +53,7 @@ export function OrgEventEditorScreen({
     title: event?.title ?? '',
     description: event?.description ?? '',
     location: event?.location ?? '',
+    locationDetail: event?.locationDetail ?? '',
     dateKey,
     allDay: event?.allDay ?? false,
     startTime: event ? timeInZone(event.startAt, event.timezone || 'Asia/Shanghai') : '09:00',
@@ -209,11 +210,19 @@ export function OrgEventEditorScreen({
                 </FormRow>
               </>
             ) : null}
-            <FormRow label="地点" last>
+            <FormRow label="地点">
               <FormRowText
                 value={form.location}
                 placeholder="选填"
                 onChangeText={(location) => patch({ location })}
+              />
+            </FormRow>
+            {/* 地图只到「教学楼」时，教室号靠这一行补（spec §5.9） */}
+            <FormRow label="详细地址" last>
+              <FormRowText
+                value={form.locationDetail}
+                placeholder="3 号楼 305（选填）"
+                onChangeText={(locationDetail) => patch({ locationDetail })}
               />
             </FormRow>
           </Card>

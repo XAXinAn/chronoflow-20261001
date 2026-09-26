@@ -261,7 +261,7 @@ export function EventEditorScreen({
               </>
             ) : null}
 
-            <FormRow label="地点" onPress={onPickLocation} last>
+            <FormRow label="地点" onPress={onPickLocation}>
               <Text
                 style={{
                   color: draft.place ? theme.color.textPrimary : theme.color.textTertiary,
@@ -273,6 +273,14 @@ export function EventEditorScreen({
                 {draft.place ? draft.place.name : '添加地点'}
               </Text>
               <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+            </FormRow>
+            {/* 地图常常只定位到楼，教室/门牌由用户手填（与地点都可空，spec §5.9） */}
+            <FormRow label="详细地址" last>
+              <FormRowText
+                value={draft.locationDetail}
+                placeholder="3 号楼 305（选填）"
+                onChangeText={(locationDetail) => patch({ locationDetail })}
+              />
             </FormRow>
           </Card>
         </View>

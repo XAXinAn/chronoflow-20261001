@@ -113,6 +113,8 @@ public class OrgEventService {
         // 组织日程目前只用「地点名称」这一个字段（V9 起该列叫 location_name）；
         // 结构化的地址与坐标留给后续的组织日程编辑器，见 spec §5.9
         event.setLocationName(request.location());
+        event.setLocationDetail(StringUtils.hasText(request.locationDetail())
+                ? request.locationDetail().trim() : null);
         event.setStartAt(request.startAt());
         event.setEndAt(request.endAt());
         event.setAllDay(Boolean.TRUE.equals(request.allDay()));
@@ -191,6 +193,10 @@ public class OrgEventService {
         }
         if (request.location() != null) {
             event.setLocationName(request.location());
+        }
+        if (request.locationDetail() != null) {
+            event.setLocationDetail(StringUtils.hasText(request.locationDetail())
+                    ? request.locationDetail().trim() : null);
         }
         event.setStartAt(start);
         event.setEndAt(end);
@@ -326,7 +332,7 @@ public class OrgEventService {
                     event, exceptions.getOrDefault(event.getId(), List.of()), rangeStart, rangeEnd)) {
                 result.add(new OrgEventResponse(
                         event.getId(), dispatch.getId(), occurrence.title(), event.getDescription(),
-                        occurrence.locationName(),
+                        occurrence.locationName(), occurrence.locationDetail(),
                         OffsetDateTime.ofInstant(occurrence.startAt(), ZoneOffset.UTC),
                         OffsetDateTime.ofInstant(occurrence.endAt(), ZoneOffset.UTC),
                         occurrence.allDay(), occurrence.timezone(), event.getRrule(),
@@ -390,7 +396,8 @@ public class OrgEventService {
                 continue;   // 没有活跃下发记录的日程不属于管理端列表
             }
             result.add(new OrgEventManageItem(event.getId(), dispatch.getId(), event.getTitle(),
-                    event.getDescription(), event.getLocationName(), event.getStartAt(), event.getEndAt(),
+                    event.getDescription(), event.getLocationName(), event.getLocationDetail(),
+                    event.getStartAt(), event.getEndAt(),
                     event.getAllDay(), event.getTimezone(), dispatch.getScopeType(),
                     dispatch.getDepartmentId(), dispatch.getRecipientCount()));
         }
@@ -533,7 +540,8 @@ public class OrgEventService {
 
     private OrgEventResponse toResponse(Event event, EventDispatch dispatch) {
         return new OrgEventResponse(event.getId(), dispatch.getId(), event.getTitle(),
-                event.getDescription(), event.getLocationName(), event.getStartAt(), event.getEndAt(),
+                event.getDescription(), event.getLocationName(), event.getLocationDetail(),
+                event.getStartAt(), event.getEndAt(),
                 event.getAllDay(), event.getTimezone(), event.getRrule(), false,
                 // 能走到这里的调用者已经过了权限校验（下发/修改的返回体）：对自己刚动过的东西当然可编辑
                 true);

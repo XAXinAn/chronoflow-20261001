@@ -22,6 +22,8 @@ export interface EventDraft {
   endTime: string;
   allDay: boolean;
   place: EventPlace | null;
+  /** 详细地址：地图只到「教学楼」，教室号由用户手填（与地点都可空，spec §5.9） */
+  locationDetail: string;
   description: string;
   url: string;
   category: string;
@@ -59,6 +61,7 @@ export function emptyDraft(): EventDraft {
     endTime: DEFAULT_END_TIME,
     allDay: false,
     place: null,
+    locationDetail: '',
     description: '',
     url: '',
     category: '',
@@ -182,6 +185,8 @@ export function buildCreatePayload(dateKey: string, draft: EventDraft) {
     description: blankToNull(draft.description),
     locationName: draft.place?.name ?? null,
     locationAddress: draft.place?.address ?? null,
+    // 详细地址与地点互相独立：清空地点不该顺手把用户手写的教室号也清掉（spec §5.9）
+    locationDetail: blankToNull(draft.locationDetail),
     latitude: draft.place?.latitude ?? null,
     longitude: draft.place?.longitude ?? null,
     poiId: draft.place?.poiId ?? null,
@@ -202,6 +207,7 @@ export function draftFromEvent(event: EventDetail): EventDraft {
     startTime: timeInZone(event.startAt, zone),
     endTime: timeInZone(event.endAt, zone),
     allDay: event.allDay,
+    locationDetail: event.locationDetail ?? '',
     place:
       event.locationName === null && event.latitude === null
         ? null
@@ -241,6 +247,7 @@ export function buildUpdatePayload(dateKey: string, draft: EventDraft) {
     description: base.description ?? '',
     locationName: base.locationName ?? '',
     locationAddress: base.locationAddress ?? '',
+    locationDetail: base.locationDetail ?? '',
     poiId: base.poiId ?? '',
     category: base.category ?? '',
     url: base.url ?? '',

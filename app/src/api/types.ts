@@ -75,6 +75,8 @@ export interface EventOccurrence {
   /** 地点已结构化（spec §5.9）；列表只展示名称，地址留给详情与导航 */
   locationName: string | null;
   locationAddress: string | null;
+  /** 详细地址：地图定位不到的那一层（教室 / 门牌）由用户手填，与地点都可空（spec §5.9） */
+  locationDetail: string | null;
   startAt: string;
   endAt: string;
   allDay: boolean;
@@ -96,6 +98,8 @@ export interface EventDetail {
   description: string | null;
   locationName: string | null;
   locationAddress: string | null;
+  /** 详细地址：地图定位不到的那一层（教室 / 门牌）由用户手填，与地点都可空（spec §5.9） */
+  locationDetail: string | null;
   latitude: number | null;
   longitude: number | null;
   poiId: string | null;
@@ -251,6 +255,7 @@ export interface OrgEvent {
   title: string;
   description: string | null;
   location: string | null;
+  locationDetail: string | null;
   startAt: string;
   endAt: string;
   allDay: boolean;
@@ -321,6 +326,8 @@ export interface OrgDispatchRequest {
   title: string;
   description?: string | null;
   location?: string | null;
+  /** 详细地址：地图只到「教学楼」时的补充（教室 / 门牌），与地点都可空（spec §5.9） */
+  locationDetail?: string | null;
   startAt: string;
   endAt: string;
   allDay?: boolean;

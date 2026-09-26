@@ -13,6 +13,8 @@ export interface DispatchForm {
   title: string;
   description: string;
   location: string;
+  /** 详细地址：地图定位不到的那一层，由用户手填（与地点都可空，spec §5.9） */
+  locationDetail: string;
   dateKey: string;
   allDay: boolean;
   startTime: string;
@@ -78,6 +80,9 @@ export function buildDispatchPayload(form: DispatchForm, timezone: string): OrgD
   if (form.location.trim()) {
     payload.location = form.location.trim();
   }
+  if (form.locationDetail.trim()) {
+    payload.locationDetail = form.locationDetail.trim();
+  }
   return payload;
 }
 
@@ -98,6 +103,7 @@ export function buildUpdatePayload(form: DispatchForm, timezone: string) {
     // PATCH 的语义：null 表示不修改，空串才是清空（与个人日程编辑页一致）
     description: form.description.trim(),
     location: form.location.trim(),
+    locationDetail: form.locationDetail.trim(),
     startAt: form.allDay ? toIso(form.dateKey, '00:00') : toIso(form.dateKey, form.startTime),
     endAt: form.allDay ? toIso(nextDateKey(form.dateKey), '00:00') : toIso(form.dateKey, form.endTime),
     allDay: form.allDay,

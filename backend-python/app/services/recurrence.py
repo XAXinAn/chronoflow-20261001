@@ -125,6 +125,7 @@ def _occurrence(
         "title": title if title is not None else event["title"],
         # 地点已结构化（spec §5.9）：实例同样带名称与地址，与 Java 版 EventOccurrence 对齐
         "locationName": event.get("location_name"),
+        "locationDetail": event.get("location_detail"),
         "locationAddress": event.get("location_address"),
         "startAt": start,
         "endAt": end,

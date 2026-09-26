@@ -49,6 +49,9 @@ public class AuthProperties {
      */
     private boolean exposeSmsCode = false;
 
+    /** 真实短信通道配置（spec §3.6 / §11 阶段一第 6 步）。 */
+    private Sms sms = new Sms();
+
     public String getJwtSecret() {
         return jwtSecret;
     }
@@ -159,5 +162,85 @@ public class AuthProperties {
 
     public void setExposeSmsCode(boolean exposeSmsCode) {
         this.exposeSmsCode = exposeSmsCode;
+    }
+
+    public Sms getSms() {
+        return sms;
+    }
+
+    public void setSms(Sms sms) {
+        this.sms = sms;
+    }
+
+    /**
+     * 真实短信通道（spec §3.6）。{@code provider} 取 {@code log}（默认，不真发）或 {@code aliyun}。
+     *
+     * <p>凭据只从环境变量注入，不写进仓库（见 AGENTS §4.5 的密钥约定）。
+     */
+    public static class Sms {
+
+        private String provider = "log";
+        private String accessKeyId;
+        private String accessKeySecret;
+        private String signName;
+        private String templateCode;
+        private String regionId = "cn-hangzhou";
+        private String endpoint = "dysmsapi.aliyuncs.com";
+
+        public String getProvider() {
+            return provider;
+        }
+
+        public void setProvider(String provider) {
+            this.provider = provider;
+        }
+
+        public String getAccessKeyId() {
+            return accessKeyId;
+        }
+
+        public void setAccessKeyId(String accessKeyId) {
+            this.accessKeyId = accessKeyId;
+        }
+
+        public String getAccessKeySecret() {
+            return accessKeySecret;
+        }
+
+        public void setAccessKeySecret(String accessKeySecret) {
+            this.accessKeySecret = accessKeySecret;
+        }
+
+        public String getSignName() {
+            return signName;
+        }
+
+        public void setSignName(String signName) {
+            this.signName = signName;
+        }
+
+        public String getTemplateCode() {
+            return templateCode;
+        }
+
+        public void setTemplateCode(String templateCode) {
+            this.templateCode = templateCode;
+        }
+
+        public String getRegionId() {
+            return regionId;
+        }
+
+        public void setRegionId(String regionId) {
+            this.regionId = regionId;
+        }
+
+        public String getEndpoint() {
+            return endpoint;
+        }
+
+        public void setEndpoint(String endpoint) {
+            this.endpoint = endpoint;
+        }
     }
 }

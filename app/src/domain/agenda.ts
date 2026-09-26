@@ -100,6 +100,19 @@ export function formatTimeRange(startIso: string, endIso: string, allDay: boolea
   return `${formatter.format(new Date(startIso))} – ${formatter.format(new Date(endIso))}`;
 }
 
+/**
+ * 地点展示文案（spec §5.9）：地图给的地点可能只到「教学楼」，
+ * 用户手填的详细地址是它的补充；两者都可空。
+ */
+export function locationLabel(name: string | null, detail: string | null): string {
+  const place = (name ?? '').trim();
+  const extra = (detail ?? '').trim();
+  if (place && extra) {
+    return `${place}（${extra}）`;
+  }
+  return place || extra;
+}
+
 export function sortTasks(tasks: Task[]): Task[] {
   const priorityRank: Record<Task['priority'], number> = { URGENT: 0, HIGH: 1, NORMAL: 2, LOW: 3 };
   return [...tasks].sort((a, b) => {

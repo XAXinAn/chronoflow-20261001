@@ -66,6 +66,7 @@ describe('新建日程草稿', () => {
         description: null,
         locationName: null,
         locationAddress: null,
+      locationDetail: null,
         latitude: null,
         longitude: null,
         poiId: null,

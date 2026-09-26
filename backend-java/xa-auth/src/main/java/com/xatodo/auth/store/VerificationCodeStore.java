@@ -20,6 +20,12 @@ public interface VerificationCodeStore {
     boolean tryAcquireSendLock(String phone, Duration ttl);
 
     /**
+     * 释放发送锁。**只在短信真的没发出去时用**：否则用户被 60 秒频控锁住，
+     * 却连一次验证码都没收到。
+     */
+    void releaseSendLock(String phone);
+
+    /**
      * 递增日计数并返回递增后的值。dimension 取 {@code phone} 或 {@code ip}。
      */
     long incrementDailyCount(String dimension, String value, Duration ttl);

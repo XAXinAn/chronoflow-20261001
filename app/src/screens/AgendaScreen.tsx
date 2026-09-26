@@ -22,7 +22,7 @@ import { WheelDatePicker } from '../components/WheelDatePicker';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
 import { Card, EmptyState, Pill, Screen } from '../components/ui';
 import { useAppTheme, useRuntime } from '../context/AppContext';
-import { dayHeading, formatTimeRange, localDateKey } from '../domain/agenda';
+import { dayHeading, formatTimeRange, localDateKey, locationLabel } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 import { holidayName, toHolidayMarks, yearsSpanned } from '../domain/holiday';
 import { resultBadges, resultDateKey, resultSubtitle, resultTypeLabel } from '../domain/search';
@@ -417,7 +417,9 @@ export function AgendaScreen({
                       </Text>
                       <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 2 }}>
                         {formatTimeRange(item.startAt, item.endAt, item.allDay, item.timezone || APP_TIMEZONE)}
-                        {item.locationName ? ` · ${item.locationName}` : ''}
+                        {locationLabel(item.locationName, item.locationDetail)
+                          ? ` · ${locationLabel(item.locationName, item.locationDetail)}`
+                          : ''}
                       </Text>
                     </View>
                     <View style={styles.pills}>

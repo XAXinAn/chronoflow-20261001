@@ -44,6 +44,7 @@ export interface EventWritePayload {
   description?: string | null;
   locationName?: string | null;
   locationAddress?: string | null;
+  locationDetail?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   poiId?: string | null;

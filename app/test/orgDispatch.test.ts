@@ -15,6 +15,7 @@ function form(overrides: Partial<DispatchForm> = {}): DispatchForm {
     title: '季度评审会',
     description: '',
     location: '',
+    locationDetail: '',
     dateKey: '2026-09-26',
     allDay: false,
     startTime: '09:00',

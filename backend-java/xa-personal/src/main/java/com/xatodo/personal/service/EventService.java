@@ -86,6 +86,8 @@ public class EventService {
         event.setDescription(request.description());
         event.setLocationName(request.locationName());
         event.setLocationAddress(request.locationAddress());
+        // 详细地址与地点相互独立、都可空（spec §5.9）
+        event.setLocationDetail(blankToNull(request.locationDetail()));
         event.setPoiId(request.poiId());
         applyCoordinates(event, request.latitude(), request.longitude());
         event.setStartAt(request.startAt());
@@ -279,6 +281,10 @@ public class EventService {
                     applyCoordinates(event, request.latitude(), request.longitude());
                 }
             }
+        }
+        // 详细地址独立于地点：清空地点不该顺手把用户手写的教室号也抹掉
+        if (request.locationDetail() != null) {
+            event.setLocationDetail(blankToNull(request.locationDetail()));
         }
         if (request.startAt() != null) {
             event.setStartAt(request.startAt());

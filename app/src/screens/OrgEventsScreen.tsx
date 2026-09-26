@@ -21,7 +21,7 @@ import { MonthCalendar } from '../components/MonthCalendar';
 import { Card, EmptyState, Screen } from '../components/ui';
 import { WheelDatePicker } from '../components/WheelDatePicker';
 import { useAppTheme } from '../context/AppContext';
-import { dayHeading, formatTimeRange, localDateKey } from '../domain/agenda';
+import { dayHeading, formatTimeRange, localDateKey, locationLabel } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 import { canDispatch } from '../domain/orgDispatch';
 import type { RecognizedEventDraft } from '../domain/vision';
@@ -282,7 +282,9 @@ export function OrgEventsScreen({
                   </Text>
                   <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 2 }}>
                     {formatTimeRange(item.startAt, item.endAt, item.allDay, item.timezone || APP_TIMEZONE)}
-                    {item.location ? ` · ${item.location}` : ''}
+                    {locationLabel(item.location, item.locationDetail)
+                      ? ` · ${locationLabel(item.location, item.locationDetail)}`
+                      : ''}
                   </Text>
                 </View>
                 <View style={styles.pills}>

@@ -46,6 +46,11 @@ public class RedisVerificationCodeStore implements VerificationCodeStore {
     }
 
     @Override
+    public void releaseSendLock(String phone) {
+        redis.delete(LOCK_KEY + phone);
+    }
+
+    @Override
     public long incrementDailyCount(String dimension, String value, Duration ttl) {
         String key = DAILY_KEY + dimension + ":" + value;
         Long count = redis.opsForValue().increment(key);

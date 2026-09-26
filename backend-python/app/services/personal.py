@@ -52,6 +52,8 @@ def _event_columns(payload, defaults):
     columns = {
         "location_name": _blank_to_none(payload.get("locationName")),
         "location_address": _blank_to_none(payload.get("locationAddress")),
+        # 详细地址：地图定位不到的那一层（教室 / 门牌）由用户手填，与地点相互独立（spec §5.9）
+        "location_detail": _blank_to_none(payload.get("locationDetail")),
         "poi_id": _blank_to_none(payload.get("poiId")),
         "category": _blank_to_none(payload.get("category")),
         "url": _blank_to_none(payload.get("url")),
@@ -260,12 +262,14 @@ class PersonalService:
         row = self._session.execute(
             text(
                 "INSERT INTO event (calendar_id, creator_identity_id, source_type, title,"
-                " description, location_name, location_address, latitude, longitude, poi_id,"
+                " description, location_name, location_address, location_detail,"
+                " latitude, longitude, poi_id,"
                 " coordinate_system, start_at, end_at, all_day, timezone, rrule, status,"
                 " availability, color, priority, category, url, travel_time_minutes,"
                 " updated_after_dispatch)"
                 " VALUES (:calendar_id, :identity, 'PERSONAL', :title, :description, :location_name,"
-                " :location_address, :latitude, :longitude, :poi_id, :coordinate_system,"
+                " :location_address, :location_detail, :latitude, :longitude, :poi_id,"
+                " :coordinate_system,"
                 " :start_at, :end_at, :all_day, :timezone, :rrule, :status,"
                 " :availability, :color, :priority, :category, :url, :travel_time_minutes, false)"
                 " RETURNING *"
@@ -304,6 +308,8 @@ class PersonalService:
                     "   ELSE COALESCE(:location_name, location_name) END,"
                     " location_address = CASE WHEN :clear_place THEN NULL"
                     "   ELSE COALESCE(:location_address, location_address) END,"
+                    # 详细地址独立于地点：清空地点不该把用户手写的教室号一起抹掉
+                    " location_detail = COALESCE(:location_detail, location_detail),"
                     " poi_id = CASE WHEN :clear_place THEN NULL ELSE COALESCE(:poi_id, poi_id) END,"
                     " latitude = CASE WHEN :clear_place THEN NULL ELSE COALESCE(:latitude, latitude) END,"
                     " longitude = CASE WHEN :clear_place THEN NULL ELSE COALESCE(:longitude, longitude) END,"
@@ -388,12 +394,14 @@ class PersonalService:
         row = self._session.execute(
             text(
                 "INSERT INTO event (calendar_id, creator_identity_id, source_type, title,"
-                " description, location_name, location_address, latitude, longitude, poi_id,"
+                " description, location_name, location_address, location_detail,"
+                " latitude, longitude, poi_id,"
                 " coordinate_system, start_at, end_at, all_day, timezone, rrule, status,"
                 " availability, color, priority, category, url, travel_time_minutes,"
                 " updated_after_dispatch)"
                 " VALUES (:calendar_id, :identity, 'PERSONAL', :title, :description, :location_name,"
-                " :location_address, :latitude, :longitude, :poi_id, :coordinate_system,"
+                " :location_address, :location_detail, :latitude, :longitude, :poi_id,"
+                " :coordinate_system,"
                 " :start_at, :end_at, :all_day, :timezone, :rrule, :status,"
                 " :availability, :color, :priority, :category, :url, :travel_time_minutes, false)"
                 " RETURNING *"
@@ -405,6 +413,7 @@ class PersonalService:
                 "description": _coalesce(payload.get("description"), event["description"]),
                 "location_name": _coalesce(_blank_to_none(payload.get("locationName")), event["location_name"]),
                 "location_address": _coalesce(payload.get("locationAddress"), event["location_address"]),
+                "location_detail": _coalesce(payload.get("locationDetail"), event["location_detail"]),
                 "latitude": _coalesce(payload.get("latitude"), event["latitude"]),
                 "longitude": _coalesce(payload.get("longitude"), event["longitude"]),
                 "poi_id": _coalesce(payload.get("poiId"), event["poi_id"]),
@@ -751,6 +760,7 @@ def _event_view(row) -> dict:
         "description": row["description"],
         "locationName": row["location_name"],
         "locationAddress": row["location_address"],
+        "locationDetail": row["location_detail"],
         "latitude": _num(row["latitude"]),
         "longitude": _num(row["longitude"]),
         "poiId": row["poi_id"],

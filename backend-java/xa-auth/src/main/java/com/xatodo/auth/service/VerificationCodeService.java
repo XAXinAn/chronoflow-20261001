@@ -3,6 +3,7 @@ package com.xatodo.auth.service;
 import com.xatodo.auth.config.AuthProperties;
 import com.xatodo.auth.dto.AuthDtos;
 import com.xatodo.auth.dto.AuthDtos.SendSmsCodeResponse;
+import com.xatodo.auth.sms.SmsSender;
 import com.xatodo.auth.store.VerificationCodeStore;
 import com.xatodo.common.api.ErrorCode;
 import com.xatodo.common.exception.BizException;
@@ -17,8 +18,8 @@ import java.util.regex.Pattern;
 /**
  * 短信验证码的发送与校验，规则见 spec §3.6。
  *
- * <p>当前未接入真实短信通道：验证码只写入存储。开发环境下可由配置
- * {@code xatodo.auth.expose-sms-code=true} 在响应中回显，便于联调与自动化测试。
+ * <p>发送通道由 {@link SmsSender} 决定：开发环境是「不真发 + 响应回显」（{@code expose-sms-code=true}），
+ * 部署环境接阿里云短信（{@code xatodo.auth.sms.provider=aliyun}）。
  */
 @Service
 public class VerificationCodeService {
@@ -29,11 +30,15 @@ public class VerificationCodeService {
 
     private final VerificationCodeStore store;
     private final AuthProperties properties;
+    private final SmsSender smsSender;
     private final SecureRandom random = new SecureRandom();
 
-    public VerificationCodeService(VerificationCodeStore store, AuthProperties properties) {
+    public VerificationCodeService(VerificationCodeStore store,
+                                   AuthProperties properties,
+                                   SmsSender smsSender) {
         this.store = store;
         this.properties = properties;
+        this.smsSender = smsSender;
     }
 
     public SendSmsCodeResponse send(String phone, String clientIp) {
@@ -60,12 +65,30 @@ public class VerificationCodeService {
         store.saveCode(phone, code, properties.getSmsCodeTtl());
         store.clearVerifyFailure(phone);
 
-        // TODO 接入真实短信通道（spec §11 阶段一第 6 步），当前仅记录脱敏日志
-        log.info("已生成短信验证码 phone={}", maskPhone(phone));
+        try {
+            smsSender.sendVerificationCode(phone, code);
+        } catch (RuntimeException ex) {
+            // 没发出去就别把用户锁在 60 秒频控里：清掉验证码与发送锁，让他立刻重试
+            store.deleteCode(phone);
+            store.releaseSendLock(phone);
+            log.warn("验证码短信发送失败 phone={} reason={}", maskPhone(phone), ex.getMessage());
+            throw ex;
+        }
+        log.info("已发送短信验证码 phone={}", maskPhone(phone));
 
         return new SendSmsCodeResponse(
                 properties.getSmsCodeTtl().toSeconds(),
-                properties.isExposeSmsCode() ? code : null);
+                exposeCode() ? code : null);
+    }
+
+    /**
+     * 是否在响应里回显验证码。
+     *
+     * <p>接了真实短信通道就**永不回显**——哪怕有人误把 {@code expose-sms-code} 打开，
+     * 也不能让接口把验证码直接吐出来（那是把账号拱手送人）。
+     */
+    private boolean exposeCode() {
+        return properties.isExposeSmsCode() && !"aliyun".equals(properties.getSms().getProvider());
     }
 
     /**

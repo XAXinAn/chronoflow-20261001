@@ -1,0 +1,94 @@
+# XaTodo 生产/演示部署编排（spec §9.1 的落地版）。
+#
+# 与开发环境的差别：数据库与 Redis 都跑在容器里，后端与前端各自一个镜像，
+# 对外只开一个端口（默认 8088）——公网入口是前端 nginx，后端只在容器网络内可达。
+#
+# 用法（在部署机的 /opt/xatodo 下）：
+#   cp .env.example .env && vi .env      # 填密码与短信/高德凭据
+#   docker-compose up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: xatodo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: xatodo
+      POSTGRES_USER: xatodo
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD 必须设置}
+      TZ: Asia/Shanghai
+    volumes:
+      - xatodo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xatodo -d xatodo"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: xatodo-redis
+    restart: unless-stopped
+    # 验证码与刷新令牌丢了就是全员重新登录，因此这里只做内存缓存，不开持久化
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: xatodo-backend:latest
+    container_name: xatodo-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/xatodo
+      SPRING_DATASOURCE_USERNAME: xatodo
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必须设置}
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD 必须设置}
+      XATODO_UPLOAD_DIR: /data/uploads
+      # 真实短信通道（spec §3.6）：接了 aliyun 之后接口不会再回显验证码
+      SMS_PROVIDER: ${SMS_PROVIDER:-log}
+      ALIYUN_SMS_ACCESS_KEY_ID: ${ALIYUN_SMS_ACCESS_KEY_ID:-}
+      ALIYUN_SMS_ACCESS_KEY_SECRET: ${ALIYUN_SMS_ACCESS_KEY_SECRET:-}
+      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-}
+      ALIYUN_SMS_TEMPLATE_CODE: ${ALIYUN_SMS_TEMPLATE_CODE:-}
+      # 地点与地图（spec §5.9）：Web 服务 Key 给后端搜地点，JS Key 给 WebView 画地图
+      GEO_AMAP_KEY: ${GEO_AMAP_KEY:-}
+      GEO_AMAP_JS_KEY: ${GEO_AMAP_JS_KEY:-}
+      GEO_AMAP_JS_SECURITY_CODE: ${GEO_AMAP_JS_SECURITY_CODE:-}
+      # 节假日每天自动同步（spec §5.11）；拉不到只告警，界面用库里已有数据
+      HOLIDAY_SYNC_BASE_URL: ${HOLIDAY_SYNC_BASE_URL:-https://raw.githubusercontent.com/NateScarlet/holiday-cn/master}
+      TZ: Asia/Shanghai
+    volumes:
+      - xatodo_uploads:/data/uploads
+    ports:
+      # 只绑本机：运维/种子脚本用得上，公网走 web 那一个入口
+      - "127.0.0.1:${BACKEND_HOST_PORT:-18080}:8080"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: xatodo-web:latest
+    container_name: xatodo-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_HOST_PORT:-8088}:80"
+
+volumes:
+  xatodo_pgdata:
+  xatodo_uploads:

@@ -53,6 +53,9 @@ public class Event {
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String locationAddress;
 
+    /** 详细地址：地图只能定位到「教学楼」时用户手填的补充（如「3 号楼 305」），可空（spec §5.9）。 */
+    private String locationDetail;
+
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private BigDecimal latitude;
 
@@ -171,6 +174,14 @@ public class Event {
 
     public String getLocationAddress() {
         return locationAddress;
+    }
+
+    public String getLocationDetail() {
+        return locationDetail;
+    }
+
+    public void setLocationDetail(String locationDetail) {
+        this.locationDetail = locationDetail;
     }
 
     public void setLocationAddress(String locationAddress) {

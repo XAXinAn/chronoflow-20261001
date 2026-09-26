@@ -88,6 +88,15 @@ xatodo:
     max-devices-per-identity: 5
     # 生产环境必须保持 false；无短信通道时仅开发/测试开启
     expose-sms-code: false
+    # 真实短信通道（spec §3.6）：log = 不真发（配合上面回显），aliyun = 阿里云短信
+    sms:
+      provider: ${SMS_PROVIDER:log}
+      access-key-id: ${ALIYUN_SMS_ACCESS_KEY_ID:}
+      access-key-secret: ${ALIYUN_SMS_ACCESS_KEY_SECRET:}
+      sign-name: ${ALIYUN_SMS_SIGN_NAME:}
+      template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
+      region-id: ${ALIYUN_SMS_REGION_ID:cn-hangzhou}
+      endpoint: ${ALIYUN_SMS_ENDPOINT:dysmsapi.aliyuncs.com}
   geo:
     # 期望的服务商。没配 Key 时自动降级为内置地点集，并在 /geo/config 里如实上报，
     # 保证离线环境与 CI 也能跑通「搜索地点 → 落库带坐标」的完整链路（spec §5.9）

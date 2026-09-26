@@ -449,9 +449,11 @@ class OrgService:
         event = self._session.execute(
             text(
                 "INSERT INTO event (calendar_id, org_id, creator_identity_id, source_type, title,"
-                " description, location_name, start_at, end_at, all_day, timezone, status,"
+                " description, location_name, location_detail, start_at, end_at, all_day,"
+                " timezone, status,"
                 " updated_after_dispatch) VALUES (:calendar_id, :org_id, :identity, 'ORG_DISPATCH',"
-                " :title, :description, :location_name, :start_at, :end_at, :all_day, :timezone,"
+                " :title, :description, :location_name, :location_detail, :start_at, :end_at,"
+                " :all_day, :timezone,"
                 " 'CONFIRMED', false) RETURNING *"
             ),
             {
@@ -460,8 +462,9 @@ class OrgService:
                 "identity": member["identity_id"],
                 "title": payload["title"],
                 "description": payload.get("description"),
-                # 组织日程目前只用「地点名称」一个字段（V9 起该列叫 location_name）
+                # 组织日程只用手填的地点名 + 详细地址（结构化地址留给后续的组织日程编辑器，spec §5.9）
                 "location_name": payload.get("location"),
+                "location_detail": (payload.get("locationDetail") or "").strip() or None,
                 "start_at": payload["startAt"],
                 "end_at": payload["endAt"],
                 "all_day": bool(payload.get("allDay")),
@@ -609,7 +612,8 @@ class OrgService:
                 "id": row["event_id"],
                 "calendar_id": row["calendar_id"],
                 "title": row["title"],
-                "location": row["location_name"],
+                "location_name": row["location_name"],
+                "location_detail": row["location_detail"],
                 "start_at": row["start_at"],
                 "end_at": row["end_at"],
                 "all_day": row["all_day"],
@@ -625,6 +629,7 @@ class OrgService:
                         "title": occurrence["title"],
                         "description": event["description"],
                         "location": occurrence["locationName"],
+                        "locationDetail": occurrence["locationDetail"],
                         "startAt": occurrence["startAt"],
                         "endAt": occurrence["endAt"],
                         "allDay": occurrence["allDay"],
@@ -691,6 +696,7 @@ class OrgService:
                 "title": payload.get("title"),
                 "description": payload.get("description"),
                 "location_name": payload.get("location"),
+                "location_detail": (payload.get("locationDetail") or "").strip() or None,
                 "start_at": payload.get("startAt"),
                 "end_at": payload.get("endAt"),
                 "all_day": payload.get("allDay"),

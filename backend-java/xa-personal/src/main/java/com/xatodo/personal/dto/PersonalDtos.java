@@ -56,6 +56,8 @@ public final class PersonalDtos {
             // 客户端不得自行声明坐标系，因此这里不暴露 coordinateSystem。
             @Size(max = 128, message = "地点名称最长 128 个字符") String locationName,
             @Size(max = 255, message = "地点地址最长 255 个字符") String locationAddress,
+            // 详细地址：地图定位不到的那一层（教室 / 门牌）由用户手填，与地点相互独立（spec §5.9）
+            @Size(max = 255, message = "详细地址最长 255 个字符") String locationDetail,
             java.math.BigDecimal latitude,
             java.math.BigDecimal longitude,
             @Size(max = 64) String poiId,
@@ -78,6 +80,7 @@ public final class PersonalDtos {
             String description,
             @Size(max = 128) String locationName,
             @Size(max = 255) String locationAddress,
+            @Size(max = 255) String locationDetail,
             java.math.BigDecimal latitude,
             java.math.BigDecimal longitude,
             @Size(max = 64) String poiId,
@@ -103,6 +106,7 @@ public final class PersonalDtos {
                                 String description,
                                 String locationName,
                                 String locationAddress,
+                                String locationDetail,
                                 java.math.BigDecimal latitude,
                                 java.math.BigDecimal longitude,
                                 String poiId,
@@ -127,7 +131,7 @@ public final class PersonalDtos {
         public static EventResponse from(com.xatodo.personal.entity.Event event) {
             return new EventResponse(
                     event.getId(), event.getCalendarId(), event.getTitle(), event.getDescription(),
-                    event.getLocationName(), event.getLocationAddress(),
+                    event.getLocationName(), event.getLocationAddress(), event.getLocationDetail(),
                     event.getLatitude(), event.getLongitude(), event.getPoiId(), event.getCoordinateSystem(),
                     event.getStartAt(), event.getEndAt(), event.getAllDay(), event.getTimezone(),
                     event.getRrule(), event.getStatus(), event.getAvailability(), event.getColor(),
