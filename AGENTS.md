@@ -8,33 +8,55 @@
 
 ## 0.0 本次交接摘要（2026-09-26，第三轮）
 
-**这一轮做了什么**（对应上一轮 §3.4 的第 1、2、3 条，全部闭环）：
+**这一轮做了什么**（每条都有测试 + 实机证据，细节见 §3.1.1）：
 
 1. **组织管理端（Web）打通，新组织能开张了**——上一轮记的「首位成员断点」已解决：
-   `/api/v1/org-admin/**` 现在**同时接受**后台 `ORG_ADMIN` 的 `ADMIN` 令牌（spec §3.2 / §4.3）。
-   超管建组织时同步创建的那个后台管理员，登录 Web 组织管理端就能建部门、单个新增成员、批量导入，
-   不必等组织里先有人认领。App 侧的组织身份令牌走同一前缀，权限口径一致（只限本组织）。
-2. **web-admin 补齐两块页面**：组织管理端（组织设置 / 成员管理＋批量导入 / 部门管理 / 组织日历＋回执 / 操作日志）
-   与意见反馈查阅（超管）；菜单按角色渲染——超管看原来的六页，组织管理员看组织那套。
-3. **深色模式偏好持久化**：`app/src/theme/preference.ts` 存进安全存储，重启后仍是用户上次的选择。
+   `/api/v1/org-admin/**` 现在**同时接受**后台 `ORG_ADMIN` 的 `ADMIN` 令牌与 App 组织身份的 `ACCESS` 令牌
+   （spec §3.2 / §4.3）。超管建组织时同步创建的那个后台管理员，登录 Web 组织管理端就能建部门、
+   单个新增成员、批量导入，不必等组织里先有人认领。
+2. **App 里也能下发组织日程了**：组织 tab 的悬浮按钮与日历页**同一套**（拍照 / 跳到指定日期 / 新建）；
+   新建进整页表单，**下发对象 = 选人**——点「下发给」push 进独立选人页（按二级单位分组、搜姓名/工号/部门、
+   整组全选、多选、顶部常驻已选列表）；提交的是**成员级名单**（`scopeType=MEMBER` + `memberIds`）。
+3. **三条被纠正过、最终定稿的权限规则**（动手前务必按这个来，别照旧文档）：
+   - 可选范围 = **我管得到的人**（`/org/current` 的 `manageableDepartmentIds`）。`GET /org/members`
+     对普通成员会返回他自己，所以必须在**选择阶段**就过滤，否则「能选，但一点下发必然 403」。
+     一个可下发的人都**没有**时，「新建」按钮根本不出现。
+   - **发起人自己始终在收件名单里**：组织 tab 的列表口径是「发给我 / 我参与的」，
+     不这么做的话「自己刚发的，自己日历里看不到」。
+   - **改 / 撤 / 删只有发起人本人**，其他成员（**包括组织管理员**）一律只读；
+     服务端返回 `canEdit`，App 的「编辑」入口按它显示，前端不猜权限。下发名单在编辑时不可改
+     （换收件人 = 撤回 + 重新下发）。
+4. **回执整条下线**（产品定「所有日程都不需要回执」）：组织日程与个人日程**长相一致**——
+   卡片只有标题/时间/地点，没有回执按钮、没有「待回执」徽标。契约 104 → **101** 个端点；
+   两版后端、App、Web 全清；DB 的 `require_receipt` / `receipt_status` 等列留作**遗留列**（不做破坏性迁移）。
+5. **演示数据换成两个真实形态的组织**：`scripts/seed_demo_orgs.py` **全部走正式接口**（不直接写库）
+   造出利欧数字（45 部门 / 118 人 / 四层）与浙江海洋大学（52 部门 / 261 人 / 三层）。
+6. web-admin 补齐组织管理端五页 + 意见反馈页（菜单按角色渲染）；App 深色模式偏好持久化。
 
-顺带补齐与修掉的：
+**顺带修掉的真问题**：
 
-- 组织管理端缺的 6 个端点在**两版后端都实现**了，并补进契约（98 → **104** 个端点）：
+- 组织管理端缺的 6 个端点在两版后端都实现了并补进契约（98 → 104）：
   `GET /org-admin/departments`、`GET /org-admin/events`、`GET|PATCH /org-admin/settings`、
   `GET /org-admin/logs`、`GET /org-admin/imports/{id}/failures`。
 - 迁移 **V15**：`event.creator_identity_id` 与 `event_dispatch.created_by_member_id` 放开非空，
-  `event_dispatch` 新增 `created_by_admin_id`（后台管理员没有 C 端身份，得有人认这笔下发）。
-- 组织管理端的写操作现在**真的写审计日志**（`audit_log`），所以「操作日志」页不是空壳。
-- 批量导入补上权限校验（spec §2.2：导入是组织管理员权限，不是部门管理员）。
-- 两处实测踩到的坑已修：①多部分请求缺 `file` 部件返回 90001（应为 400/10001）；
-  ②Python 版导入模板还是老的 6 列（手机号/邮箱），已与 Java 版、spec §4.3 对齐成 4 列。
+  新增 `created_by_admin_id`（后台管理员没有 C 端身份，得有人认这笔下发）。
+- 组织管理端的写操作**真的写审计日志**了；批量导入补上「只有组织管理员能导」的校验；
+  多部分请求缺 `file` 部件从 90001 改成 400/10001；Python 版导入模板从旧 6 列改回 4 列。
+- **撤回过的下发让成员端查询拼出 `IN ()` 直接 500**（空集合进 MyBatis-Plus `.in()`）——已修。
+- Python 版 `receipt_summary` 里抄了一份权限判断没跟着改，导致「发起人看不了自己下发的」——已收敛到共用函数。
 
-**验证证据**：Java **89** 项全绿（含契约门禁）、Python **50** 项全绿、App **84** 项 + typecheck、
-web-admin **18** 项 + 生产构建；另外在真实运行环境用 HTTP 走了一遍闭环
-（超管建组织 → 组织管理员建部门/导成员 → 成员认领 → 权限边界：无令牌 20001、普通成员调管理端 20003）。
+**验证证据**：Java **90** 项（含契约门禁）、Python **51** 项、App **98** 项 + typecheck、
+web-admin **18** 项 + 生产构建，全绿；模拟器实机走通「组织页三按钮 → 新建 → 选人（搜索/整组全选/顶部已选）
+→ 确定 → 下发 → 卡片与个人日程一致 → 发起人进编辑页改标题保存」。
 
-**下一个 agent 从这里开始**：§3.4 只剩「拍照识别（端侧）」一条，前置条件是 Dev Client 构建环境（§4.3）。
+**下一个 agent 从这里开始**（按优先级，详见 §3.4）：
+
+1. **web-admin 组织日历的「撤回 / 删除」按钮现在对所有行都显示**，但后端只允许发起人操作 →
+   非发起人点了会收到 20003。修法：`GET /org-admin/events` 的条目加 `canEdit`（服务端 `isInitiator` 判定），
+   页面据此隐藏按钮。
+2. **撤回之后这条日程在两端都查不到**（列表只列 ACTIVE 的下发），也没有「已撤回」入口。
+   要做历史视图要么给列表加 `includeRevoked`，要么单独一个筛选。
+3. **拍照识别（端侧）**——产品要求排最后，前置条件是 Dev Client 构建环境（§4.3）。
 
 ---
 
@@ -79,7 +101,7 @@ web-admin **18** 项 + 生产构建；另外在真实运行环境用 HTTP 走了
    它开着的时候会盖住顶部 ~340px 并吃掉所有 `input tap` / `input text`，还会误触出
    「放弃未保存」弹窗——我在这上面浪费过好几轮，详见 §5。
 
-当前环境（2026-09-25 收尾时）**全部在跑**：PG 5432 / Redis 6379 / 后端 8080（带高德 Key）/ Metro 8081 / `emulator-5554`。
+当前环境（2026-09-26 第三轮收尾时）**全部在跑**：PG 5432 / Redis 6379 / 后端 8080（带高德 Key）/ Metro 8081 / `emulator-5554`。
 高德凭据在 `/home/jiang/develop/xa-todo/.env.local`（已被 gitignore）。
 
 **后端起停脚本**（重启后端时别忘加载本地凭据，漏了会静默降级成内置地点集）：
@@ -164,18 +186,21 @@ abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，�
 
 ### 3.1.1 第三轮已完成（2026-09-26，代码 + 两版后端测试 + 真实环境 HTTP 走通）
 
+> **读这一节时注意**：第 2、5、9、11 条里提到的「回执」已在**第 12 条整条下线**
+> （产品定「所有日程都不需要回执」）。与回执冲突的描述一律以第 12 条为准。
+
 | # | 需求 | 落地位置 | 证据 |
 | --- | --- | --- | --- |
 | 1 | **组织管理端入口（原「首位成员断点」）** | `AdminAuthenticationFilter` 现在也处理 `/org-admin/**`；新增 `xa-auth.AdminActor` 接口 + `xa-org.OrgActor` 执行者；`OrgPermissionService.resolveActor()` 同时认「组织身份」与「后台 ORG_ADMIN」；Python 侧 `deps.current_org_actor` + `OrgService.resolve_actor` | Java `OrgModuleTest.orgAdminConsoleCanOpenUpANewOrganization`（新组织 0 成员 → 建部门 → 新增成员 → 批量导入 → 成员认领 → 后台下发日程 → 操作日志）+ `orgConsoleTokenIsScopedAndMemberIsRejected`；Python 同名 2 项；真实环境 HTTP 冒烟：超管建组织 → 组织管理员建部门/成员 OK，成员令牌调管理端 20003、无令牌 20001 |
-| 2 | **web-admin 组织管理端** | `pages/OrgSettingsPage / OrgMembersPage（含批量导入与失败明细）/ OrgDepartmentsPage / OrgEventsPage（含回执抽屉）/ OrgLogsPage`；`AppLayout` 按角色渲染菜单 | `npm run build -w @xa-todo/web-admin` 通过；`OrgMembersPage.test.tsx` 盯着「已认领 / 待认领」与两个入口按钮 |
+| 2 | **web-admin 组织管理端** | `pages/OrgSettingsPage / OrgMembersPage（含批量导入与失败明细）/ OrgDepartmentsPage / OrgEventsPage/ OrgLogsPage`；`AppLayout` 按角色渲染菜单 | `npm run build -w @xa-todo/web-admin` 通过；`OrgMembersPage.test.tsx` 盯着「已认领 / 待认领」与两个入口按钮 |
 | 3 | **web-admin 意见反馈查阅** | `pages/FeedbackPage`（默认只看待处理，可切已处理/全部，图片预览，标记已处理） | `FeedbackPage.test.tsx`：默认 `status=OPEN`、处理后重新拉列表 |
 | 4 | **深色模式偏好持久化** | `app/src/theme/preference.ts`（安全存储 + `nextScheme`），`AppContext` 启动时读回、切换时写回 | `app/test/themePreference.test.ts` 3 项；App 84 项 + typecheck 通过 |
-| 5 | **组织管理端缺的端点补齐**（契约 98 → 104） | `GET /org-admin/departments`、`GET /org-admin/events`（带回执分布）、`GET\|PATCH /org-admin/settings`、`GET /org-admin/logs`、`GET /org-admin/imports/{id}/failures`；Java 与 Python 两版都实现 | Java `OpenApiContractTest` 4 项通过（覆盖 + 安全声明 + 未带令牌 401） |
+| 5 | **组织管理端缺的端点补齐**（契约 98 → 104；第 12 条下线回执后为 101） | `GET /org-admin/departments`、`GET /org-admin/events`、`GET\|PATCH /org-admin/settings`、`GET /org-admin/logs`、`GET /org-admin/imports/{id}/failures`；Java 与 Python 两版都实现 | Java `OpenApiContractTest` 4 项通过（覆盖 + 安全声明 + 未带令牌 401） |
 | 6 | **组织管理端的审计日志** | 新增 `OrgAuditSink`（定义在 xa-org，实现在 xa-admin，避免 xa-org 反向依赖）+ `OrgAuditRecorder`；Python 侧 `OrgService.record_org_audit`；在 controller/router 层逐端点记录 | 冒烟测试里 `GET /org-admin/logs` 返回 `ORG_DEPARTMENT_CREATE`、`ORG_MEMBER_CREATE` |
 | 7 | **V15 迁移** | `event.creator_identity_id`、`event_dispatch.created_by_member_id` 放开非空；`event_dispatch` 新增 `created_by_admin_id` + CHECK（发起方恰有一列非空） | 开发库启动日志：`Successfully applied 2 migrations ... now at version v15` |
 | 8 | 顺带修 | ①多部分请求缺 `file` → 现在 400/10001（原来掉进兜底返回 90001）；②批量导入补 `requireOrgAdmin`（spec §2.2）；③Python 导入模板从老的 6 列改回 4 列，与 Java 版和 spec §4.3 一致 | 冒烟时实测到 90001 才发现的第①条；②有 Java/Python 用例；③两版 `template()` 现在同列 |
-| 9 | **组织管理员在 App 里下发日程**（spec §4.2.2 / §4.2.3） | 组织 tab 的悬浮按钮与日历页**同一套**（拍照 / 跳到指定日期 / 新建）；新建进整页表单（`OrgEventEditorScreen`），**下发对象 = 选人**：点那一行 push 到独立选人页（`OrgRecipientPickerScreen`）——按二级单位分组、可搜姓名/工号/部门、可整组全选、多选，**顶部常驻已选列表**（可逐个移除）。提交的是**成员级名单**（`scopeType=MEMBER` + `memberIds`）。**没有下发权限的人不出现、也不能选**：可选范围 = `/org/current` 的 `manageableDepartmentIds`（`GET /org/members` 对普通成员会返回他自己，必须在选择阶段就按这条规则过滤，否则就是「能选但一点下发必然 403」）。一个可下发的人都没有时，「新建」按钮根本不显示 | `app/test/orgDispatch.test.ts` 9 项 + `app/test/orgRecipients.test.ts` 6 项（按二级单位分组 / 搜索 / 整组全选 / **无权限的人不出现在列表**）；**模拟器实机走通**：浙海大 OWNER 选人下发 → 事件出现在组织日历并带「待回执」与回执按钮 |
-| 11 | **发起人自己也收得到、也管得了自己下发的那条**（spec §4.2.2） | ①服务端展开收件人时**始终带上发起人自己**（组织 tab 的口径是「发给我 / 我参与的」，否则自己刚发的下一秒就看不见）；②**改 / 撤 / 删只有发起人本人**，其他成员只读——**组织管理员也不行**（已发给别人的通知，内容该由发的人负责）；③回执统计属于「读」：组织管理员、被授权部门负责人、发起人都能看到；④下发名单在编辑时**不可修改**（换收件人 = 撤回 + 重新下发）；⑤`OrgEventResponse` 新增 `canEdit`，App 的「编辑」入口按它显示，不自己猜权限 | Java `OrgModuleTest.initiatorSeesAndManagesOwnDispatch`（发起人可见 + 可改 + 同事 20003 + **管理员替人改也 20003** + 撤回放行 + 组织管理员仍能看回执统计）、Python 同名用例；既有 `dispatchToDepartmentAndMemberReceipt` 的期望从 2 改成 3（多出来的正是发起人） |
+| 9 | **组织管理员在 App 里下发日程**（spec §4.2.2 / §4.2.3） | 组织 tab 的悬浮按钮与日历页**同一套**（拍照 / 跳到指定日期 / 新建）；新建进整页表单（`OrgEventEditorScreen`），**下发对象 = 选人**：点那一行 push 到独立选人页（`OrgRecipientPickerScreen`）——按二级单位分组、可搜姓名/工号/部门、可整组全选、多选，**顶部常驻已选列表**（可逐个移除）。提交的是**成员级名单**（`scopeType=MEMBER` + `memberIds`）。**没有下发权限的人不出现、也不能选**：可选范围 = `/org/current` 的 `manageableDepartmentIds`（`GET /org/members` 对普通成员会返回他自己，必须在选择阶段就按这条规则过滤，否则就是「能选但一点下发必然 403」）。一个可下发的人都没有时，「新建」按钮根本不显示 | `app/test/orgDispatch.test.ts` 9 项 + `app/test/orgRecipients.test.ts` 6 项（按二级单位分组 / 搜索 / 整组全选 / **无权限的人不出现在列表**）；**模拟器实机走通**：浙海大 OWNER 选人下发 → 事件出现在组织日历（当时还带回执按钮，第 12 条已下线） |
+| 11 | **发起人自己也收得到、也管得了自己下发的那条**（spec §4.2.2） | ①服务端展开收件人时**始终带上发起人自己**（组织 tab 的口径是「发给我 / 我参与的」，否则自己刚发的下一秒就看不见）；②**改 / 撤 / 删只有发起人本人**，其他成员只读——**组织管理员也不行**（已发给别人的通知，内容该由发的人负责）；③下发名单在编辑时**不可修改**（换收件人 = 撤回 + 重新下发）；⑤`OrgEventResponse` 新增 `canEdit`，App 的「编辑」入口按它显示，不自己猜权限 | Java `OrgModuleTest.initiatorSeesAndManagesOwnDispatch`（发起人可见 + 可改 + 同事 20003 + **管理员替人改也 20003** + 撤回放行）、Python 同名用例；既有 `dispatchToDepartmentAndMemberReceipt` 的期望从 2 改成 3（多出来的正是发起人） |
 | 12 | **回执整条下线**（spec §4.2.2，产品定了「所有日程都不需要回执」） | 组织日程与个人日程**长相一致**：卡片只有标题/时间/地点，成员只读、发起人多一个「编辑」。删掉的东西：`POST /org/events/{id}/receipt`、`GET /org/events/{id}/recipients`、`GET /org-admin/events/{id}/receipts`（契约 104 → **101**）、两版后端的回执逻辑与看板回执率、App 的参加/不参加/已完成按钮与「待回执」徽标、Web 组织日历的回执列与回执明细抽屉、下发表单里的「要求回执」开关。`event_dispatch.require_receipt` 与 `event_recipient.receipt_status/receipt_at/remark` 保留为**遗留列**（不做破坏性迁移，代码不再读写其语义） | Java 90 / Python 51 / App 98 / web-admin 18 全绿 + 契约门禁；实机确认组织日程卡片与个人日程一致（无回执按钮、无待回执徽标） |
 | 10 | 拍照入口在组织页也对齐（spec §4.1.9） | 组织页的拍照同样走「拍照/相册 → 上传 → 识别」，组织模式的识别确认页多一行「下发给」（点进同一个选人页），确认后批量下发；识别不可用时如实提示并给「手动新建组织日程」兜底。识别成功分支在模型接入前**无法端到端验证**（与日历页现状相同） | 实机确认按钮与入口存在；成功分支未验证（端侧模型未接入，后端返回 90002） |
 
@@ -215,7 +240,9 @@ abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，�
 | --- | --- | --- |
 | 1 | **拍照 / 相册识别日程**（spec §4.1.9）：契约、约束解码、容错解析、修复重试、App 的拍照/相册入口与可编辑确认页、地点高德解析都已就绪并有测试 | **端侧模型未跑通**：端侧推理要 Dev Client 构建（原生模块 + Android NDK/CMake），本机工具链不具备（Windows SDK 无 ndk/cmake/cmdline-tools、WSL 无 gcc）。**产品要求排到最后再做**；未配模型时接口如实返回 90002 |
 | 2 | （待产品定，非阻塞）超管建组织时**预置首位拥有者成员** | 上一轮列的「路线①」。现在**路线②已落地**（见 §0.0 第 1 条），所以这条只是可选增强：预置能让组织一建好就有一个可认领的拥有者，不必先在后台手工建。若要做：组织创建请求体加 `ownerMemberKey`/`ownerRealName`，两版后端 + 契约 + 超管建组织表单同步改 |
-| 3 | App 侧没有组织成员管理界面 | spec §4.3 把成员/部门管理划给 Web 组织管理端，App 只有组织日历与回执（§4.2）。这是设计如此，不是遗漏；如果产品要求「拥有者在手机上也能导成员」，得先改 spec |
+| 3 | App 侧没有组织成员管理界面 | spec §4.3 把成员/部门管理划给 Web 组织管理端，App 只有组织日历（§4.2）。这是设计如此，不是遗漏；如果产品要求「拥有者在手机上也能导成员」，得先改 spec |
+| 4 | **web-admin 组织日历的「撤回 / 删除」按钮口径不对** | 后端已收紧成「只有发起人能改/撤/删」（§4.2.2），但 `GET /org-admin/events` 没告诉页面「我能不能改」，所以非发起人点下去会收到 20003（页面只弹个错）。修法：给该接口的条目加 `canEdit`（服务端按 `isInitiator` 判定），页面据此隐藏按钮——App 侧已经就是这么做的，管理端照抄即可 |
+| 5 | **撤回之后没有任何「已撤回」入口** | 撤回把 `event_dispatch` 置为 `REVOKED`，而成员端与管理端列表都只列 `ACTIVE` 的下发，所以撤回后两端都翻不到「这条曾经发给谁」。要做历史视图：列表加 `includeRevoked` 参数（管理端）或单独一个「已撤回」筛选 |
 
 App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File`（原因见 §5 陷阱里的
 「Expo SDK 57 的 fetch 不支持 `{uri,name,type}`」）。
@@ -229,8 +256,7 @@ App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File
   意见反馈页（构建与组件测试都过，但没有人在浏览器里逐屏走过）。
 - **组织页的拍照**：按钮与入口在实机确认过，但「识别成功后按条确认 + 选下发对象 + 批量下发」
   这一支要等端侧模型接入才能跑（现在后端返回 90002，走的是「如实提示 + 手动新建」兜底）。
-- **组织页下发的回执闭环**只验到「事件出现在成员端、带待回执与回执按钮」这一步，
-  没有在设备上点「参加」再看管理端的回执统计（后端接口与 Java/Python 用例覆盖了这条）。
+- 回执整条下线之后，这块**没有遗留待验证项**了（原来记的「只验到待回执按钮」随第 12 条作废）。
 - **深色模式持久化只验到「存储读写 + 切换逻辑」**（单测），没在模拟器里做到「杀掉 App 再冷启动仍是深色」。
   上一次实测这个行为的成本不低（Expo Go 的检查器坑，见 §5），建议让用户手点确认。
 
@@ -400,6 +426,10 @@ adb shell am start -a android.intent.action.VIEW -d "exp://127.0.0.1:8081"
 ### 4.5 账号、重置与密钥
 
 - 后台超管：`admin` / `admin123456`（首次启动时 `admin_user` 表为空会自动创建；生产必须改）。
+- **当前演示数据**（2026-09-26 第三轮重建，见 §3.7）：两个组织 + 一个 App 账号
+  - 利欧数字 `LEODIGITAL`：组织管理端账号 `leodigital_admin` / `leodigital123`
+  - 浙江海洋大学 `ZJOU`：组织管理端账号 `zjou_admin` / `zjou123456`
+  - App 登录账号 `18006569106`（个人账号，两个组织里都认领成 OWNER；工号 `1145141919810`、学号 `2023210704127`）
 - App 登录：任意合法手机号 + 验证码。**验证码会直接显示在 App 界面上**（开发环境回显 `debugCode`），也可以用 curl 发验证码接口看响应的 `data.debugCode`。
 - 重置全部数据：停掉后端，然后重建库并清 Redis、清掉 App 本地令牌，最后重启后端。
 
@@ -459,6 +489,8 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 | **模拟器「卡死」，但截图看着很正常** | `adb shell echo` 能用、`screencap` 也能出图（其实是一帧静止画面），可 `dumpsys activity` 报 `DEAD_OBJECT`、`settings`/`input`/`wm size` 报 `Broken pipe` | 这是 guest 的 **system_server 挂了**，不是 App 卡住（差别很大：前者重启模拟器，后者 reload 一下就行）。判据就是上面那三条命令。恢复：`adb reboot` 会被吞掉（`cat /proc/uptime` 不变）；`adb emu kill` 后直接重启会**恢复坏的 quick-boot 快照**（uptime 还是旧的）→ 必须冷启动 `emulator.exe -avd Medium_Phone -no-snapshot-load`。冷启动后别忘 `adb reverse tcp:8081/8080` |
 | **拿几分钟前的 bounds 去点新开的页面** | 编辑页有 `autoFocus` 时键盘会顶起布局，页面向上滚动，同一坐标在新页面上落到了别的控件——我因此在「新建组织日程」里误选了下发对象「指定部门」，还选了个部门，最后发出一条谁都没预期的全组织/部门日程 | **每一步点之前重新 `uiautomator dump`**，别复用上一次的坐标；点完再 dump 一次确认状态（这次就是靠「提示文案写着『指定部门』」和库里 `event_dispatch.scope_type` 才发现的）。自动化脚本里把「关键状态」也 dump 出来断言，别只看「点到了」 |
 | **MyBatis-Plus 的空集合 `.in()`** | 撤回下发之后，成员端查自己的组织日程直接 **500**：`activeDispatchIds` 为空时 `.in(EventDispatch::getId, 空集合)` 拼出非法 SQL（`IN ()`），PG 报 `syntax error at or near ")"` | 空集合要**提前 return**，别把空 `IN` 交给数据库。是新增「撤回后成员端看不到」的用例才暴露出来的（Python 版用单条 SQL 带 `d.status='ACTIVE'`，没有这个问题） |
+| **`git commit -m` 里写反引号** | 提交信息里写 `` `canEdit` `` 这类反引号会被 shell 当命令替换执行：终端打印 `command not found`，而**提交信息里那一段直接消失**（我两次都这么栽的，事后还得 `--amend`） | 带反引号/`$` 的提交信息一律用文件：apply_patch 写到 `/tmp/commit_msg.txt`，再 `git commit -F /tmp/commit_msg.txt`（`--amend` 同理） |
+| **`curl` 里没转义时区偏移** | `?start=2026-09-01T00:00:00+08:00` 里的 `+` 会被当成空格，服务端解析不出时间 → 返回参数错误、`data` 为 null，看着像接口坏了 | 用 `urllib.parse.urlencode` / `--data-urlencode`，或把 `+` 写成 `%2B` |
 | 绝对定位的按钮压住同类控件 | 「今天」按钮绝对定位在月历头部左侧，正好压在上一月的 `‹` 上，两个可点区域重合 | 宁可改成规整三栏（左/中/右留等宽占位），也别用绝对定位往已有控件上叠 |
 | 横向 `ScrollView` 没定高 | 建议问法那排把整屏高度吃掉（它按内容撑满剩余空间） | 给横向滚轮/胶囊行显式 `style={{ flexGrow: 0, maxHeight: 48 }}` |
 | Expo Go 里引用原生模块 | `require('llama.rn')` 这类静态引用会让 Metro 在打包阶段就失败（不是运行时报错） | 端侧模块用**注册制**：`vision/onDevice.ts` 只放接口 + `registerOnDeviceEngine`，Dev Client 构建里再注册实现；Expo Go 下自动回落到服务端识别 |
@@ -555,7 +587,7 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 | --- | --- |
 | 生产部署编排（Dockerfile / Nginx） | 未开始 |
 | App 的提醒 UI | 只有后端接口 |
-| App 侧的组织成员/部门管理 | spec §4.3 把这块划给 Web 组织管理端；App 只有组织日历与回执（是设计，不是遗漏） |
+| App 侧的组织成员/部门管理 | spec §4.3 把这块划给 Web 组织管理端；App 只有组织日历（是设计，不是遗漏） |
 | 微信 / 邮箱绑定 | 需要微信开放平台凭证与邮件通道，属外部依赖 |
 | 真实短信通道、推送（极光）、对象存储（MinIO） | 外部依赖 |
 | 后台 TOTP 双因素 | 未开始 |
