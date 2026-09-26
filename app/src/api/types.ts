@@ -264,3 +264,70 @@ export interface OrgEvent {
   remark: string | null;
   read: boolean;
 }
+
+/**
+ * 当前组织身份（GET /org/current）。
+ *
+ * `orgAdmin` 与 `manageableDepartmentIds` 决定 App 里能看到哪些下发对象：
+ * 组织管理员可下发全组织，部门管理员只能下发自己被授权部门（含所有下级）里的成员。
+ * 服务端仍会独立校验，这里只是把「不能选的」提前收起（spec §4.2.3 / §7.1）。
+ */
+export interface OrgCurrent {
+  orgId: number;
+  orgName: string;
+  orgCode: string;
+  orgLogoUrl?: string | null;
+  orgTimezone?: string | null;
+  memberId: number;
+  realName: string;
+  memberKey: string;
+  jobTitle?: string | null;
+  orgRole: 'OWNER' | 'ADMIN' | 'MEMBER';
+  departmentId: number;
+  departmentName: string;
+  departmentPathNames?: string[];
+  orgAdmin: boolean;
+  manageableDepartmentIds: number[];
+}
+
+/** 组织部门树节点（GET /org/departments/tree）。 */
+export interface OrgDepartmentNode {
+  id: number;
+  parentId?: number | null;
+  name: string;
+  level: number;
+  path: string;
+  sortOrder?: number | null;
+  children?: OrgDepartmentNode[];
+}
+
+/** 组织成员（GET /org/members），服务端已按调用者的部门范围收敛。 */
+export interface OrgMemberItem {
+  id: number;
+  identityId?: number | null;
+  bound: boolean;
+  departmentId: number;
+  departmentName?: string | null;
+  realName: string;
+  memberKey: string;
+  jobTitle?: string | null;
+  orgRole: 'OWNER' | 'ADMIN' | 'MEMBER';
+  status: string;
+  departmentManager: boolean;
+}
+
+/** 下发组织日程（POST /org-admin/events）。 */
+export interface OrgDispatchRequest {
+  title: string;
+  description?: string | null;
+  location?: string | null;
+  startAt: string;
+  endAt: string;
+  allDay?: boolean;
+  timezone?: string;
+  scopeType: 'ALL' | 'DEPARTMENT' | 'MEMBER';
+  departmentId?: number | null;
+  includeSubDepartments?: boolean;
+  memberIds?: number[];
+  requireReceipt?: boolean;
+}

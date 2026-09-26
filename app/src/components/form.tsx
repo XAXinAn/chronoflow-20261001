@@ -60,11 +60,13 @@ export function EditorHeader({
         <Text style={{ color: theme.color.textSecondary, fontSize: 16 }}>{cancelLabel}</Text>
       </Pressable>
       <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>{title}</Text>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="保存"
-        onPress={onSave}
-        disabled={dimmed}
+    <Pressable
+      accessibilityRole="button"
+      // 无障碍标签跟随可见文案：反馈页是「提交」、选人页是「确定」，
+      // 一直念「保存」会让读屏用户不知道该按哪个
+      accessibilityLabel={saveLabel}
+      onPress={onSave}
+      disabled={dimmed}
         hitSlop={10}
       >
         <Text

@@ -11,7 +11,11 @@ import type {
   IdentityView,
   OrgAccount,
   OrgAccountLoginResult,
+  OrgCurrent,
+  OrgDepartmentNode,
+  OrgDispatchRequest,
   OrgEvent,
+  OrgMemberItem,
   RecognizeResponse,
   SearchResultItem,
   SmsLoginResponse,
@@ -221,8 +225,21 @@ export function createEndpoints(client: ApiClient) {
     },
 
     // --------------------------------------------------------------- 组织
-    orgCurrent: () => client.get<Record<string, unknown>>('/api/v1/org/current'),
+    orgCurrent: () => client.get<OrgCurrent>('/api/v1/org/current'),
+    /** 组织部门树（成员可见）；管理端页面对它按可管理范围过滤。 */
+    orgDepartments: () => client.get<OrgDepartmentNode[]>('/api/v1/org/departments/tree'),
+    /** 成员列表；服务端按调用者的部门范围收敛，所以部门管理员只拿得到自己范围内的人。 */
+    orgMembers: (departmentId?: number) =>
+      client.get<OrgMemberItem[]>('/api/v1/org/members', { departmentId }),
     orgEvents: (start: string, end: string) => client.get<OrgEvent[]>('/api/v1/org/events', { start, end }),
+    /**
+     * 下发组织日程（spec §4.2.2）。
+     *
+     * 走的是 `/org-admin/events`：这个前缀同时接受后台组织管理员的 ADMIN 令牌与
+     * App 里组织身份的 ACCESS 令牌，两条入口权限口径一致（spec §3.2 / §6.3）。
+     */
+    dispatchOrgEvent: (payload: OrgDispatchRequest) =>
+      client.post<OrgEvent>('/api/v1/org-admin/events', payload),
     submitReceipt: (eventId: number, status: string, remark?: string) =>
       client.post<OrgEvent>(`/api/v1/org/events/${eventId}/receipt`, { status, remark }),
     markOrgEventRead: (eventId: number) =>

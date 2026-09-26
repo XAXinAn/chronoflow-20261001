@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '../api/client';
-import { EditorHeader } from '../components/form';
+import type { Endpoints } from '../api/endpoints';
+import type { OrgCurrent } from '../api/types';
+import { EditorHeader, FormRow } from '../components/form';
 import { Card, EmptyState, Pill } from '../components/ui';
-import { useAppTheme, useRuntime } from '../context/AppContext';
+import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import {
   confidenceLabel,
   createdSummary,
@@ -28,6 +30,12 @@ export function RecognizedEventsScreen({
   photoUri,
   sourceLabel,
   deviceFallbackReason,
+  /** 传了就是「组织日程」模式：选下发对象后批量下发，而不是写进个人日历（spec §4.1.9） */
+  orgApi,
+  /** 组织模式：选人页回填的下发对象 */
+  selectedMemberIds = [],
+  /** 组织模式：进入选人页 */
+  onPickRecipients,
   /** 用户在 LocationPicker 里选好的地点（带 version 表达「又选了一次」） */
   pickedPlace,
   onPickPlace,
@@ -38,6 +46,9 @@ export function RecognizedEventsScreen({
   photoUri: string;
   sourceLabel: string;
   deviceFallbackReason: string | null;
+  orgApi?: Endpoints | null;
+  selectedMemberIds?: number[];
+  onPickRecipients?: () => void;
   pickedPlace: { version: number; index: number; place: RecognizedEventDraft['place'] } | null;
   onPickPlace: (index: number) => void;
   onBack: () => void;
@@ -45,12 +56,45 @@ export function RecognizedEventsScreen({
 }) {
   const theme = useAppTheme();
   const { api, baseUrl } = useRuntime();
+  const { activeOrgIdentityId, orgApi: resolveOrgApi } = useAppSessionState();
+  /** 组织模式用组织身份的令牌；个人模式用个人令牌（两套上下文不混，spec §3.2） */
+  const dispatchApi = orgApi ?? (activeOrgIdentityId != null ? resolveOrgApi(activeOrgIdentityId) : null);
+  const orgMode = Boolean(orgApi);
+  const [org, setOrg] = useState<OrgCurrent | null>(null);
+  /** 下发对象是一份人名单（spec §4.2.2「下发对象 = 选人」），选择在选人页里完成 */
+  const recipients = selectedMemberIds;
   const [items, setItems] = useState<RecognizedEventDraft[]>(drafts);
   const [selected, setSelected] = useState<Set<number>>(
     () => new Set(drafts.map((_, index) => index)),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 组织模式要先拿到组织上下文：能选哪些下发对象全由它决定（spec §4.2.3）
+  useEffect(() => {
+    if (!orgMode || !dispatchApi) {
+      return;
+    }
+    let active = true;
+    void (async () => {
+      try {
+        const current = await dispatchApi.orgCurrent();
+        if (!active) {
+          return;
+        }
+        setOrg(current);
+      } catch (cause) {
+        console.warn('[recognized] 组织上下文加载失败', cause);
+        if (active) {
+          setError(cause instanceof ApiError ? cause.message : '组织信息加载失败');
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgMode, dispatchApi]);
 
   // 从选点页回来：把地点并进对应那条（用 version 触发，而不是比值——连续选同一地点也要生效）
   const [placeVersion, setPlaceVersion] = useState(0);
@@ -105,6 +149,14 @@ export function RecognizedEventsScreen({
       setError(timeError);
       return;
     }
+    if (orgMode && !org) {
+      setError('组织信息还没取到，请稍后再试');
+      return;
+    }
+    if (orgMode && recipients.length === 0) {
+      setError('请选择下发对象');
+      return;
+    }
     setSaving(true);
     setError(null);
     let eventCount = 0;
@@ -112,6 +164,27 @@ export function RecognizedEventsScreen({
     try {
       for (const [index, item] of items.entries()) {
         if (!selected.has(index)) {
+          continue;
+        }
+        // 组织日程只有「日程」一种形态（没有组织待办）：这一支直接下发
+        if (orgMode) {
+          if (!dispatchApi || !item.startAt) {
+            continue;
+          }
+          await dispatchApi.dispatchOrgEvent({
+            title: item.title,
+            description: item.description ?? null,
+            location: item.place?.name ?? null,
+            startAt: item.startAt,
+            endAt: endAtOrDefault(item),
+            allDay: Boolean(item.allDay),
+            timezone: org?.orgTimezone || 'Asia/Shanghai',
+            // 下发对象就是这份人名单（spec §4.2.2）
+            scopeType: 'MEMBER',
+            memberIds: recipients,
+            requireReceipt: true,
+          });
+          eventCount += 1;
           continue;
         }
         if (draftKind(item) === 'EVENT' && item.startAt) {
@@ -139,7 +212,11 @@ export function RecognizedEventsScreen({
           taskCount += 1;
         }
       }
-      onCreated(createdSummary(eventCount, taskCount));
+      onCreated(
+        orgMode
+          ? `已下发 ${eventCount} 条组织日程`
+          : createdSummary(eventCount, taskCount),
+      );
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : '创建失败');
     } finally {
@@ -153,10 +230,10 @@ export function RecognizedEventsScreen({
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.bg }}>
       <EditorHeader
-        title="识别结果（可修改）"
+        title={orgMode ? '识别结果（选下发对象）' : '识别结果（可修改）'}
         cancelLabel="返回"
-        saveLabel="创建"
-        savingLabel="创建中…"
+        saveLabel={orgMode ? '下发' : '创建'}
+        savingLabel={orgMode ? '下发中…' : '创建中…'}
         saving={saving}
         saveDisabled={selected.size === 0}
         onCancel={onBack}
@@ -176,6 +253,25 @@ export function RecognizedEventsScreen({
           {sourceLabel}
           {deviceFallbackReason ? `（${deviceFallbackReason}）` : ''}
         </Text>
+
+        {/* 组织模式：先定「发给谁」，再逐条确认——下发对象是组织日程独有的必填项（spec §4.2.3） */}
+        {orgMode ? (
+          <Card>
+            <FormRow label="下发给" onPress={onPickRecipients} last>
+              <Text
+                style={{
+                  color: recipients.length ? theme.color.textPrimary : theme.color.textTertiary,
+                  fontSize: 15,
+                  flex: 1,
+                  textAlign: 'right',
+                }}
+              >
+                {recipients.length ? `已选 ${recipients.length} 人` : '选择人员'}
+              </Text>
+              <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+            </FormRow>
+          </Card>
+        ) : null}
 
         {items.length === 0 ? (
           <EmptyState title="这张图里没有识别到日程" hint="换一张更清晰的照片，或手动新建" />
@@ -197,9 +293,11 @@ export function RecognizedEventsScreen({
                   </Text>
                 </Pressable>
 
-                {/* 归类可改：模型把「登记截止」判成日程时，用户点一下就能改回待办 */}
-                <View style={styles.kindRow}>
-                  {(['EVENT', 'TASK'] as const).map((value) => {
+                {/* 归类可改：模型把「登记截止」判成日程时，用户点一下就能改回待办。
+                    组织日程没有「待办」这一形态，所以组织模式下不显示这排归类按钮 */}
+                {!orgMode ? (
+                  <View style={styles.kindRow}>
+                    {(['EVENT', 'TASK'] as const).map((value) => {
                     const active = kind === value;
                     return (
                       <Pressable
@@ -227,7 +325,8 @@ export function RecognizedEventsScreen({
                       </Pressable>
                     );
                   })}
-                </View>
+                  </View>
+                ) : null}
 
                 {confidenceLabel(item.confidence) ? (
                   <Pill text={confidenceLabel(item.confidence) as string} />

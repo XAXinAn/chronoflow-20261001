@@ -16,7 +16,23 @@ import { OrgEventsScreen } from './OrgEventsScreen';
  *    （认领是幂等的，不需要密码）；
  * 3. 有令牌 → 交给 OrgEventsScreen，**所有请求都用这个组织的令牌**，切组织就整套换掉。
  */
-export function OrgTabScreen({ onOpenAccounts }: { onOpenAccounts: () => void }) {
+export function OrgTabScreen({
+  onOpenAccounts,
+  onCreateOrgEvent,
+  onOpenRecognized,
+}: {
+  onOpenAccounts: () => void;
+  /** 新建并下发组织日程（spec §4.2.2）；只有能下发的人才会在组织页看到入口 */
+  onCreateOrgEvent: (dateKey: string) => void;
+  /** 拍照识别结果确认页（选好下发对象后批量下发，spec §4.1.9） */
+  onOpenRecognized: (payload: {
+    drafts: import('../domain/vision').RecognizedEventDraft[];
+    photoUri: string;
+    sourceLabel: string;
+    deviceFallbackReason: string | null;
+    origin: 'ORG';
+  }) => void;
+}) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const {
@@ -96,6 +112,8 @@ export function OrgTabScreen({ onOpenAccounts }: { onOpenAccounts: () => void })
       api={api}
       orgName={active.orgName}
       onOpenAccounts={onOpenAccounts}
+      onCreateOrgEvent={onCreateOrgEvent}
+      onOpenRecognized={onOpenRecognized}
       focusDateKey={orgFocusDateKey}
       onFocusApplied={() => setOrgFocusDateKey(null)}
     />

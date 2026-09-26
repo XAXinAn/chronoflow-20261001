@@ -116,7 +116,7 @@ XaTodo（心安待办），智能日程与待办 App。项目代号 `xa-todo`。
 | backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **50 项全绿** |
 | packages/design-tokens | 完成 | 8 个用例（1 个测试文件；`node --test` 汇总会显示 1） |
 | web-admin（React + Vite + AntD） | 完成：超管六页 + **组织管理端五页** + 意见反馈 | 18 项 |
-| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程与回执、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记/拍照入口、头像上传、意见反馈、组织账号认领与账户管理、小安 tab、深色模式偏好持久化 | **84 项**（**仅纯逻辑层，组件未做渲染测试**） |
+| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程与回执、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记/拍照入口、头像上传、意见反馈、组织账号认领与账户管理、小安 tab、深色模式偏好持久化 | **98 项**（**仅纯逻辑层，组件未做渲染测试**） |
 
 最近几次提交（倒序）：
 
@@ -174,6 +174,8 @@ abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，�
 | 6 | **组织管理端的审计日志** | 新增 `OrgAuditSink`（定义在 xa-org，实现在 xa-admin，避免 xa-org 反向依赖）+ `OrgAuditRecorder`；Python 侧 `OrgService.record_org_audit`；在 controller/router 层逐端点记录 | 冒烟测试里 `GET /org-admin/logs` 返回 `ORG_DEPARTMENT_CREATE`、`ORG_MEMBER_CREATE` |
 | 7 | **V15 迁移** | `event.creator_identity_id`、`event_dispatch.created_by_member_id` 放开非空；`event_dispatch` 新增 `created_by_admin_id` + CHECK（发起方恰有一列非空） | 开发库启动日志：`Successfully applied 2 migrations ... now at version v15` |
 | 8 | 顺带修 | ①多部分请求缺 `file` → 现在 400/10001（原来掉进兜底返回 90001）；②批量导入补 `requireOrgAdmin`（spec §2.2）；③Python 导入模板从老的 6 列改回 4 列，与 Java 版和 spec §4.3 一致 | 冒烟时实测到 90001 才发现的第①条；②有 Java/Python 用例；③两版 `template()` 现在同列 |
+| 9 | **组织管理员在 App 里下发日程**（spec §4.2.2 / §4.2.3） | 组织 tab 的悬浮按钮与日历页**同一套**（拍照 / 跳到指定日期 / 新建）；新建进整页表单（`OrgEventEditorScreen`），**下发对象 = 选人**：点那一行 push 到独立选人页（`OrgRecipientPickerScreen`）——按二级单位分组、可搜姓名/工号/部门、可整组全选、多选，**顶部常驻已选列表**（可逐个移除）。提交的是**成员级名单**（`scopeType=MEMBER` + `memberIds`）。**没有下发权限的人不出现、也不能选**：可选范围 = `/org/current` 的 `manageableDepartmentIds`（`GET /org/members` 对普通成员会返回他自己，必须在选择阶段就按这条规则过滤，否则就是「能选但一点下发必然 403」）。一个可下发的人都没有时，「新建」按钮根本不显示 | `app/test/orgDispatch.test.ts` 8 项 + `app/test/orgRecipients.test.ts` 6 项（按二级单位分组 / 搜索 / 整组全选 / **无权限的人不出现在列表**）；**模拟器实机走通**：浙海大 OWNER 选人下发 → 事件出现在组织日历并带「待回执」与回执按钮 |
+| 10 | 拍照入口在组织页也对齐（spec §4.1.9） | 组织页的拍照同样走「拍照/相册 → 上传 → 识别」，组织模式的识别确认页多一行「下发给」（点进同一个选人页），确认后批量下发；识别不可用时如实提示并给「手动新建组织日程」兜底。识别成功分支在模型接入前**无法端到端验证**（与日历页现状相同） | 实机确认按钮与入口存在；成功分支未验证（端侧模型未接入，后端返回 90002） |
 
 ### 3.2 节假日数据（2026-09-25 的新约定，别搞混）
 
@@ -223,6 +225,10 @@ App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File
 - 意见反馈的历史列表在数据较多时的滚动表现；「我的」页深色模式下的观感。
 - **第三轮新增、只在真实环境用 HTTP 验过、没在浏览器里点过的**：web-admin 组织管理端五页 +
   意见反馈页（构建与组件测试都过，但没有人在浏览器里逐屏走过）。
+- **组织页的拍照**：按钮与入口在实机确认过，但「识别成功后按条确认 + 选下发对象 + 批量下发」
+  这一支要等端侧模型接入才能跑（现在后端返回 90002，走的是「如实提示 + 手动新建」兜底）。
+- **组织页下发的回执闭环**只验到「事件出现在成员端、带待回执与回执按钮」这一步，
+  没有在设备上点「参加」再看管理端的回执统计（后端接口与 Java/Python 用例覆盖了这条）。
 - **深色模式持久化只验到「存储读写 + 切换逻辑」**（单测），没在模拟器里做到「杀掉 App 再冷启动仍是深色」。
   上一次实测这个行为的成本不低（Expo Go 的检查器坑，见 §5），建议让用户手点确认。
 
@@ -248,18 +254,26 @@ App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File
   结果「刚建出来的那一层把自己挡住了」。`requireCanManageDepartment(OrgActor, …)` 每次都按库里当前结构重算
   （Python 侧天然每次查库，没有这个问题）。
 
-### 3.7 模拟企业数据集
+### 3.7 演示数据集（2026-09-26 第三轮换成了两个真实形态的组织）
 
-`scripts/seed_demo_org.py` 可重复执行（按组织编码 / 部门路径 / 手机号判重），一键造出一家模拟大型企业：
+当前环境里的数据由 **`scripts/seed_demo_orgs.py`** 造出来，可重复执行（组织按编码、部门按父级+名称、
+成员按唯一识别 ID 判重）：
 
 ```
-backend-python/.venv/bin/python scripts/seed_demo_org.py
-# 组织 #1 心安科技(XATECH)：43 个部门（中心→部→组 三层）、196 名成员、43 位部门负责人、4 位组织管理员、1 位拥有者
-# App 登录账号 18006569106（王思远）＝ 技术中心 / 应用研发部 负责人（中间层级部门）
+backend-python/.venv/bin/python scripts/seed_demo_orgs.py            # 两个组织都建/补齐
+backend-python/.venv/bin/python scripts/seed_demo_orgs.py --only ZJOU
+# 组织 #1 利欧数字(LEODIGITAL)：45 个部门（总部→中心→部→组 四层）、118 名成员、44 位部门负责人
+# 组织 #2 浙江海洋大学(ZJOU)：52 个部门（总部→学院→系 三层）、261 名成员、51 位部门负责人
+# 两个组织的拥有者都是 App 登录账号 18006569106（工号 1145141919810 / 学号 2023210704127）
 ```
 
-账号分布：技术中心 87 人、市场中心 57 人、产品中心 28 人、职能中心 24 人；手机号用 `131` 号段顺序生成。
-**注意**：该脚本直接写库，绕过了「组织成员没有导入入口」这个断点（见 §3.4 第 1 条）。
+**这个脚本全部走正式接口**（组织管理端 API），不直接写库——上一版 `scripts/seed_demo_org.py`
+直连数据库是因为「新组织没有入口创建首位成员」；那条断点已经在 §0.0 第 1 条里解决，
+所以现在让种子脚本也走 API：**这条路一旦断，脚本会先炸**，比文档更早报警。
+旧脚本保留但已过时（它造的是已经不存在的心安科技），读的时候别被它的注释误导。
+
+生成的数据是确定性的（姓名、工号、学号都由固定序列推出），因此重跑会得到同一批人；
+要彻底重来就先清空数据（§4.5），再跑脚本。
 
 ### 3.8 验证方法建议
 
@@ -438,6 +452,7 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 | 日历/月视图固定画 6 行 | 9 月视图里出现**一整周 10 月**——那一周一天都不属于 9 月 | `buildMonthGrid` 按实际需要渲染 5/6 行，`app/test/calendar.test.ts` 有回归测试；注意 1 基月份别当 0 基传给 `Date.UTC` |
 | **凭截图估算坐标去 adb 点按钮** | 我点「确定/取消/回到今天」连点三轮都没反应，以为是按钮坏了——实际 y 高了 70px，落在那上面一列滚轮的命中区里，只改了草稿 | 点之前先 `adb shell uiautomator dump` 拿真实 `bounds`，或直接看 `content-desc`；这台机器上滚轮列的可点范围比视觉高度更大 |
 | **模拟器「卡死」，但截图看着很正常** | `adb shell echo` 能用、`screencap` 也能出图（其实是一帧静止画面），可 `dumpsys activity` 报 `DEAD_OBJECT`、`settings`/`input`/`wm size` 报 `Broken pipe` | 这是 guest 的 **system_server 挂了**，不是 App 卡住（差别很大：前者重启模拟器，后者 reload 一下就行）。判据就是上面那三条命令。恢复：`adb reboot` 会被吞掉（`cat /proc/uptime` 不变）；`adb emu kill` 后直接重启会**恢复坏的 quick-boot 快照**（uptime 还是旧的）→ 必须冷启动 `emulator.exe -avd Medium_Phone -no-snapshot-load`。冷启动后别忘 `adb reverse tcp:8081/8080` |
+| **拿几分钟前的 bounds 去点新开的页面** | 编辑页有 `autoFocus` 时键盘会顶起布局，页面向上滚动，同一坐标在新页面上落到了别的控件——我因此在「新建组织日程」里误选了下发对象「指定部门」，还选了个部门，最后发出一条谁都没预期的全组织/部门日程 | **每一步点之前重新 `uiautomator dump`**，别复用上一次的坐标；点完再 dump 一次确认状态（这次就是靠「提示文案写着『指定部门』」和库里 `event_dispatch.scope_type` 才发现的）。自动化脚本里把「关键状态」也 dump 出来断言，别只看「点到了」 |
 | 绝对定位的按钮压住同类控件 | 「今天」按钮绝对定位在月历头部左侧，正好压在上一月的 `‹` 上，两个可点区域重合 | 宁可改成规整三栏（左/中/右留等宽占位），也别用绝对定位往已有控件上叠 |
 | 横向 `ScrollView` 没定高 | 建议问法那排把整屏高度吃掉（它按内容撑满剩余空间） | 给横向滚轮/胶囊行显式 `style={{ flexGrow: 0, maxHeight: 48 }}` |
 | Expo Go 里引用原生模块 | `require('llama.rn')` 这类静态引用会让 Metro 在打包阶段就失败（不是运行时报错） | 端侧模块用**注册制**：`vision/onDevice.ts` 只放接口 + `registerOnDeviceEngine`，Dev Client 构建里再注册实现；Expo Go 下自动回落到服务端识别 |
@@ -558,7 +573,7 @@ cd backend-python && .venv/bin/python -m pytest  # 期望 50 项全绿
 npm run build -w @xa-todo/design-tokens
 npm run build -w @xa-todo/web-admin
 npm run typecheck -w @xa-todo/app
-npm test                                        # 期望 design-tokens 8 例 + web-admin 18 项 + app 84 项全绿
+npm test                                        # 期望 design-tokens 8 例 + web-admin 18 项 + app 98 项全绿
 ```
 
 CI 在 `.github/workflows/ci.yml`，三个 job：Java / Python / 前端。
