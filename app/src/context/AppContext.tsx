@@ -82,11 +82,15 @@ export function AppProvider({
   useEffect(() => {
     let active = true;
     void (async () => {
-      const store = await createSecureThemeStore();
-      themeStoreRef.current = store;
-      const stored = await store.read();
-      if (active && stored) {
-        setOverride(stored);
+      try {
+        const store = await createSecureThemeStore();
+        themeStoreRef.current = store;
+        const stored = await store.read();
+        if (active && stored) {
+          setOverride(stored);
+        }
+      } catch {
+        // 安全存储不可用（例如 Web 预览）：降级为「本次会话跟随系统」，不影响其他功能
       }
     })();
     return () => {
