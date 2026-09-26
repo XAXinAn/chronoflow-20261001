@@ -86,3 +86,120 @@ export interface AuditLog {
   ip?: string;
   createdAt: string;
 }
+
+// ------------------------------------------------------------ 组织管理端（spec §4.3）
+
+export interface OrgSettings {
+  orgId: number;
+  name: string;
+  code: string;
+  logoUrl?: string;
+  contactName?: string;
+  contactPhone?: string;
+  timezone?: string;
+  status: OrgStatus;
+  /** 成员上限只读：由平台超管控制，组织侧不能自行上调 */
+  maxMembers?: number;
+  memberCount: number;
+}
+
+export interface OrgMember {
+  id: number;
+  identityId?: number;
+  /** 是否已被某个个人账号认领（认领后成员才能在 App 里看到组织日历） */
+  bound: boolean;
+  departmentId: number;
+  departmentName?: string;
+  realName: string;
+  memberKey: string;
+  jobTitle?: string;
+  orgRole: 'OWNER' | 'ADMIN' | 'MEMBER';
+  status: 'ACTIVE' | 'DISABLED' | 'LEFT';
+  departmentManager: boolean;
+}
+
+export interface DepartmentNode {
+  id: number;
+  parentId?: number;
+  name: string;
+  level: number;
+  path: string;
+  sortOrder?: number;
+  children?: DepartmentNode[];
+}
+
+export interface OrgEventItem {
+  eventId: number;
+  dispatchId: number;
+  title: string;
+  description?: string;
+  location?: string;
+  startAt: string;
+  endAt: string;
+  allDay: boolean;
+  timezone: string;
+  scopeType: 'ALL' | 'DEPARTMENT' | 'MEMBER';
+  departmentId?: number;
+  requireReceipt: boolean;
+  recipientCount: number;
+  pendingCount: number;
+  acceptedCount: number;
+  declinedCount: number;
+  completedCount: number;
+}
+
+export interface ReceiptItem {
+  orgMemberId: number;
+  realName?: string;
+  departmentName?: string;
+  receiptStatus: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'COMPLETED';
+  receiptAt?: string;
+  remark?: string;
+  read: boolean;
+}
+
+export interface ReceiptSummary {
+  dispatchId: number;
+  eventId: number;
+  scopeType: string;
+  requireReceipt: boolean;
+  total: number;
+  pending: number;
+  accepted: number;
+  declined: number;
+  completed: number;
+  readCount: number;
+  items: ReceiptItem[];
+}
+
+export interface ImportRowResult {
+  rowNo: number;
+  status: 'SUCCESS' | 'FAILED';
+  errorMessage?: string;
+  createdMemberId?: number;
+  rawData?: string;
+}
+
+export interface ImportBatch {
+  batchId: number;
+  fileName: string;
+  status: 'PROCESSING' | 'SUCCESS' | 'PARTIAL_FAILED' | 'FAILED';
+  totalCount: number;
+  successCount: number;
+  failCount: number;
+  createdAt: string;
+  finishedAt?: string;
+  rows?: ImportRowResult[];
+}
+
+// ------------------------------------------------------------ 意见反馈（spec §4.1.9）
+
+export interface Feedback {
+  id: number;
+  category: 'BUG' | 'SUGGESTION' | 'OTHER';
+  content: string;
+  images?: string[];
+  status: 'OPEN' | 'HANDLED';
+  createdAt: string;
+  handledAt?: string;
+}

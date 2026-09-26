@@ -36,6 +36,9 @@ public class ImportBatch {
 
     private Long createdByMemberId;
 
+    /** 后台组织管理员（Web 组织管理端）发起的导入记在这里；成员侧发起时为空（spec §5.7）。 */
+    private Long createdByAdminId;
+
     private OffsetDateTime createdAt;
 
     private OffsetDateTime finishedAt;
@@ -110,6 +113,14 @@ public class ImportBatch {
 
     public void setCreatedByMemberId(Long createdByMemberId) {
         this.createdByMemberId = createdByMemberId;
+    }
+
+    public Long getCreatedByAdminId() {
+        return createdByAdminId;
+    }
+
+    public void setCreatedByAdminId(Long createdByAdminId) {
+        this.createdByAdminId = createdByAdminId;
     }
 
     public OffsetDateTime getCreatedAt() {

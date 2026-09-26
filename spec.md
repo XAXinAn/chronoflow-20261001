@@ -186,6 +186,13 @@ XaTodo（心安待办）是一款智能日程与待办管理应用。产品围�
 
 注册令牌与选择身份令牌**不能**访问业务接口，由鉴权过滤器按作用域拒绝（返回 `20001`）。
 
+**后台组织管理员令牌（`ADMIN`）与组织管理端**：Web 组织管理端（§4.3）由 `admin_user`
+（`role=ORG_ADMIN` 且带 `org_id`）登录，拿到的是 `ADMIN` 令牌。该令牌**可以**调用
+`/org-admin/**`——这个前缀本来就属于「组织管理员」这个角色，而新组织里可能一个成员都还没有
+（见 §4.3「首位成员从哪来」）。同一个前缀同时接受**组织身份的 `ACCESS` 令牌**（App 侧的组织管理员），
+两条路径权限口径一致：都只能操作自己那个组织，都要过组织是否停用的校验。
+`/org/**`（成员视角）仍然只认组织身份的 `ACCESS` 令牌，两套令牌不混用。
+
 > `POST /auth/identity/select` 与 `selectToken` 保留给「账号下已有多个身份、需要显式指定」的场景
 > （例如将来的 Web 端），**App 端不再使用**：组织身份现在只能通过登录组织账号产生。
 
@@ -509,6 +516,15 @@ XaTodo（心安待办）是一款智能日程与待办管理应用。产品围�
 
 面向组织拥有者与组织管理员，能力包括：
 
+**登录方式**：超管建组织时同步创建的 `admin_user`（`role=ORG_ADMIN`，带 `org_id`）用用户名密码登录本端，
+拿到的 `ADMIN` 令牌可以直接调用 `/org-admin/**`（见 §3.2）。组织身份（`ORG_MEMBER`）的 `ACCESS` 令牌
+同样可以调这个前缀——两条入口的权限口径一致，都限定在自己的组织内。
+
+**首位成员从哪来（原「鸡生蛋」断点的解法）**：新组织建好时库里的成员是 0，而组织侧的人员数据
+（部门、成员、导入）全部由组织管理员管理。若这条路只能靠「成员先认领」才能用，新组织就永远开不了张。
+因此规则定成：**组织管理员用后台账号登录本端，就能建部门、导成员**；导进来的成员再用
+「组织唯一 ID + 唯一识别 ID」在 App 里认领（§3.2）。第一条链路不依赖任何成员先存在。
+
 - **成员管理**：单个新增、编辑、停用、调岗、**解绑组织账号**（成员换账号或被冒领时的恢复路径）、设为部门管理员。
 - **批量导入**：下载 Excel/CSV 模板 → 上传文件 → 同步校验并返回逐行结果。
   - 模板列：**姓名、成员唯一识别 ID（学号/工号，必填且组织内唯一）**、部门路径（如「技术中心/后端组」）、角色（选填）、手机号（选填）、邮箱（选填）。
@@ -523,6 +539,9 @@ XaTodo（心安待办）是一款智能日程与待办管理应用。产品围�
 - **组织日历管理**：创建/编辑/删除组织日程、选择下发目标、查看回执统计（已读/已参加/已完成比例）与回执明细。
 - **组织设置**：组织名称、Logo、联系方式、时区、成员上限展示（不可自行上调）。
 - **操作日志**：查看本组织内的管理操作记录。
+
+> 组织管理端的写操作会记入 `audit_log`（`org_id` 非空），因此「操作日志」页展示的是本组织的真实管理动作，
+> 不是空壳；平台超管在 §4.4 的审计日志里能一并看到。
 
 ### 4.4 Web 后台 —— 平台超管端
 
@@ -618,6 +637,7 @@ erDiagram
 | --- | --- | --- |
 | `calendar` | `id`、`calendar_type`、`owner_identity_id`(可空)、`org_id`(可空)、`department_id`(可空)、`name`、`color`、`timezone`、`is_default`、`status`、`created_at`、`updated_at` | `PERSONAL` 时 `owner_identity_id` 必填；`ORG`/`ORG_DEPARTMENT` 时 `org_id` 必填 |
 | `event` | `id`、`calendar_id`、`org_id`(可空)、`creator_identity_id`、`source_type`、`title`、`description`、`location_name`、`location_address`、`latitude`、`longitude`、`poi_id`、`coordinate_system`、`start_at`、`end_at`、`all_day`、`timezone`、`rrule`、`rrule_until`、`status`、`availability`、`color`、`priority`、`category`、`url`、`travel_time_minutes`、`dispatch_id`(可空)、`updated_after_dispatch`、`created_at`、`updated_at`、`deleted_at` | 索引 `idx_calendar_range(calendar_id, start_at, end_at)`；`end_at > start_at`；`status` ∈ `CONFIRMED`/`TENTATIVE`/`CANCELLED`；`availability` ∈ `BUSY`/`FREE`；地点字段语义见 §5.9 |
+| | | `creator_identity_id` **可空**：个人日程必填；组织日程由 Web 组织管理端下发时没有 C 端身份，此时为空，发起方记在 `event_dispatch.created_by_admin_id` |
 | `event_exception` | `id`、`event_id`、`occurrence_date`、`exception_type`(MODIFIED/CANCELLED)、`override_start_at`、`override_end_at`、`override_title`、`created_at` | `(event_id, occurrence_date)` 唯一 |
 | `task` | `id`、`calendar_id`、`owner_identity_id`、`org_id`(可空)、`parent_task_id`(可空)、`event_id`(可空)、`title`、`description`、`due_at`(可空)、`all_day`、`status`、`completed_at`、`priority`、`rrule`、`images`(jsonb)、`sort_order`、`created_at`、`updated_at`、`deleted_at` | 仅两层（父/子）；父任务与子任务须同 `calendar_id`；`event_id` 指向关联日程（一个日程可关联多个待办，见 §4.1.6），删除日程时置空而非级联删除；`images` 存上传后的相对 URL 数组（≤9，与 `feedback.images` 同一套写法） |
 | `reminder` | `id`、`target_type`(EVENT/TASK)、`target_id`、`identity_id`、`occurrence_date`(可空)、`minutes_before`、`channel`、`enabled`、`sent_at`、`created_at` | `(target_type, target_id, identity_id, occurrence_date, minutes_before)` 唯一 |
@@ -626,7 +646,7 @@ erDiagram
 
 | 表 | 关键字段 | 约束 / 说明 |
 | --- | --- | --- |
-| `event_dispatch` | `id`、`event_id`、`org_id`、`scope_type`、`department_id`(可空)、`include_sub_departments`、`require_receipt`、`created_by_member_id`、`status`(ACTIVE/REVOKED)、`recipient_count`、`created_at`、`updated_at` | 撤回置 `REVOKED` |
+| `event_dispatch` | `id`、`event_id`、`org_id`、`scope_type`、`department_id`(可空)、`include_sub_departments`、`require_receipt`、`created_by_member_id`(可空)、`created_by_admin_id`(可空)、`status`(ACTIVE/REVOKED)、`recipient_count`、`created_at`、`updated_at` | 撤回置 `REVOKED`；两个发起方列**恰有一列非空**：成员（App 组织身份，§4.2.2）下发记 `created_by_member_id`，后台组织管理员（Web，§4.3）下发记 `created_by_admin_id` |
 | `event_recipient` | `id`、`dispatch_id`、`event_id`、`org_member_id`、`department_id`、`receipt_status`、`receipt_at`、`remark`、`read_at`、`occurrence_date`(可空)、`created_at`、`updated_at` | `(dispatch_id, org_member_id, occurrence_date)` 唯一；下发时快照展开 |
 
 ### 5.7 导入与审计
@@ -872,6 +892,9 @@ erDiagram
 
 ### 6.3 Web 后台接口清单
 
+> `/org-admin/**` 是**组织管理员**的接口面（§4.3）：既接受后台 `ORG_ADMIN` 的 `ADMIN` 令牌，
+> 也接受 App 侧组织身份的 `ACCESS` 令牌（§3.2）。两者都只能作用于令牌所属的那个组织。
+
 **公共**
 
 | 方法 | 路径 | 说明 |
@@ -914,6 +937,7 @@ erDiagram
 | POST | `/org-admin/members/import` | 上传模板文件批量导入（返回 `batchId`） |
 | GET | `/org-admin/imports` | 导入批次列表 |
 | GET | `/org-admin/imports/{id}` | 批次详情与逐行结果 |
+| GET | `/org-admin/imports/{id}/failures` | 导出失败明细 CSV，便于修正后重传 |
 | GET | `/org-admin/members/import/template` | 下载 xlsx 导入模板（与具体批次无关，故不挂在批次路径下） |
 | GET | `/org-admin/imports/{id}/failures` | 导出失败明细 CSV，便于修正后重传 |
 | GET / POST | `/org-admin/departments` | 部门树 / 新建部门 |
@@ -1237,6 +1261,9 @@ flowchart LR
 8. 批量导入含重复手机号、缺失必填、非法部门路径时，逐行错误正确回显且成功行已入库。
 9. 账号封禁后所有刷新令牌失效，接口返回 `20001` / `20004`。
 10. 超管停用组织后，该组织成员访问组织接口被拒绝。
+11. **组织管理端入口**（§4.3）：组织管理员用后台 `ADMIN` 令牌调 `/org-admin/**` 成功
+    （新建组织后即可导入成员）；同一令牌访问**别的**组织的数据被拒；
+    普通成员用组织身份的 `ACCESS` 令牌调 `/org-admin/members/import` → `20003` 无权限。
 
 ### 10.2 后端测试（Python，阶段二）
 

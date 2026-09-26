@@ -34,6 +34,9 @@ public class EventDispatch {
 
     private Long createdByMemberId;
 
+    /** 后台组织管理员（Web 组织管理端）下发时记录其 admin_user id；成员侧下发留空（spec §5.6）。 */
+    private Long createdByAdminId;
+
     private String status;
 
     private Integer recipientCount;
@@ -100,6 +103,14 @@ public class EventDispatch {
 
     public void setCreatedByMemberId(Long createdByMemberId) {
         this.createdByMemberId = createdByMemberId;
+    }
+
+    public Long getCreatedByAdminId() {
+        return createdByAdminId;
+    }
+
+    public void setCreatedByAdminId(Long createdByAdminId) {
+        this.createdByAdminId = createdByAdminId;
     }
 
     public String getStatus() {

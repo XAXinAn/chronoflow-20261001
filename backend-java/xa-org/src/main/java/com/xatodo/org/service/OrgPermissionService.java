@@ -1,6 +1,7 @@
 package com.xatodo.org.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.xatodo.auth.security.AdminActor;
 import com.xatodo.auth.security.IdentityPrincipal;
 import com.xatodo.common.api.ErrorCode;
 import com.xatodo.common.exception.BizException;
@@ -12,6 +13,8 @@ import com.xatodo.org.mapper.DepartmentManagerMapper;
 import com.xatodo.org.mapper.DepartmentMapper;
 import com.xatodo.org.mapper.OrgMemberMapper;
 import com.xatodo.org.mapper.OrganizationMapper;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
@@ -51,11 +54,7 @@ public class OrgPermissionService {
             throw BizException.of(ErrorCode.FORBIDDEN, "该接口需要组织身份");
         }
         // 组织被平台停用 / 禁用后，成员不得再访问组织接口（spec §10.1 必测场景 10）
-        Organization organization = organizationMapper.selectById(principal.orgId());
-        if (organization == null || organization.getDeletedAt() != null
-                || !Organization.STATUS_ACTIVE.equals(organization.getStatus())) {
-            throw BizException.of(ErrorCode.FORBIDDEN, "组织已停用");
-        }
+        requireActiveOrganization(principal.orgId());
         OrgMember member = orgMemberMapper.selectOne(new LambdaQueryWrapper<OrgMember>()
                 .eq(OrgMember::getOrgId, principal.orgId())
                 .eq(OrgMember::getIdentityId, principal.identityId()));
@@ -76,6 +75,87 @@ public class OrgPermissionService {
     public void requireOrgAdmin(OrgMember member) {
         if (!isOrgAdmin(member)) {
             throw BizException.of(ErrorCode.FORBIDDEN, "该操作需要组织管理员权限");
+        }
+    }
+
+    /**
+     * 把当前安全上下文解析成组织执行者（spec §3.2 / §4.3）。
+     *
+     * <p>两条入口都通向「组织管理员」这个角色：App 的组织身份令牌，或 Web 组织管理端的后台管理员令牌。
+     */
+    public OrgActor resolveActor() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Object principal = authentication == null ? null : authentication.getPrincipal();
+        if (principal instanceof AdminActor admin) {
+            return adminActor(admin);
+        }
+        if (principal instanceof IdentityPrincipal identity) {
+            return memberActor(requireMembership(identity));
+        }
+        throw BizException.of(ErrorCode.UNAUTHENTICATED);
+    }
+
+    public OrgActor memberActor(OrgMember member) {
+        return OrgActor.ofMember(member, manageableDepartmentIds(member));
+    }
+
+    /**
+     * 后台组织管理员 → 组织执行者。平台超管没有组织归属，组织管理端不归它用（spec §4.3）。
+     */
+    public OrgActor adminActor(AdminActor admin) {
+        if (admin.orgId() == null || !AdminActor.ROLE_ORG_ADMIN.equals(admin.role())) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "该接口需要组织管理员身份");
+        }
+        requireActiveOrganization(admin.orgId());
+        // 后台管理员不受部门限制（spec §2.2：组织管理员管理全组织）
+        return OrgActor.ofAdmin(admin.adminId(), admin.username(), admin.orgId(),
+                allDepartmentIds(admin.orgId()));
+    }
+
+    public boolean isOrgAdmin(OrgActor actor) {
+        return actor.isOrgAdmin();
+    }
+
+    public void requireOrgAdmin(OrgActor actor) {
+        if (!actor.isOrgAdmin()) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "该操作需要组织管理员权限");
+        }
+    }
+
+    public Set<Long> manageableDepartmentIds(OrgActor actor) {
+        return actor.manageableDepartmentIds();
+    }
+
+    /**
+     * 重新计算可管理部门集合。批量导入会在过程中自动补建部门，
+     * 快照会过期，因此需要按当前库里的结构重算（spec §4.3 的「自动创建部门」开关）。
+     */
+    public Set<Long> refreshManageableDepartmentIds(OrgActor actor) {
+        if (actor.isAdminActor()) {
+            return allDepartmentIds(actor.getOrgId());
+        }
+        OrgMember member = orgMemberMapper.selectById(actor.getId());
+        if (member == null) {
+            return Set.of();
+        }
+        return manageableDepartmentIds(member);
+    }
+
+    /**
+     * 要求当前执行者对目标部门具备管理权，否则拒绝。
+     */
+    public void requireCanManageDepartment(OrgActor actor, Long departmentId) {
+        if (departmentId == null) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "departmentId 不能为空");
+        }
+        Department department = departmentMapper.selectById(departmentId);
+        if (department == null || !actor.getOrgId().equals(department.getOrgId())) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "部门不存在或不属于当前组织");
+        }
+        // 按当前库里的部门结构判断，而不是执行者对象里的快照：批量导入会在过程中自动补建部门，
+        // 快照一过期，刚建出来的那一层就会把自己挡住。
+        if (!refreshManageableDepartmentIds(actor).contains(departmentId)) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "无权管理该部门");
         }
     }
 
@@ -114,6 +194,18 @@ public class OrgPermissionService {
         if (!manageableDepartmentIds(member).contains(departmentId)) {
             throw BizException.of(ErrorCode.FORBIDDEN, "无权管理该部门");
         }
+    }
+
+    /**
+     * 组织本身必须是有效租户：不存在、已软删、已停用都直接拒绝（spec §10.1 必测场景 10）。
+     */
+    public Organization requireActiveOrganization(Long orgId) {
+        Organization organization = organizationMapper.selectById(orgId);
+        if (organization == null || organization.getDeletedAt() != null
+                || !Organization.STATUS_ACTIVE.equals(organization.getStatus())) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "组织已停用");
+        }
+        return organization;
     }
 
     public List<Department> allDepartments(Long orgId) {

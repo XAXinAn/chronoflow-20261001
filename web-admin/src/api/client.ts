@@ -122,6 +122,24 @@ export function createClient(options: ClientOptions = {}) {
     return response.text();
   }
 
+  /**
+   * 下载二进制（xlsx 导入模板）。同样绕过统一响应体——
+   * 模板是文件流，不是 `{code, message, data}`。
+   */
+  async function getBlob(path: string): Promise<Blob> {
+    const response = await fetchImpl(buildUrl(path), {
+      method: 'GET',
+      headers: authHeaders('application/octet-stream'),
+    });
+    if (!response.ok) {
+      if (response.status === 401) {
+        options.onUnauthenticated?.();
+      }
+      throw new ApiError(-1, `下载失败（HTTP ${response.status}）`);
+    }
+    return response.blob();
+  }
+
   return {
     baseUrl,
     get: <T>(path: string, query?: RequestOptions['query']) => request<T>(path, { query }),
@@ -131,6 +149,7 @@ export function createClient(options: ClientOptions = {}) {
     put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
     del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
     getText,
+    getBlob,
     request,
   };
 }

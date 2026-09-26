@@ -457,6 +457,127 @@ class OrgModuleTest {
         assertThat(rangeQuery("/api/v1/org/events", memberToken).path("data")).isEmpty();
     }
 
+    @Test
+    @DisplayName("组织管理端：后台 ORG_ADMIN 令牌就能给全新组织建部门、导成员、下发日程")
+    void orgAdminConsoleCanOpenUpANewOrganization() throws Exception {
+        String superToken = adminLogin("admin", "admin123456");
+        JsonNode created = postJson("/api/v1/admin/organizations", superToken,
+                "{\"name\":\"控制台组织\",\"code\":\"WEBORG1\",\"adminUsername\":\"weborg1_admin\","
+                        + "\"adminPassword\":\"weborg1pass\",\"adminRealName\":\"控制台管理员\"}");
+        assertThat(created.path("code").asInt()).isZero();
+        String consoleToken = adminLogin("weborg1_admin", "weborg1pass");
+
+        // 全新组织：一个成员都没有。这正是原来「没有入口导入首位成员」的场景
+        JsonNode beforeSettings = getJson("/api/v1/org-admin/settings", consoleToken);
+        assertThat(beforeSettings.path("data").path("code").asText()).isEqualTo("WEBORG1");
+        assertThat(beforeSettings.path("data").path("memberCount").asInt()).isZero();
+
+        long rootId = postJson("/api/v1/org-admin/departments", consoleToken,
+                "{\"name\":\"总部\"}").path("data").path("id").asLong();
+        assertThat(rootId).isPositive();
+
+        long memberId = postJson("/api/v1/org-admin/members", consoleToken,
+                "{\"memberKey\":\"W1001\",\"realName\":\"王小明\",\"departmentId\":" + rootId + "}")
+                .path("data").path("id").asLong();
+        assertThat(memberId).isPositive();
+
+        String csv = "姓名,成员唯一识别 ID（学号/工号）,部门路径,角色\n"
+                + "李四,W1002,总部,MEMBER\n";
+        long batchId = uploadMembers(consoleToken, "console.csv", csv, false)
+                .path("data").path("batchId").asLong();
+        JsonNode finished = awaitImport(consoleToken, batchId);
+        assertThat(finished.path("data").path("successCount").asInt())
+                .as("批次返回: %s", finished.path("data").toString())
+                .isEqualTo(1);
+
+        JsonNode members = getJson("/api/v1/org-admin/members", consoleToken);
+        assertThat(names(members.path("data"))).containsExactlyInAnyOrder("王小明", "李四");
+        assertThat(getJson("/api/v1/org-admin/settings", consoleToken)
+                .path("data").path("memberCount").asInt()).isEqualTo(2);
+
+        // 组织设置可改；成员上限只读，请求里带了也不生效
+        JsonNode updatedSettings = patchJson("/api/v1/org-admin/settings", consoleToken,
+                "{\"name\":\"控制台组织（改）\",\"contactName\":\"前台\",\"timezone\":\"Asia/Shanghai\","
+                        + "\"maxMembers\":999999}");
+        assertThat(updatedSettings.path("data").path("name").asText()).isEqualTo("控制台组织（改）");
+        assertThat(updatedSettings.path("data").path("contactName").asText()).isEqualTo("前台");
+
+        // 导进来的成员能认领组织账号 —— 这就是「首位成员」闭环的另一半
+        // 手机号必须全类唯一：重号会撞 60 秒发送频控（AGENTS.md §5 已记过的坑）
+        String memberToken = claimOrgAccount("WEBORG1", "W1002", "13700001501");
+        assertThat(getJson("/api/v1/org/current", memberToken).path("data").path("realName").asText())
+                .isEqualTo("李四");
+
+        // 后台下发组织日程：没有 C 端身份，发起方落在 created_by_admin_id 上（spec §5.6）
+        long eventId = postJson("/api/v1/org-admin/events", consoleToken,
+                dispatchBody("新组织第一场会", "ALL", null, true, null))
+                .path("data").path("eventId").asLong();
+        JsonNode events = rangeQuery("/api/v1/org-admin/events", consoleToken);
+        assertThat(events.path("data")).hasSize(1);
+        assertThat(events.path("data").get(0).path("title").asText()).isEqualTo("新组织第一场会");
+        assertThat(events.path("data").get(0).path("recipientCount").asInt()).isEqualTo(2);
+        assertThat(events.path("data").get(0).path("pendingCount").asInt()).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT creator_identity_id FROM event WHERE id = ?", Long.class, eventId)).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT created_by_admin_id FROM event_dispatch WHERE event_id = ?", Long.class, eventId))
+                .isNotNull();
+        // 成员自己能读到这条下发
+        assertThat(rangeQuery("/api/v1/org/events", memberToken).path("data")).hasSize(1);
+
+        // 部门树（管理端）与操作日志都是真实数据（spec §4.3）
+        JsonNode tree = getJson("/api/v1/org-admin/departments", consoleToken);
+        assertThat(findByName(tree.path("data"), "总部")).isNotNull();
+        JsonNode logs = getJson("/api/v1/org-admin/logs", consoleToken);
+        java.util.List<String> actions = new java.util.ArrayList<>();
+        logs.path("data").forEach(node -> actions.add(node.path("action").asText()));
+        assertThat(actions).contains("ORG_DEPARTMENT_CREATE", "ORG_MEMBER_CREATE",
+                "ORG_MEMBER_IMPORT", "ORG_EVENT_DISPATCH", "ORG_SETTINGS_UPDATE");
+    }
+
+    @Test
+    @DisplayName("组织管理端：后台令牌只作用于自己那个组织，普通成员不能调管理端接口")
+    void orgConsoleTokenIsScopedAndMemberIsRejected() throws Exception {
+        String superToken = adminLogin("admin", "admin123456");
+        long orgA = postJson("/api/v1/admin/organizations", superToken,
+                "{\"name\":\"组织A\",\"code\":\"SCOPEA\",\"adminUsername\":\"scopea_admin\","
+                        + "\"adminPassword\":\"scopeapass\"}").path("data").path("id").asLong();
+        long orgB = postJson("/api/v1/admin/organizations", superToken,
+                "{\"name\":\"组织B\",\"code\":\"SCOPEB\",\"adminUsername\":\"scopeb_admin\","
+                        + "\"adminPassword\":\"scopebpass\"}").path("data").path("id").asLong();
+        assertThat(orgA).isNotEqualTo(orgB);
+
+        // 组织 B 里塞一个成员，供越权尝试
+        Long deptB = jdbcTemplate.queryForObject(
+                "INSERT INTO department (org_id, name, path, level) VALUES (?, '总部', '/0/', 1) RETURNING id",
+                Long.class, orgB);
+        jdbcTemplate.update("UPDATE department SET path = '/' || id || '/' WHERE id = ?", deptB);
+        Long memberB = jdbcTemplate.queryForObject(
+                "INSERT INTO org_member (org_id, department_id, member_key, real_name, org_role, status) "
+                        + "VALUES (?, ?, 'B1001', 'B组织成员', 'MEMBER', 'ACTIVE') RETURNING id",
+                Long.class, orgB, deptB);
+
+        String consoleA = adminLogin("scopea_admin", "scopeapass");
+        // A 的管理员看不到 B 的成员，也改不动 B 的成员
+        assertThat(getJson("/api/v1/org-admin/members", consoleA).path("data")).isEmpty();
+        JsonNode denied = patchJson("/api/v1/org-admin/members/" + memberB, consoleA,
+                "{\"realName\":\"越权改名\"}");
+        assertThat(denied.path("code").asInt()).isEqualTo(20003);
+
+        // 组织身份里的普通成员不能调管理端接口（spec §2.2）
+        // 先在 A 里建一个普通成员，让他认领
+        String consoleAToken = consoleA;
+        long rootA = postJson("/api/v1/org-admin/departments", consoleAToken, "{\"name\":\"总部\"}")
+                .path("data").path("id").asLong();
+        postJson("/api/v1/org-admin/members", consoleAToken,
+                "{\"memberKey\":\"A2001\",\"realName\":\"甲成员\",\"departmentId\":" + rootA + "}");
+        String memberToken = claimOrgAccount("SCOPEA", "A2001", "13700001502");
+
+        JsonNode forbidden = uploadMembersExpectingFailure(memberToken, "x.csv",
+                "姓名,成员唯一识别 ID（学号/工号）,部门路径,角色\n小兵,A2002,总部,MEMBER\n", false);
+        assertThat(forbidden.path("code").asInt()).isEqualTo(20003);
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     private record Fixture(long orgId, String orgCode, long rootDepartmentId, String ownerToken,
@@ -644,6 +765,27 @@ class OrgModuleTest {
             Thread.sleep(50L);
         }
         throw new AssertionError("导入未在预期时间内完成: batchId=" + batchId);
+    }
+
+    /** 批量导入被拒时的响应体：权限不足走 HTTP 200 + 业务错误码（spec §6.1）。 */
+    private JsonNode uploadMembersExpectingFailure(String token, String fileName, String csv,
+                                                   boolean autoCreate) throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", fileName, "text/csv", csv.getBytes(StandardCharsets.UTF_8));
+        String body = mockMvc.perform(multipart("/api/v1/org-admin/members/import")
+                        .file(file)
+                        .param("autoCreateDepartment", String.valueOf(autoCreate))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andReturn()
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(body);
+    }
+
+    /** 平台超管登录（首次启动自动创建，spec §4.4）。 */
+    private String adminLogin(String username, String password) throws Exception {
+        return postJson("/api/v1/admin/auth/login", null,
+                "{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}")
+                .path("data").path("accessToken").asText();
     }
 
     private JsonNode patchJson(String path, String token, String body) throws Exception {

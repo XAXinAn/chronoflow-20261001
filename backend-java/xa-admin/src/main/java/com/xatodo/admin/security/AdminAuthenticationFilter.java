@@ -17,13 +17,17 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * 后台接口（{@code /api/v1/admin/**}）的令牌解析。只处理该前缀，不影响 C 端接口。
+ * 后台接口的令牌解析：平台超管端（{@code /api/v1/admin/**}）与组织管理端（{@code /api/v1/org-admin/**}）。
+ *
+ * <p>{@code /org-admin/**} 同时接受组织身份的 `ACCESS` 令牌（App 侧的组织管理员，spec §3.2），
+ * 因此这里只是**尝试**解析后台令牌；解析失败不设置认证，交给 Jwt 过滤器按 C 端令牌再试一次。
  */
 @Component
 public class AdminAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ADMIN_PATH_PREFIX = "/api/v1/admin/";
+    private static final String ORG_CONSOLE_PATH_PREFIX = "/api/v1/org-admin/";
 
     private final AdminTokenService adminTokenService;
 
@@ -33,7 +37,8 @@ public class AdminAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith(ADMIN_PATH_PREFIX);
+        String uri = request.getRequestURI();
+        return !uri.startsWith(ADMIN_PATH_PREFIX) && !uri.startsWith(ORG_CONSOLE_PATH_PREFIX);
     }
 
     @Override

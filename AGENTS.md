@@ -2,11 +2,43 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-09-25（第二轮收尾）
+> 最后更新：2026-09-26（第三轮收尾）
 
 ---
 
-## 0.0 本次交接摘要（2026-09-25，第二轮）
+## 0.0 本次交接摘要（2026-09-26，第三轮）
+
+**这一轮做了什么**（对应上一轮 §3.4 的第 1、2、3 条，全部闭环）：
+
+1. **组织管理端（Web）打通，新组织能开张了**——上一轮记的「首位成员断点」已解决：
+   `/api/v1/org-admin/**` 现在**同时接受**后台 `ORG_ADMIN` 的 `ADMIN` 令牌（spec §3.2 / §4.3）。
+   超管建组织时同步创建的那个后台管理员，登录 Web 组织管理端就能建部门、单个新增成员、批量导入，
+   不必等组织里先有人认领。App 侧的组织身份令牌走同一前缀，权限口径一致（只限本组织）。
+2. **web-admin 补齐两块页面**：组织管理端（组织设置 / 成员管理＋批量导入 / 部门管理 / 组织日历＋回执 / 操作日志）
+   与意见反馈查阅（超管）；菜单按角色渲染——超管看原来的六页，组织管理员看组织那套。
+3. **深色模式偏好持久化**：`app/src/theme/preference.ts` 存进安全存储，重启后仍是用户上次的选择。
+
+顺带补齐与修掉的：
+
+- 组织管理端缺的 6 个端点在**两版后端都实现**了，并补进契约（98 → **104** 个端点）：
+  `GET /org-admin/departments`、`GET /org-admin/events`、`GET|PATCH /org-admin/settings`、
+  `GET /org-admin/logs`、`GET /org-admin/imports/{id}/failures`。
+- 迁移 **V15**：`event.creator_identity_id` 与 `event_dispatch.created_by_member_id` 放开非空，
+  `event_dispatch` 新增 `created_by_admin_id`（后台管理员没有 C 端身份，得有人认这笔下发）。
+- 组织管理端的写操作现在**真的写审计日志**（`audit_log`），所以「操作日志」页不是空壳。
+- 批量导入补上权限校验（spec §2.2：导入是组织管理员权限，不是部门管理员）。
+- 两处实测踩到的坑已修：①多部分请求缺 `file` 部件返回 90001（应为 400/10001）；
+  ②Python 版导入模板还是老的 6 列（手机号/邮箱），已与 Java 版、spec §4.3 对齐成 4 列。
+
+**验证证据**：Java **89** 项全绿（含契约门禁）、Python **50** 项全绿、App **84** 项 + typecheck、
+web-admin **18** 项 + 生产构建；另外在真实运行环境用 HTTP 走了一遍闭环
+（超管建组织 → 组织管理员建部门/导成员 → 成员认领 → 权限边界：无令牌 20001、普通成员调管理端 20003）。
+
+**下一个 agent 从这里开始**：§3.4 只剩「拍照识别（端侧）」一条，前置条件是 Dev Client 构建环境（§4.3）。
+
+---
+
+### （历史）2026-09-25 第二轮摘要
 
 **这一轮做了什么**（每条都有测试与实机证据，详见 §3）：
 
@@ -79,12 +111,12 @@ XaTodo（心安待办），智能日程与待办 App。项目代号 `xa-todo`。
 | 部分 | 状态 | 测试 |
 | --- | --- | --- |
 | spec.md | 完成（v1.2） | — |
-| 跨语言契约 | `contract/api-contract.json`，**98 个端点** | Java 与 Python 各自校验 |
-| backend-java（7 模块，含新增 `xa-support`） | 完成 | **87 项集成测试全绿** |
-| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **48 项全绿** |
+| 跨语言契约 | `contract/api-contract.json`，**104 个端点** | Java 与 Python 各自校验 |
+| backend-java（7 模块，含新增 `xa-support`） | 完成 | **89 项集成测试全绿** |
+| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **50 项全绿** |
 | packages/design-tokens | 完成 | 8 个用例（1 个测试文件；`node --test` 汇总会显示 1） |
-| web-admin（React + Vite + AntD） | 完成 | 15 项 |
-| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程与回执、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记/拍照入口、头像上传、意见反馈、组织账号认领与账户管理、小安 tab | **81 项**（**仅纯逻辑层，组件未做渲染测试**） |
+| web-admin（React + Vite + AntD） | 完成：超管六页 + **组织管理端五页** + 意见反馈 | 18 项 |
+| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程与回执、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记/拍照入口、头像上传、意见反馈、组织账号认领与账户管理、小安 tab、深色模式偏好持久化 | **84 项**（**仅纯逻辑层，组件未做渲染测试**） |
 
 最近几次提交（倒序）：
 
@@ -130,6 +162,19 @@ abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，�
 顺带修掉一个实机发现的问题：**月历固定画 6 行**会把整周属于邻月的日子也画进来（9 月视图里出现一整周 10 月）。
 现在按实际需要的行数渲染（5 或 6 行），`buildMonthGrid` 有专门的回归测试（`app/test/calendar.test.ts`）。
 
+### 3.1.1 第三轮已完成（2026-09-26，代码 + 两版后端测试 + 真实环境 HTTP 走通）
+
+| # | 需求 | 落地位置 | 证据 |
+| --- | --- | --- | --- |
+| 1 | **组织管理端入口（原「首位成员断点」）** | `AdminAuthenticationFilter` 现在也处理 `/org-admin/**`；新增 `xa-auth.AdminActor` 接口 + `xa-org.OrgActor` 执行者；`OrgPermissionService.resolveActor()` 同时认「组织身份」与「后台 ORG_ADMIN」；Python 侧 `deps.current_org_actor` + `OrgService.resolve_actor` | Java `OrgModuleTest.orgAdminConsoleCanOpenUpANewOrganization`（新组织 0 成员 → 建部门 → 新增成员 → 批量导入 → 成员认领 → 后台下发日程 → 操作日志）+ `orgConsoleTokenIsScopedAndMemberIsRejected`；Python 同名 2 项；真实环境 HTTP 冒烟：超管建组织 → 组织管理员建部门/成员 OK，成员令牌调管理端 20003、无令牌 20001 |
+| 2 | **web-admin 组织管理端** | `pages/OrgSettingsPage / OrgMembersPage（含批量导入与失败明细）/ OrgDepartmentsPage / OrgEventsPage（含回执抽屉）/ OrgLogsPage`；`AppLayout` 按角色渲染菜单 | `npm run build -w @xa-todo/web-admin` 通过；`OrgMembersPage.test.tsx` 盯着「已认领 / 待认领」与两个入口按钮 |
+| 3 | **web-admin 意见反馈查阅** | `pages/FeedbackPage`（默认只看待处理，可切已处理/全部，图片预览，标记已处理） | `FeedbackPage.test.tsx`：默认 `status=OPEN`、处理后重新拉列表 |
+| 4 | **深色模式偏好持久化** | `app/src/theme/preference.ts`（安全存储 + `nextScheme`），`AppContext` 启动时读回、切换时写回 | `app/test/themePreference.test.ts` 3 项；App 84 项 + typecheck 通过 |
+| 5 | **组织管理端缺的端点补齐**（契约 98 → 104） | `GET /org-admin/departments`、`GET /org-admin/events`（带回执分布）、`GET\|PATCH /org-admin/settings`、`GET /org-admin/logs`、`GET /org-admin/imports/{id}/failures`；Java 与 Python 两版都实现 | Java `OpenApiContractTest` 4 项通过（覆盖 + 安全声明 + 未带令牌 401） |
+| 6 | **组织管理端的审计日志** | 新增 `OrgAuditSink`（定义在 xa-org，实现在 xa-admin，避免 xa-org 反向依赖）+ `OrgAuditRecorder`；Python 侧 `OrgService.record_org_audit`；在 controller/router 层逐端点记录 | 冒烟测试里 `GET /org-admin/logs` 返回 `ORG_DEPARTMENT_CREATE`、`ORG_MEMBER_CREATE` |
+| 7 | **V15 迁移** | `event.creator_identity_id`、`event_dispatch.created_by_member_id` 放开非空；`event_dispatch` 新增 `created_by_admin_id` + CHECK（发起方恰有一列非空） | 开发库启动日志：`Successfully applied 2 migrations ... now at version v15` |
+| 8 | 顺带修 | ①多部分请求缺 `file` → 现在 400/10001（原来掉进兜底返回 90001）；②批量导入补 `requireOrgAdmin`（spec §2.2）；③Python 导入模板从老的 6 列改回 4 列，与 Java 版和 spec §4.3 一致 | 冒烟时实测到 90001 才发现的第①条；②有 Java/Python 用例；③两版 `template()` 现在同列 |
+
 ### 3.2 节假日数据（2026-09-25 的新约定，别搞混）
 
 - 数据**不在迁移里、不在代码里**。`V11__holiday_calendar.sql` 只建表；上游是
@@ -160,14 +205,13 @@ abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，�
 - 组织 tab **常驻**：没绑任何组织账号时展示空状态 + 添加入口（入口消失用户就找不到地方加了）。
 - 安全取舍：唯一识别 ID 不是秘密，所以这是「认领」而非强认证（spec §3.1 写了加固方向）。
 
-### 3.4 未做完的（按建议顺序，前两条见 §0.0 摘要）
+### 3.4 未做完的（按建议顺序）
 
 | # | 事项 | 说明 |
 | --- | --- | --- |
-| 1 | **新建组织的成员导入还没有入口**（原来的「首位成员断点」换了形态） | 新模型下 `/org-admin/members` 仍需要**组织身份令牌**，而全新组织里还没有人认领过成员 → 无人能导入。两条可选路线，需产品定：①超管建组织时预置「总部部门 + 首位拥有者成员（唯一识别 ID 由超管填）」，该成员认领后即可往下导入；②让后台组织管理员（`admin_user`，带 `org_id`）的令牌也能调 `/org-admin/**`（spec §4.3 的组织管理端本来就是这个角色） |
-| 2 | **深色模式偏好没有持久化** | `AppContext.toggleScheme` 只改 React state，App 重启即丢（实测确认） |
-| 3 | **web-admin 还缺两块页面** | ①组织管理端（src 里搜不到 `/org-admin`、`/org/current`）；②意见反馈查阅——**后端接口已就绪**（`GET /admin/feedback`、`POST /admin/feedback/{id}/handle`），只差后台页面 |
-| 4 | **拍照 / 相册识别日程**（spec §4.1.9）：契约、约束解码、容错解析、修复重试、App 的拍照/相册入口与可编辑确认页、地点高德解析都已就绪并有测试 | **端侧模型未跑通**：端侧推理要 Dev Client 构建（原生模块 + Android NDK/CMake），本机工具链不具备（Windows SDK 无 ndk/cmake/cmdline-tools、WSL 无 gcc）。**产品要求排到最后再做**；未配模型时接口如实返回 90002 |
+| 1 | **拍照 / 相册识别日程**（spec §4.1.9）：契约、约束解码、容错解析、修复重试、App 的拍照/相册入口与可编辑确认页、地点高德解析都已就绪并有测试 | **端侧模型未跑通**：端侧推理要 Dev Client 构建（原生模块 + Android NDK/CMake），本机工具链不具备（Windows SDK 无 ndk/cmake/cmdline-tools、WSL 无 gcc）。**产品要求排到最后再做**；未配模型时接口如实返回 90002 |
+| 2 | （待产品定，非阻塞）超管建组织时**预置首位拥有者成员** | 上一轮列的「路线①」。现在**路线②已落地**（见 §0.0 第 1 条），所以这条只是可选增强：预置能让组织一建好就有一个可认领的拥有者，不必先在后台手工建。若要做：组织创建请求体加 `ownerMemberKey`/`ownerRealName`，两版后端 + 契约 + 超管建组织表单同步改 |
+| 3 | App 侧没有组织成员管理界面 | spec §4.3 把成员/部门管理划给 Web 组织管理端，App 只有组织日历与回执（§4.2）。这是设计如此，不是遗漏；如果产品要求「拥有者在手机上也能导成员」，得先改 spec |
 
 App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File`（原因见 §5 陷阱里的
 「Expo SDK 57 的 fetch 不支持 `{uri,name,type}`」）。
@@ -177,6 +221,10 @@ App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File
 - 待办的图片附件（拍照入口 → 结果页）在**未接入模型**时的表现：只验到「如实提示」这一层，
   真正识别、编辑、批量创建这条链路没跑通过（端侧模型未就绪，见 §3.4 第 4 条）。
 - 意见反馈的历史列表在数据较多时的滚动表现；「我的」页深色模式下的观感。
+- **第三轮新增、只在真实环境用 HTTP 验过、没在浏览器里点过的**：web-admin 组织管理端五页 +
+  意见反馈页（构建与组件测试都过，但没有人在浏览器里逐屏走过）。
+- **深色模式持久化只验到「存储读写 + 切换逻辑」**（单测），没在模拟器里做到「杀掉 App 再冷启动仍是深色」。
+  上一次实测这个行为的成本不低（Expo Go 的检查器坑，见 §5），建议让用户手点确认。
 
 原因见 §5：Expo Go 的元素检查器会反复出现并吃掉点击，adb 自动化在它开着时不可信；
 另外**用 adb 点按钮前先 `uiautomator dump` 拿真实 bounds**，别凭截图估算坐标（我因此白点了几轮）。
@@ -188,6 +236,17 @@ App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File
 - 高德两类 Key 分工：**Web服务** Key 给后端搜地点/逆地理（不出服务端）；**Web端(JS API)** Key + 安全密钥给 WebView 画地图（必然在客户端）。`scripts/check_amap_key.sh` 可一键验证。
 - 日程编辑与新建共用同一个整页组件；重复日程的保存/删除会询问「仅此一次 / 整个系列」。
 - `PATCH /events/{id}` 的 null 语义是「不修改」，**空串才是「清空」**（地点尤为明显：清空时坐标一并清掉）。
+- **`/org-admin/**` 有两个入口，别只想到一个**：App 组织身份的 `ACCESS` 令牌，以及后台 `ORG_ADMIN`
+  的 `ADMIN` 令牌（spec §3.2）。实现上是两个过滤器都尝试解析，谁解析成功谁写上下文；
+  `OrgPermissionService.resolveActor()` / Python `current_org_actor` 再把主体转成统一的「组织执行者」
+  （后台管理员没有 `org_member` 记录，`memberId`/`identityId` 为空、部门范围是整个组织）。
+  唯一例外是 `GET /org-admin/logs`：它只服务后台管理员（App 里没有这个页面）。
+- **组织管理端的审计出口是接口倒置的**：`audit_log` 的实体/mapper 在 `xa-admin`，而管理操作发生在 `xa-org`，
+  且 `xa-org` 不能反向依赖 `xa-admin`。因此 `xa-org` 只声明 `OrgAuditSink`，由 `xa-admin.AdminOrgAuditSink`
+  实现，运行时经 `OrgAuditRecorder`（`ObjectProvider`，没有实现时静默跳过）注入。
+- **可管理部门集合不要缓存成快照**：批量导入会在过程中自动补建部门，执行者对象里那份集合会立刻过期，
+  结果「刚建出来的那一层把自己挡住了」。`requireCanManageDepartment(OrgActor, …)` 每次都按库里当前结构重算
+  （Python 侧天然每次查库，没有这个问题）。
 
 ### 3.7 模拟企业数据集
 
@@ -363,6 +422,8 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 | **Java 测试类里手机号必须全类唯一** | 同一个号被两个用例注册 → 第二次撞 60 秒发送频控（`20005`），报的却是「发送过于频繁」，看不出是自己重号 | 新增用例前先 `grep -c "1380000xxxx"` 数一遍；Java 侧同时也把按 IP 的日限额在 surefire 里放开了（`xatodo.auth.sms-daily-limit-per-ip=100000`） |
 | Python 测试在**导入期**就 `import` 了 app 模块 | `app.config` 会在 conftest 设 `DATABASE_URL` 之前读进内存 → 整套用例跑去连开发库（报 `role "xatodo" does not exist`） | 测试里**在用例函数内部**导入 `app.services.*`（`tests/test_vision.py` 顶部就是这么注释的） |
 | 断言「空字段会消失」 | `non_null` 序列化只对 **null** 生效；空数组仍会返回 `[]`，我按 `isMissingNode()` 断言就红了 | 清空类断言写「返回空数组」而不是「字段不存在」 |
+| **沙箱内 `curl localhost:8080` 连不上** | 服务其实好好的（`ss -ltnp` 能看到 `*:8080` 在监听），只有沙箱里的 curl 连不上，很容易误判成「后端挂了」 | 判断服务在不在，一律**提权**跑 `ss -ltnp` / `pgrep -af`；别用沙箱内的 curl 下结论 |
+| `multipart` 请求漏了 `file` 部件 | 返回 **90001**（服务内部错误），看着像后端炸了，其实只是参数没给 | 已修：`GlobalExceptionHandler` 现在把 `MissingServletRequestPartException` 映射成 400 / `10001`；Python 侧 FastAPI 的 `RequestValidationError` 处理器本来就有 |
 
 ### Android / adb
 
@@ -427,7 +488,11 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 
 ### 6.2 跨语言契约（`contract/api-contract.json`）
 
-Java 与 Python 两版后端**读同一份契约**做校验，共 **98 个端点**。改动等于改契约，必须两版同步。
+Java 与 Python 两版后端**读同一份契约**做校验，共 **104 个端点**。改动等于改契约，必须两版同步。
+
+> 组织管理端的 6 个端点（`GET /org-admin/departments`、`GET /org-admin/events`、`GET|PATCH /org-admin/settings`、
+> `GET /org-admin/logs`、`GET /org-admin/imports/{id}/failures`）是 2026-09-26 补上的：
+> spec §6.3 早就写了它们，但契约与两版实现都漏了——**spec 是唯一事实来源，它写了就得有**。
 
 Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，当前 `MIN_COVERAGE_PERCENT = 100`，不允许倒退。
 
@@ -468,7 +533,7 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 | --- | --- |
 | 生产部署编排（Dockerfile / Nginx） | 未开始 |
 | App 的提醒 UI | 只有后端接口 |
-| Web 端组织管理页面 | 后端接口已有，页面没做（见 §3.4 第 3 条） |
+| App 侧的组织成员/部门管理 | spec §4.3 把这块划给 Web 组织管理端；App 只有组织日历与回执（是设计，不是遗漏） |
 | 微信 / 邮箱绑定 | 需要微信开放平台凭证与邮件通道，属外部依赖 |
 | 真实短信通道、推送（极光）、对象存储（MinIO） | 外部依赖 |
 | 后台 TOTP 双因素 | 未开始 |
@@ -482,17 +547,17 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 
 ```bash
 # 后端（测试自带嵌入式 PG/Redis，无需外部依赖）
-cd backend-java && mvn -B clean verify          # 期望 87 项全绿（需提权：沙箱不让绑端口）
+cd backend-java && mvn -B clean verify          # 期望 89 项全绿（需提权：沙箱不让绑端口）
 
 # Python 后端（需要先跑 ./backend-python/scripts/setup-test-deps.sh）
 # 注意：嵌入式 PG 要占 5432，跑之前先停开发库，跑完再启回来
-cd backend-python && .venv/bin/python -m pytest  # 期望 48 项全绿
+cd backend-python && .venv/bin/python -m pytest  # 期望 50 项全绿
 
 # 前端
 npm run build -w @xa-todo/design-tokens
 npm run build -w @xa-todo/web-admin
 npm run typecheck -w @xa-todo/app
-npm test                                        # 期望 design-tokens 8 例 + web-admin 15 项 + app 81 项全绿
+npm test                                        # 期望 design-tokens 8 例 + web-admin 18 项 + app 84 项全绿
 ```
 
 CI 在 `.github/workflows/ci.yml`，三个 job：Java / Python / 前端。

@@ -17,6 +17,9 @@ public class DepartmentManager {
 
     private Long orgMemberId;
 
+    /** 授权方：后台组织管理员（Web）授权时记录其 admin_user id；成员侧发起的授权留空。 */
+    private Long grantedByAdminId;
+
     public Long getId() {
         return id;
     }
@@ -39,5 +42,13 @@ public class DepartmentManager {
 
     public void setOrgMemberId(Long orgMemberId) {
         this.orgMemberId = orgMemberId;
+    }
+
+    public Long getGrantedByAdminId() {
+        return grantedByAdminId;
+    }
+
+    public void setGrantedByAdminId(Long grantedByAdminId) {
+        this.grantedByAdminId = grantedByAdminId;
     }
 }

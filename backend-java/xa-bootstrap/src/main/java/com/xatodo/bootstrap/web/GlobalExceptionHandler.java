@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -59,6 +60,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleMissingParam(MissingServletRequestParameterException ex) {
         return ResponseEntity.badRequest()
                 .body(ApiResponse.failure(ErrorCode.PARAM_MISSING, "缺少参数: " + ex.getParameterName()));
+    }
+
+    /**
+     * 多部分请求缺少文件部件（例如导入成员时没带 file 字段）。
+     *
+     * <p>这属于「参数错误 → 400 / 10001」，不是服务端故障：不加这条它会掉进兜底处理器返回 90001，
+     * 让人误以为后端坏了（实测踩过一次）。
+     */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingPart(MissingServletRequestPartException ex) {
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.failure(ErrorCode.PARAM_MISSING, "缺少文件部件: " + ex.getRequestPartName()));
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})

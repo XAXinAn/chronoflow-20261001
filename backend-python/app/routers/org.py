@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..db import get_session
-from ..deps import current_identity
+from ..deps import current_identity, current_org_actor
 from ..errors import envelope
 from ..security import IdentityPrincipal
 from ..services.org import OrgService
@@ -78,6 +78,16 @@ class OrgEventUpdate(BaseModel):
     redispatch: bool | None = None
 
 
+class OrgSettingsUpdate(BaseModel):
+    """组织设置（spec §4.3）。没有 maxMembers：成员上限只读，由平台超管控制。"""
+
+    name: str | None = None
+    logoUrl: str | None = None
+    contactName: str | None = None
+    contactPhone: str | None = None
+    timezone: str | None = None
+
+
 class ReceiptRequest(BaseModel):
     status: str
     remark: str | None = None
@@ -91,6 +101,11 @@ def _service(session: Session = Depends(get_session)) -> OrgService:
 
 def _member(principal: IdentityPrincipal, service: OrgService) -> dict:
     return service.require_membership(principal)
+
+
+def _actor(principal, service: OrgService) -> dict:
+    """组织管理端的执行者：App 组织身份，或后台组织管理员（spec §3.2 / §4.3）。"""
+    return service.resolve_actor(principal)
 
 
 @router.get("/org/current")
@@ -157,33 +172,46 @@ def org_event_recipients(
     return envelope(service.receipt_summary(member, id))
 
 
+@router.get("/org-admin/departments")
+def admin_department_tree(principal=Depends(current_org_actor), service=Depends(_service)) -> dict:
+    """组织管理端的部门树（spec §6.3）。"""
+    actor = _actor(principal, service)
+    return envelope(service.department_tree(actor["org_id"]))
+
+
 @router.post("/org-admin/departments")
 def create_department(
     payload: DepartmentCreate,
-    principal: IdentityPrincipal = Depends(current_identity),
+    principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
-    member = _member(principal, service)
-    return envelope(service.create_department(member, payload.model_dump()))
+    actor = _actor(principal, service)
+    created = service.create_department(actor, payload.model_dump())
+    service.record_org_audit(actor, "ORG_DEPARTMENT_CREATE", "DEPARTMENT", created["id"],
+                             {"name": created["name"]})
+    return envelope(created)
 
 
 @router.patch("/org-admin/departments/{id}")
 def update_department(
     id: int,
     payload: DepartmentUpdate,
-    principal: IdentityPrincipal = Depends(current_identity),
+    principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
-    member = _member(principal, service)
-    return envelope(service.update_department(member, id, payload.model_dump()))
+    actor = _actor(principal, service)
+    updated = service.update_department(actor, id, payload.model_dump())
+    service.record_org_audit(actor, "ORG_DEPARTMENT_UPDATE", "DEPARTMENT", id)
+    return envelope(updated)
 
 
 @router.delete("/org-admin/departments/{id}")
 def delete_department(
-    id: int, principal: IdentityPrincipal = Depends(current_identity), service=Depends(_service)
+    id: int, principal=Depends(current_org_actor), service=Depends(_service)
 ) -> dict:
-    member = _member(principal, service)
-    service.delete_department(member, id)
+    actor = _actor(principal, service)
+    service.delete_department(actor, id)
+    service.record_org_audit(actor, "ORG_DEPARTMENT_DELETE", "DEPARTMENT", id)
     return envelope(None)
 
 
@@ -191,11 +219,13 @@ def delete_department(
 def grant_manager(
     id: int,
     payload: ManagerGrant,
-    principal: IdentityPrincipal = Depends(current_identity),
+    principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
-    member = _member(principal, service)
-    service.grant_manager(member, id, payload.orgMemberId)
+    actor = _actor(principal, service)
+    service.grant_manager(actor, id, payload.orgMemberId)
+    service.record_org_audit(actor, "ORG_DEPARTMENT_MANAGER_GRANT", "DEPARTMENT", id,
+                             {"orgMemberId": payload.orgMemberId})
     return envelope(None)
 
 
@@ -203,73 +233,82 @@ def grant_manager(
 def revoke_manager(
     id: int,
     orgMemberId: int,
-    principal: IdentityPrincipal = Depends(current_identity),
+    principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
-    member = _member(principal, service)
-    service.revoke_manager(member, id, orgMemberId)
+    actor = _actor(principal, service)
+    service.revoke_manager(actor, id, orgMemberId)
+    service.record_org_audit(actor, "ORG_DEPARTMENT_MANAGER_REVOKE", "DEPARTMENT", id,
+                             {"orgMemberId": orgMemberId})
     return envelope(None)
 
 
 @router.get("/org-admin/members")
-def admin_members(
-    principal: IdentityPrincipal = Depends(current_identity), service=Depends(_service)
-) -> dict:
-    member = _member(principal, service)
-    return envelope(service.list_members(member, None))
+def admin_members(principal=Depends(current_org_actor), service=Depends(_service)) -> dict:
+    actor = _actor(principal, service)
+    return envelope(service.list_members(actor, None))
 
 
 @router.post("/org-admin/members")
 def admin_create_member(
     payload: MemberCreate,
-    principal: IdentityPrincipal = Depends(current_identity),
+    principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
-    member = _member(principal, service)
-    return envelope(service.create_member(member, payload.model_dump()))
+    actor = _actor(principal, service)
+    created = service.create_member(actor, payload.model_dump())
+    service.record_org_audit(actor, "ORG_MEMBER_CREATE", "ORG_MEMBER", created["id"],
+                             {"memberKey": created["memberKey"],
+                              "departmentId": created["departmentId"]})
+    return envelope(created)
 
 
 @router.patch("/org-admin/members/{id}")
 def admin_update_member(
     id: int,
     payload: MemberUpdate,
-    principal: IdentityPrincipal = Depends(current_identity),
+    principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
-    member = _member(principal, service)
-    return envelope(service.update_member(member, id, payload.model_dump()))
+    actor = _actor(principal, service)
+    updated = service.update_member(actor, id, payload.model_dump())
+    service.record_org_audit(actor, "ORG_MEMBER_UPDATE", "ORG_MEMBER", id)
+    return envelope(updated)
 
 
 @router.post("/org-admin/members/{id}/unbind")
 def admin_unbind_member(
     id: int,
-    principal: IdentityPrincipal = Depends(current_identity),
+    principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
     """解绑成员的组织账号（spec §3.2 / §6.3）：成员换号或被冒领后的恢复路径。"""
-    member = _member(principal, service)
-    return envelope(service.unbind_member(member, id))
+    actor = _actor(principal, service)
+    unbound = service.unbind_member(actor, id)
+    service.record_org_audit(actor, "ORG_MEMBER_UNBIND", "ORG_MEMBER", id)
+    return envelope(unbound)
 
 
 @router.post("/org-admin/members/import")
 async def import_members(
     file: UploadFile = File(...),
     autoCreateDepartment: bool = Query(default=False),
-    principal: IdentityPrincipal = Depends(current_identity),
+    principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
-    member = _member(principal, service)
+    actor = _actor(principal, service)
     content = await file.read()
-    return envelope(
-        service.import_members(member, file.filename or "import", content, autoCreateDepartment)
+    detail = service.import_members(
+        actor, file.filename or "import", content, autoCreateDepartment
     )
+    service.record_org_audit(actor, "ORG_MEMBER_IMPORT", "IMPORT_BATCH",
+                             detail["batchId"], {"fileName": detail["fileName"]})
+    return envelope(detail)
 
 
 @router.get("/org-admin/members/import/template")
-def import_template(
-    principal: IdentityPrincipal = Depends(current_identity), service=Depends(_service)
-) -> Response:
-    _member(principal, service)
+def import_template(principal=Depends(current_org_actor), service=Depends(_service)) -> Response:
+    _actor(principal, service)
     return Response(
         content=service.import_template(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -278,63 +317,124 @@ def import_template(
 
 
 @router.get("/org-admin/imports")
-def list_imports(
-    principal: IdentityPrincipal = Depends(current_identity), service=Depends(_service)
-) -> dict:
-    member = _member(principal, service)
-    return envelope(service.list_imports(member))
+def list_imports(principal=Depends(current_org_actor), service=Depends(_service)) -> dict:
+    actor = _actor(principal, service)
+    return envelope(service.list_imports(actor))
 
 
 @router.get("/org-admin/imports/{id}")
 def import_detail(
-    id: int, principal: IdentityPrincipal = Depends(current_identity), service=Depends(_service)
+    id: int, principal=Depends(current_org_actor), service=Depends(_service)
 ) -> dict:
-    member = _member(principal, service)
-    return envelope(service.import_detail(member, id))
+    actor = _actor(principal, service)
+    return envelope(service.import_detail(actor, id))
+
+
+@router.get("/org-admin/imports/{id}/failures")
+def import_failures(
+    id: int, principal=Depends(current_org_actor), service=Depends(_service)
+) -> Response:
+    """失败明细 CSV，便于修正后重传（spec §6.3）。"""
+    actor = _actor(principal, service)
+    return Response(
+        content=service.import_failures_csv(actor, id),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="import-failures-{id}.csv"'},
+    )
+
+
+@router.get("/org-admin/events")
+def admin_events(
+    start: datetime = Query(...),
+    end: datetime = Query(...),
+    principal=Depends(current_org_actor),
+    service=Depends(_service),
+) -> dict:
+    """组织管理端的组织日程列表（spec §6.3）：本组织的活跃下发 + 回执分布。"""
+    actor = _actor(principal, service)
+    return envelope(service.admin_event_list(actor, start, end))
 
 
 @router.post("/org-admin/events")
 def dispatch_event(
     payload: DispatchRequest,
-    principal: IdentityPrincipal = Depends(current_identity),
+    principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
-    member = _member(principal, service)
-    return envelope(service.dispatch(member, payload.model_dump()))
+    actor = _actor(principal, service)
+    created = service.dispatch(actor, payload.model_dump())
+    service.record_org_audit(actor, "ORG_EVENT_DISPATCH", "EVENT", created["eventId"],
+                             {"scopeType": payload.scopeType,
+                              "dispatchId": created["dispatchId"]})
+    return envelope(created)
 
 
 @router.patch("/org-admin/events/{id}")
 def update_org_event(
     id: int,
     payload: OrgEventUpdate,
-    principal: IdentityPrincipal = Depends(current_identity),
+    principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
-    member = _member(principal, service)
-    return envelope(service.update_org_event(member, id, payload.model_dump()))
+    actor = _actor(principal, service)
+    updated = service.update_org_event(actor, id, payload.model_dump())
+    service.record_org_audit(actor, "ORG_EVENT_UPDATE", "EVENT", id)
+    return envelope(updated)
 
 
 @router.delete("/org-admin/events/{id}")
 def delete_org_event(
-    id: int, principal: IdentityPrincipal = Depends(current_identity), service=Depends(_service)
+    id: int, principal=Depends(current_org_actor), service=Depends(_service)
 ) -> dict:
-    member = _member(principal, service)
-    service.delete_org_event(member, id)
+    actor = _actor(principal, service)
+    service.delete_org_event(actor, id)
+    service.record_org_audit(actor, "ORG_EVENT_DELETE", "EVENT", id)
     return envelope(None)
 
 
 @router.post("/org-admin/events/{id}/revoke")
 def revoke_dispatch(
-    id: int, principal: IdentityPrincipal = Depends(current_identity), service=Depends(_service)
+    id: int, principal=Depends(current_org_actor), service=Depends(_service)
 ) -> dict:
-    member = _member(principal, service)
-    service.revoke_dispatch(member, id)
+    actor = _actor(principal, service)
+    service.revoke_dispatch(actor, id)
+    service.record_org_audit(actor, "ORG_EVENT_REVOKE", "EVENT", id)
     return envelope(None)
 
 
 @router.get("/org-admin/events/{id}/receipts")
 def org_event_receipts(
-    id: int, principal: IdentityPrincipal = Depends(current_identity), service=Depends(_service)
+    id: int, principal=Depends(current_org_actor), service=Depends(_service)
 ) -> dict:
-    member = _member(principal, service)
-    return envelope(service.receipt_summary(member, id))
+    actor = _actor(principal, service)
+    return envelope(service.receipt_summary(actor, id))
+
+
+@router.get("/org-admin/settings")
+def org_settings(principal=Depends(current_org_actor), service=Depends(_service)) -> dict:
+    actor = _actor(principal, service)
+    return envelope(service.org_settings(actor))
+
+
+@router.patch("/org-admin/settings")
+def update_org_settings(
+    payload: OrgSettingsUpdate,
+    principal=Depends(current_org_actor),
+    service=Depends(_service),
+) -> dict:
+    actor = _actor(principal, service)
+    updated = service.update_org_settings(actor, payload.model_dump())
+    service.record_org_audit(actor, "ORG_SETTINGS_UPDATE", "ORGANIZATION", actor["org_id"])
+    return envelope(updated)
+
+
+@router.get("/org-admin/logs")
+def org_audit_logs(
+    action: str | None = None,
+    limit: int = Query(default=100),
+    principal=Depends(current_org_actor),
+    service=Depends(_service),
+) -> dict:
+    """本组织的操作日志（spec §6.3）。只服务后台组织管理员。"""
+    actor = _actor(principal, service)
+    return envelope(service.audit_logs(actor, action, limit))

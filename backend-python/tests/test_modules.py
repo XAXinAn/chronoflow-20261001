@@ -1096,3 +1096,154 @@ def test_search_covers_org_events_across_bound_organizations(client, db) -> None
     )
     after = search(client, tokens, "评审会")
     assert [item["orgName"] for item in after] == ["组织PYSRCHA"]
+
+
+def test_org_console_token_can_open_up_a_new_organization(client, db) -> None:
+    """组织管理端：后台 ORG_ADMIN 令牌就能给**全新组织**建部门、导成员、下发日程（spec §4.3）。
+
+    这正是原来「新组织一个成员都没有，于是没人能导入首位成员」的那个死循环。
+    """
+    create_org(client, admin_login(client), "PYCONSOLE", "py_console_admin")
+    console = admin_headers(
+        client.post(
+            "/api/v1/admin/auth/login",
+            json={"username": "py_console_admin", "password": "pyadmin123"},
+        ).json()["data"]["accessToken"]
+    )
+
+    settings = client.get("/api/v1/org-admin/settings", headers=console).json()
+    assert settings["code"] == 0, settings
+    assert settings["data"]["code"] == "PYCONSOLE"
+    assert settings["data"]["memberCount"] == 0
+
+    created = client.post(
+        "/api/v1/org-admin/departments", json={"name": "总部"}, headers=console
+    ).json()
+    assert created["code"] == 0, created
+    root = created["data"]["id"]
+
+    single = client.post(
+        "/api/v1/org-admin/members",
+        json={"memberKey": "P1001", "realName": "王小明", "departmentId": root},
+        headers=console,
+    ).json()
+    assert single["code"] == 0, single
+
+    csv = "姓名,成员唯一识别 ID（学号/工号）,部门路径,角色\n李四,P1002,总部,MEMBER\n".encode()
+    imported = client.post(
+        "/api/v1/org-admin/members/import",
+        files={"file": ("members.csv", csv, "text/csv")},
+        headers=console,
+    ).json()
+    assert imported["code"] == 0, imported
+    assert imported["data"]["successCount"] == 1
+
+    members = client.get("/api/v1/org-admin/members", headers=console).json()["data"]
+    assert sorted(item["realName"] for item in members) == ["李四", "王小明"]
+    assert client.get("/api/v1/org-admin/settings", headers=console).json()["data"]["memberCount"] == 2
+
+    updated = client.patch(
+        "/api/v1/org-admin/settings",
+        json={"name": "控制台组织（改）", "contactName": "前台", "timezone": "Asia/Shanghai"},
+        headers=console,
+    ).json()
+    assert updated["data"]["name"] == "控制台组织（改）"
+    assert updated["data"]["contactName"] == "前台"
+
+    # 导进来的成员能认领组织账号 —— 闭环的另一半
+    org_id = db.execute(
+        "SELECT id FROM organization WHERE code = %s", ("PYCONSOLE",)
+    ).fetchone()[0]
+    member_headers = claim_org_account(client, register(client, "13900003001"), org_id, "P1002")
+    assert (
+        client.get("/api/v1/org/current", headers=member_headers).json()["data"]["realName"] == "李四"
+    )
+
+    # 后台下发组织日程：没有 C 端身份，发起方落在 created_by_admin_id（spec §5.6）
+    dispatched = client.post(
+        "/api/v1/org-admin/events",
+        json={
+            "title": "新组织第一场会",
+            "startAt": "2026-10-08T09:00:00+08:00",
+            "endAt": "2026-10-08T11:00:00+08:00",
+            "scopeType": "ALL",
+            "requireReceipt": True,
+        },
+        headers=console,
+    ).json()
+    assert dispatched["code"] == 0, dispatched
+
+    events = client.get(
+        "/api/v1/org-admin/events",
+        params={"start": "2026-10-01T00:00:00+08:00", "end": "2026-11-01T00:00:00+08:00"},
+        headers=console,
+    ).json()["data"]
+    assert len(events) == 1
+    assert events[0]["title"] == "新组织第一场会"
+    assert events[0]["recipientCount"] == 2
+    assert events[0]["pendingCount"] == 2
+    event_id = events[0]["eventId"]
+    assert db.execute(
+        "SELECT creator_identity_id FROM event WHERE id = %s", (event_id,)
+    ).fetchone()[0] is None
+    assert db.execute(
+        "SELECT created_by_admin_id FROM event_dispatch WHERE event_id = %s", (event_id,)
+    ).fetchone()[0] is not None
+
+    # 部门树与操作日志都是真实数据（spec §4.3）
+    tree = client.get("/api/v1/org-admin/departments", headers=console).json()["data"]
+    assert any(node["name"] == "总部" for node in tree)
+    actions = {
+        row["action"]
+        for row in client.get("/api/v1/org-admin/logs", headers=console).json()["data"]
+    }
+    assert {
+        "ORG_DEPARTMENT_CREATE",
+        "ORG_MEMBER_CREATE",
+        "ORG_MEMBER_IMPORT",
+        "ORG_EVENT_DISPATCH",
+        "ORG_SETTINGS_UPDATE",
+    } <= actions
+
+
+def test_org_console_token_is_scoped_and_member_is_rejected(client, db) -> None:
+    """后台令牌只作用于自己那个组织；普通成员的组织身份令牌不能调管理端接口（spec §2.2）。"""
+    super_token = admin_login(client)
+    org_a = create_org(client, super_token, "PYSCOPEA", "py_scope_a")
+    org_b = create_org(client, super_token, "PYSCOPEB", "py_scope_b")
+    root_b = seed_root_department(db, org_b)
+    member_b = db.execute(
+        "INSERT INTO org_member (org_id, department_id, member_key, real_name, org_role, status)"
+        " VALUES (%s, %s, 'PB1001', 'B组织成员', 'MEMBER', 'ACTIVE') RETURNING id",
+        (org_b, root_b),
+    ).fetchone()[0]
+
+    console_a = admin_headers(
+        client.post(
+            "/api/v1/admin/auth/login",
+            json={"username": "py_scope_a", "password": "pyadmin123"},
+        ).json()["data"]["accessToken"]
+    )
+    assert client.get("/api/v1/org-admin/members", headers=console_a).json()["data"] == []
+    denied = client.patch(
+        f"/api/v1/org-admin/members/{member_b}", json={"realName": "越权改名"}, headers=console_a
+    ).json()
+    assert denied["code"] == 20003, denied
+
+    # 组织身份的普通成员：能看组织日历，但不能碰管理端接口
+    root_a = client.post(
+        "/api/v1/org-admin/departments", json={"name": "总部"}, headers=console_a
+    ).json()["data"]["id"]
+    client.post(
+        "/api/v1/org-admin/members",
+        json={"memberKey": "PA2001", "realName": "甲成员", "departmentId": root_a},
+        headers=console_a,
+    )
+    member_headers = claim_org_account(client, register(client, "13900003002"), org_a, "PA2001")
+    csv = "姓名,成员唯一识别 ID（学号/工号）,部门路径,角色\n小兵,PA2002,总部,MEMBER\n".encode()
+    forbidden = client.post(
+        "/api/v1/org-admin/members/import",
+        files={"file": ("members.csv", csv, "text/csv")},
+        headers=member_headers,
+    ).json()
+    assert forbidden["code"] == 20003, forbidden

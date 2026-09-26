@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError, ErrorCode
+from ..security import AdminPrincipal
 from . import recurrence
 
 MAX_DEPARTMENT_LEVEL = 5
@@ -46,6 +47,78 @@ class OrgService:
     @staticmethod
     def is_org_admin(member: dict) -> bool:
         return member["org_role"] in ("OWNER", "ADMIN")
+
+    # ------------------------------------------------------- 执行者（成员 / 后台管理员）
+    def resolve_actor(self, principal) -> dict:
+        """把当前令牌解析成组织执行者（spec §3.2 / §4.3）。
+
+        后台管理员在组织里没有 org_member 记录，因此 ``id`` / ``identity_id`` 为 None、
+        部门范围是整个组织；其余字段与成员口径保持一致，业务方法不必分叉。
+        """
+        if isinstance(principal, AdminPrincipal):
+            return self._admin_actor(principal)
+        return self.require_membership(principal)
+
+    def _admin_actor(self, admin: AdminPrincipal) -> dict:
+        if admin.org_id is None or admin.role != "ORG_ADMIN":
+            raise ApiError(ErrorCode.FORBIDDEN, "该接口需要组织管理员身份")
+        org = self._session.execute(
+            text("SELECT * FROM organization WHERE id = :id AND deleted_at IS NULL"),
+            {"id": admin.org_id},
+        ).mappings().first()
+        if org is None or org["status"] != "ACTIVE":
+            raise ApiError(ErrorCode.FORBIDDEN, "组织已停用")
+        return {
+            "org_id": org["id"],
+            "id": None,
+            "identity_id": None,
+            "admin_id": admin.admin_id,
+            "org_role": "ADMIN",
+            "department_id": None,
+            "member_key": None,
+            "real_name": admin.username,
+            "job_title": None,
+            "status": "ACTIVE",
+            "org_name": org["name"],
+            "org_code": org["code"],
+            "org_timezone": org["timezone"],
+            "org_logo_url": org["logo_url"],
+        }
+
+    def record_org_audit(
+        self,
+        actor: dict,
+        action: str,
+        target_type: str,
+        target_id: int | None,
+        detail=None,
+    ) -> None:
+        """组织管理操作写审计日志（spec §4.3「操作日志」）。失败不阻断主流程。"""
+        try:
+            if actor.get("admin_id") is not None:
+                actor_type, actor_id, actor_name = "ADMIN", actor["admin_id"], actor["real_name"]
+            else:
+                actor_type, actor_id, actor_name = "ACCOUNT", actor["identity_id"], actor["real_name"]
+            self._session.execute(
+                text(
+                    "INSERT INTO audit_log (actor_type, actor_id, actor_name, org_id, action,"
+                    " target_type, target_id, detail) VALUES (:actor_type, :actor_id, :actor_name,"
+                    " :org_id, :action, :target_type, :target_id, :detail)"
+                ),
+                {
+                    "actor_type": actor_type,
+                    "actor_id": actor_id,
+                    "actor_name": actor_name,
+                    "org_id": actor["org_id"],
+                    "action": action,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "detail": json_dumps(detail) if detail else None,
+                },
+            )
+            self._session.commit()
+        except Exception:  # noqa: BLE001 - 审计写入失败不影响主流程
+            self._session.rollback()
 
     @staticmethod
     def require_org_admin(member: dict) -> None:
@@ -207,7 +280,9 @@ class OrgService:
     def list_members(self, member: dict, department_id: int | None) -> list[dict]:
         scope = self.manageable_department_ids(member)
         params: dict = {"org_id": member["org_id"]}
-        if not scope:
+        admin_actor = member.get("admin_id") is not None
+        if not scope and not admin_actor:
+            # 普通成员只能看到自己
             sql = "SELECT * FROM org_member WHERE org_id = :org_id AND id = :self_id"
             params["self_id"] = member["id"]
         elif department_id is not None:
@@ -217,6 +292,9 @@ class OrgService:
                 " AND status <> 'LEFT'"
             )
             params["dept"] = department_id
+        elif admin_actor:
+            # 后台管理员看全组织；组织里还没有部门时也要能列出成员（新组织开张就是这个场景）
+            sql = "SELECT * FROM org_member WHERE org_id = :org_id AND status <> 'LEFT'"
         else:
             sql = (
                 "SELECT * FROM org_member WHERE org_id = :org_id"
@@ -393,9 +471,10 @@ class OrgService:
         dispatch = self._session.execute(
             text(
                 "INSERT INTO event_dispatch (event_id, org_id, scope_type, department_id,"
-                " include_sub_departments, require_receipt, created_by_member_id, status,"
-                " recipient_count) VALUES (:event_id, :org_id, :scope_type, :department_id,"
-                " :include_sub, :require_receipt, :member_id, 'ACTIVE', :count) RETURNING *"
+                " include_sub_departments, require_receipt, created_by_member_id,"
+                " created_by_admin_id, status, recipient_count) VALUES (:event_id, :org_id,"
+                " :scope_type, :department_id, :include_sub, :require_receipt, :member_id,"
+                " :admin_id, 'ACTIVE', :count) RETURNING *"
             ),
             {
                 "event_id": event["id"],
@@ -407,7 +486,9 @@ class OrgService:
                 if payload.get("includeSubDepartments") is None
                 else bool(payload["includeSubDepartments"]),
                 "require_receipt": bool(payload.get("requireReceipt")),
+                # 发起方二选一：成员（App）记成员 id，后台管理员（Web）记 admin_user id（spec §5.6）
                 "member_id": member["id"],
+                "admin_id": member.get("admin_id"),
                 "count": len(recipients),
             },
         ).mappings().one()
@@ -724,21 +805,172 @@ class OrgService:
             return
         raise ApiError(ErrorCode.FORBIDDEN, "无权查看该下发的回执")
 
+    # ------------------------------------------------------- 组织管理端（Web）
+    def admin_event_list(self, member: dict, start: datetime, end: datetime) -> list[dict]:
+        """组织管理端的组织日程列表（spec §6.3 `GET /org-admin/events`）。
+
+        与管理端下拉一致：只列**活跃下发**，并附回执分布。
+        """
+        self.require_org_admin(member)
+        rows = self._session.execute(
+            text(
+                "SELECT e.*, d.id AS dispatch_id, d.scope_type, d.department_id,"
+                " d.require_receipt, d.recipient_count FROM event e"
+                " JOIN event_dispatch d ON d.event_id = e.id AND d.status = 'ACTIVE'"
+                " WHERE e.org_id = :org_id AND e.deleted_at IS NULL"
+                " AND e.start_at < :end AND e.end_at > :start ORDER BY e.start_at"
+            ),
+            {"org_id": member["org_id"], "start": start, "end": end},
+        ).mappings().all()
+        if not rows:
+            return []
+        dispatch_ids = [row["dispatch_id"] for row in rows]
+        receipts = self._session.execute(
+            text(
+                "SELECT dispatch_id, receipt_status, count(*) AS total FROM event_recipient"
+                " WHERE dispatch_id = ANY(:ids) GROUP BY dispatch_id, receipt_status"
+            ),
+            {"ids": dispatch_ids},
+        ).mappings().all()
+        tally: dict[int, dict[str, int]] = {}
+        for row in receipts:
+            tally.setdefault(row["dispatch_id"], {})[row["receipt_status"]] = row["total"]
+
+        result = []
+        for row in rows:
+            counts = tally.get(row["dispatch_id"], {})
+            result.append(
+                {
+                    "eventId": row["id"],
+                    "dispatchId": row["dispatch_id"],
+                    "title": row["title"],
+                    "description": row["description"],
+                    "location": row["location_name"],
+                    "startAt": row["start_at"],
+                    "endAt": row["end_at"],
+                    "allDay": bool(row["all_day"]),
+                    "timezone": row["timezone"],
+                    "scopeType": row["scope_type"],
+                    "departmentId": row["department_id"],
+                    "requireReceipt": bool(row["require_receipt"]),
+                    "recipientCount": row["recipient_count"],
+                    "pendingCount": counts.get("PENDING", 0),
+                    "acceptedCount": counts.get("ACCEPTED", 0),
+                    "declinedCount": counts.get("DECLINED", 0),
+                    "completedCount": counts.get("COMPLETED", 0),
+                }
+            )
+        return result
+
+    def org_settings(self, member: dict) -> dict:
+        """组织设置（spec §4.3）：成员上限只读，由平台超管在 §4.4 控制。"""
+        self.require_org_admin(member)
+        org = self._require_active_org(member["org_id"])
+        member_count = self._session.execute(
+            text(
+                "SELECT count(*) FROM org_member WHERE org_id = :org_id AND status <> 'LEFT'"
+            ),
+            {"org_id": member["org_id"]},
+        ).scalar_one()
+        return _settings_view(org, member_count)
+
+    def update_org_settings(self, member: dict, payload: dict) -> dict:
+        self.require_org_admin(member)
+        org = self._require_active_org(member["org_id"])
+        if payload.get("timezone"):
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+            try:
+                ZoneInfo(payload["timezone"])
+            except (ZoneInfoNotFoundError, ValueError):
+                raise ApiError(ErrorCode.PARAM_INVALID, f"时区不合法: {payload['timezone']}") from None
+        self._session.execute(
+            text(
+                "UPDATE organization SET name = COALESCE(NULLIF(:name, ''), name),"
+                " logo_url = COALESCE(:logo, logo_url),"
+                " contact_name = COALESCE(:contact_name, contact_name),"
+                " contact_phone = COALESCE(:contact_phone, contact_phone),"
+                " timezone = COALESCE(NULLIF(:timezone, ''), timezone), updated_at = now()"
+                " WHERE id = :id"
+            ),
+            {
+                "name": payload.get("name") or "",
+                "logo": payload.get("logoUrl"),
+                "contact_name": payload.get("contactName"),
+                "contact_phone": payload.get("contactPhone"),
+                "timezone": payload.get("timezone") or "",
+                "id": org["id"],
+            },
+        )
+        self._session.commit()
+        return self.org_settings(member)
+
+    def _require_active_org(self, org_id: int) -> dict:
+        org = self._session.execute(
+            text("SELECT * FROM organization WHERE id = :id AND deleted_at IS NULL"),
+            {"id": org_id},
+        ).mappings().first()
+        if org is None or org["status"] != "ACTIVE":
+            raise ApiError(ErrorCode.FORBIDDEN, "组织已停用")
+        return dict(org)
+
+    def audit_logs(self, member: dict, action: str | None, limit: int) -> list[dict]:
+        """本组织的操作日志（spec §6.3）。只服务后台组织管理员：App 里没有这个页面。"""
+        if member.get("admin_id") is None:
+            raise ApiError(ErrorCode.FORBIDDEN, "该接口只服务后台组织管理员")
+        params: dict = {"org_id": member["org_id"]}
+        sql = "SELECT * FROM audit_log WHERE org_id = :org_id"
+        if action:
+            sql += " AND action = :action"
+            params["action"] = action
+        sql += " ORDER BY id DESC LIMIT :limit"
+        params["limit"] = max(1, min(limit, 500))
+        rows = self._session.execute(text(sql), params).mappings().all()
+        return [
+            {
+                "id": row["id"],
+                "actorType": row["actor_type"],
+                "actorName": row["actor_name"],
+                "orgId": row["org_id"],
+                "action": row["action"],
+                "targetType": row["target_type"],
+                "targetId": row["target_id"],
+                "detail": row["detail"],
+                "ip": row["ip"],
+                "createdAt": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def import_failures_csv(self, member: dict, batch_id: int) -> str:
+        """失败明细导出为 CSV，便于修正后重传（spec §6.3）。"""
+        self.require_org_admin(member)
+        detail = self.import_detail(member, batch_id)
+        lines = ["行号,原始数据,失败原因"]
+        for row in detail["rows"]:
+            if row["status"] != "FAILED":
+                continue
+            raw = (row["rawData"] or "").replace('"', '""')
+            reason = (row["errorMessage"] or "").replace('"', '""')
+            lines.append(f'{row["rowNo"]},"{raw}","{reason}"')
+        return "\n".join(lines) + "\n"
+
     # ------------------------------------------------------------ 成员导入
     def import_members(self, member: dict, file_name: str, content: bytes, auto_create: bool) -> dict:
+        # 批量导入是组织管理员的权限（spec §2.2 权限矩阵）
+        self.require_org_admin(member)
         rows = _parse_import_file(file_name, content)
         if not rows:
             raise ApiError(ErrorCode.PARAM_INVALID, "文件中没有可导入的数据行")
         if len(rows) > 5000:
             raise ApiError(ErrorCode.PARAM_INVALID, f"单次导入最多 5000 行，当前 {len(rows)} 行")
-        if auto_create and not self.is_org_admin(member):
-            raise ApiError(ErrorCode.FORBIDDEN, "自动创建部门需要组织管理员权限")
 
         batch = self._session.execute(
             text(
                 "INSERT INTO import_batch (org_id, file_name, file_url, total_count, success_count,"
-                " fail_count, status, created_by_member_id) VALUES (:org_id, :file_name, :file_url,"
-                " :total, 0, 0, 'PROCESSING', :member_id) RETURNING id"
+                " fail_count, status, created_by_member_id, created_by_admin_id) VALUES (:org_id,"
+                " :file_name, :file_url, :total, 0, 0, 'PROCESSING', :member_id, :admin_id)"
+                " RETURNING id"
             ),
             {
                 "org_id": member["org_id"],
@@ -746,6 +978,7 @@ class OrgService:
                 "file_url": f"memory://{file_name}",
                 "total": len(rows),
                 "member_id": member["id"],
+                "admin_id": member.get("admin_id"),
             },
         ).scalar_one()
         self._session.commit()
@@ -901,9 +1134,11 @@ class OrgService:
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "成员导入"
-        headers = ["姓名", "手机号", "邮箱", "工号", "部门路径", "角色"]
+        # 模板列与 Java 版、spec §4.3 一致：只留「姓名 + 唯一识别 ID + 部门路径 + 角色」，
+        # 手机号与邮箱不再是组织侧必填（组织账号不依赖手机号，spec §3.1）
+        headers = ["姓名", "成员唯一识别 ID（学号/工号）", "部门路径", "角色"]
         sheet.append(headers)
-        sheet.append(["张三", "13800000000", "zhangsan@example.com", "E1001", "技术中心/后端组", "MEMBER"])
+        sheet.append(["张三", "E1001", "技术中心/后端组", "MEMBER"])
         output = BytesIO()
         workbook.save(output)
         return output.getvalue()
@@ -1022,6 +1257,22 @@ def _department_view(row) -> dict:
         "level": row["level"],
         "sortOrder": row["sort_order"],
         "status": row["status"],
+    }
+
+
+def _settings_view(org: dict, member_count: int) -> dict:
+    return {
+        "orgId": org["id"],
+        "name": org["name"],
+        "code": org["code"],
+        "logoUrl": org["logo_url"],
+        "contactName": org["contact_name"],
+        "contactPhone": org["contact_phone"],
+        "timezone": org["timezone"],
+        "status": org["status"],
+        # 成员上限只读：由平台超管在 spec §4.4 控制，组织侧不能自行上调
+        "maxMembers": org["max_members"],
+        "memberCount": member_count,
     }
 
 

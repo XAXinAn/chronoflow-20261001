@@ -86,19 +86,22 @@ public class OrgMemberService {
 
     /**
      * 成员列表。组织管理员看全组织；部门管理员看被授权部门及下级；普通成员只能看到自己。
+     *
+     * <p>后台管理员（Web 组织管理端）没有成员记录，但同样是「组织管理员」，看到全组织。
      */
-    public List<OrgMemberResponse> list(OrgMember actor, Long departmentId) {
+    public List<OrgMemberResponse> list(OrgActor actor, Long departmentId) {
         LambdaQueryWrapper<OrgMember> query = new LambdaQueryWrapper<OrgMember>()
                 .eq(OrgMember::getOrgId, actor.getOrgId());
 
         Set<Long> scope = permission.manageableDepartmentIds(actor);
-        if (scope.isEmpty()) {
+        if (!actor.isAdminActor() && scope.isEmpty()) {
+            // 普通成员：只看得到自己
             query.eq(OrgMember::getId, actor.getId());
         } else {
             if (departmentId != null) {
                 permission.requireCanManageDepartment(actor, departmentId);
                 query.eq(OrgMember::getDepartmentId, departmentId);
-            } else {
+            } else if (!actor.isAdminActor()) {
                 query.in(OrgMember::getDepartmentId, scope);
             }
             query.ne(OrgMember::getStatus, OrgMember.STATUS_LEFT);
@@ -141,7 +144,7 @@ public class OrgMemberService {
      * <p>不创建账号、不创建身份——身份等成员自己用「组织唯一 ID + 唯一识别 ID」认领组织账号时产生。
      */
     @Transactional
-    public OrgMemberResponse create(OrgMember actor, OrgMemberCreateRequest request) {
+    public OrgMemberResponse create(OrgActor actor, OrgMemberCreateRequest request) {
         Department department = departmentService.requireInOrg(actor.getOrgId(), request.departmentId());
         permission.requireCanManageDepartment(actor, department.getId());
 
@@ -194,7 +197,7 @@ public class OrgMemberService {
      * <p>成员被冒领、或换了个人账号时靠它恢复；组织侧的成员记录保留。
      */
     @Transactional
-    public OrgMemberResponse unbind(OrgMember actor, Long memberId) {
+    public OrgMemberResponse unbind(OrgActor actor, Long memberId) {
         OrgMember target = requireMemberInOrg(actor.getOrgId(), memberId);
         permission.requireCanManageDepartment(actor, target.getDepartmentId());
         unbindInternal(target);
@@ -223,7 +226,7 @@ public class OrgMemberService {
      * 编辑成员：调岗、改角色、停用。拥有者不可被降级，避免组织失去唯一拥有者。
      */
     @Transactional
-    public OrgMemberResponse update(OrgMember actor, Long memberId, OrgMemberUpdateRequest request) {
+    public OrgMemberResponse update(OrgActor actor, Long memberId, OrgMemberUpdateRequest request) {
         OrgMember target = requireMemberInOrg(actor.getOrgId(), memberId);
 
         boolean selfEdit = target.getId().equals(actor.getId());

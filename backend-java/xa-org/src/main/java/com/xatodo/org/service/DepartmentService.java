@@ -57,7 +57,7 @@ public class DepartmentService {
     }
 
     @Transactional
-    public Department create(OrgMember actor, DepartmentCreateRequest request) {
+    public Department create(OrgActor actor, DepartmentCreateRequest request) {
         Department parent = null;
         if (request.parentId() != null) {
             parent = requireInOrg(actor.getOrgId(), request.parentId());
@@ -88,7 +88,7 @@ public class DepartmentService {
     }
 
     @Transactional
-    public Department update(OrgMember actor, Long departmentId, DepartmentUpdateRequest request) {
+    public Department update(OrgActor actor, Long departmentId, DepartmentUpdateRequest request) {
         Department department = requireInOrg(actor.getOrgId(), departmentId);
         permission.requireCanManageDepartment(actor, departmentId);
         if (StringUtils.hasText(request.name())) {
@@ -102,7 +102,7 @@ public class DepartmentService {
     }
 
     @Transactional
-    public void delete(OrgMember actor, Long departmentId) {
+    public void delete(OrgActor actor, Long departmentId) {
         Department department = requireInOrg(actor.getOrgId(), departmentId);
         permission.requireCanManageDepartment(actor, departmentId);
 
@@ -123,7 +123,7 @@ public class DepartmentService {
     }
 
     @Transactional
-    public void grantManager(OrgMember actor, Long departmentId, Long orgMemberId) {
+    public void grantManager(OrgActor actor, Long departmentId, Long orgMemberId) {
         permission.requireOrgAdmin(actor);
         Department department = requireInOrg(actor.getOrgId(), departmentId);
         OrgMember target = requireMemberInOrg(actor.getOrgId(), orgMemberId);
@@ -137,11 +137,15 @@ public class DepartmentService {
         DepartmentManager grant = new DepartmentManager();
         grant.setDepartmentId(department.getId());
         grant.setOrgMemberId(target.getId());
+        // 记录是谁授予的：成员发起记成员 id，后台管理端发起记 admin_user id（spec §5.6）
+        if (actor.isAdminActor()) {
+            grant.setGrantedByAdminId(actor.getAdminId());
+        }
         departmentManagerMapper.insert(grant);
     }
 
     @Transactional
-    public void revokeManager(OrgMember actor, Long departmentId, Long orgMemberId) {
+    public void revokeManager(OrgActor actor, Long departmentId, Long orgMemberId) {
         permission.requireOrgAdmin(actor);
         departmentManagerMapper.delete(new LambdaQueryWrapper<DepartmentManager>()
                 .eq(DepartmentManager::getDepartmentId, departmentId)

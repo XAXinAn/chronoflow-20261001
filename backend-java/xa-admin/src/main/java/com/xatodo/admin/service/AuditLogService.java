@@ -33,11 +33,22 @@ public class AuditLogService {
     }
 
     public void record(AdminPrincipal actor, String action, String targetType, Long targetId, Object detail) {
+        record(AuditLog.ACTOR_ADMIN, actor.adminId(), actor.username(), null,
+                action, targetType, targetId, detail);
+    }
+
+    /**
+     * 通用审计写入（spec §4.3）。组织管理端的动作可能来自后台管理员，也可能来自 App 里的组织身份，
+     * 两者的 {@code actorType} / {@code actorId} 口径不同，因此不共用 {@link AdminPrincipal} 版本。
+     */
+    public void record(String actorType, Long actorId, String actorName, Long orgId,
+                       String action, String targetType, Long targetId, Object detail) {
         try {
             AuditLog entry = new AuditLog();
-            entry.setActorType(AuditLog.ACTOR_ADMIN);
-            entry.setActorId(actor.adminId());
-            entry.setActorName(actor.username());
+            entry.setActorType(actorType);
+            entry.setActorId(actorId);
+            entry.setActorName(actorName);
+            entry.setOrgId(orgId);
             entry.setAction(action);
             entry.setTargetType(targetType);
             entry.setTargetId(targetId);

@@ -58,20 +58,25 @@ public class MemberImportService {
     private final ImportBatchMapper importBatchMapper;
     private final ImportRowResultMapper importRowResultMapper;
     private final MemberImportProcessor processor;
+    private final OrgPermissionService permission;
 
     public MemberImportService(ImportBatchMapper importBatchMapper,
                                ImportRowResultMapper importRowResultMapper,
-                               MemberImportProcessor processor) {
+                               MemberImportProcessor processor,
+                               OrgPermissionService permission) {
         this.importBatchMapper = importBatchMapper;
         this.importRowResultMapper = importRowResultMapper;
         this.processor = processor;
+        this.permission = permission;
     }
 
     /**
      * 解析并登记批次，随后交由异步处理器逐行入库。接口立即返回 batchId 供查询进度。
      */
     @Transactional
-    public ImportBatch startImport(OrgMember actor, String fileName, byte[] content, boolean autoCreateDepartment) {
+    public ImportBatch startImport(OrgActor actor, String fileName, byte[] content, boolean autoCreateDepartment) {
+        // 批量导入是组织管理员的权限（spec §2.2 权限矩阵）；部门管理员只能看本部门成员
+        permission.requireOrgAdmin(actor);
         List<ImportRow> rows = parse(content, fileName);
         if (rows.isEmpty()) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "文件中没有可导入的数据行");
@@ -90,19 +95,20 @@ public class MemberImportService {
         batch.setFailCount(0);
         batch.setStatus(ImportBatch.PROCESSING);
         batch.setCreatedByMemberId(actor.getId());
+        batch.setCreatedByAdminId(actor.getAdminId());
         importBatchMapper.insert(batch);
 
-        processor.process(batch.getId(), actor.getId(), rows, autoCreateDepartment);
+        processor.process(batch.getId(), actor, rows, autoCreateDepartment);
         return batch;
     }
 
-    public List<ImportBatch> listBatches(OrgMember actor) {
+    public List<ImportBatch> listBatches(OrgActor actor) {
         return importBatchMapper.selectList(new LambdaQueryWrapper<ImportBatch>()
                 .eq(ImportBatch::getOrgId, actor.getOrgId())
                 .orderByDesc(ImportBatch::getId));
     }
 
-    public ImportBatchResponse detail(OrgMember actor, Long batchId) {
+    public ImportBatchResponse detail(OrgActor actor, Long batchId) {
         ImportBatch batch = requireBatch(actor, batchId);
         List<ImportRowResponse> rows = importRowResultMapper.selectList(
                         new LambdaQueryWrapper<ImportRowResult>()
@@ -120,7 +126,7 @@ public class MemberImportService {
     /**
      * 失败明细导出为 CSV，便于修正后重传。
      */
-    public String failureCsv(OrgMember actor, Long batchId) {
+    public String failureCsv(OrgActor actor, Long batchId) {
         requireBatch(actor, batchId);
         List<ImportRowResult> failures = importRowResultMapper.selectList(
                 new LambdaQueryWrapper<ImportRowResult>()
@@ -162,7 +168,7 @@ public class MemberImportService {
         }
     }
 
-    public ImportBatch requireBatch(OrgMember actor, Long batchId) {
+    public ImportBatch requireBatch(OrgActor actor, Long batchId) {
         ImportBatch batch = importBatchMapper.selectById(batchId);
         if (batch == null || !actor.getOrgId().equals(batch.getOrgId())) {
             throw BizException.of(ErrorCode.FORBIDDEN, "导入批次不存在或不属于当前组织");

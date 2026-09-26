@@ -72,11 +72,10 @@ public class MemberImportProcessor {
     }
 
     @Async(AsyncConfig.IMPORT_EXECUTOR)
-    public void process(Long batchId, Long actorMemberId, List<ImportRow> rows, boolean autoCreateDepartment) {
+    public void process(Long batchId, OrgActor actor, List<ImportRow> rows, boolean autoCreateDepartment) {
         ImportBatch batch = importBatchMapper.selectById(batchId);
-        OrgMember actor = orgMemberMapper.selectById(actorMemberId);
         if (batch == null || actor == null) {
-            log.warn("导入批次或发起人不存在，跳过。batchId={}, actorMemberId={}", batchId, actorMemberId);
+            log.warn("导入批次或发起人不存在，跳过。batchId={}", batchId);
             return;
         }
 
@@ -96,7 +95,7 @@ public class MemberImportProcessor {
                 ResolvedDepartment resolved = resolveDepartment(actor, row.departmentPath(), autoCreateDepartment);
                 if (resolved.created()) {
                     // 自动创建了新部门，可管理部门集合已发生变化，必须重算后再校验
-                    manageable = permission.manageableDepartmentIds(actor);
+                    manageable = permission.refreshManageableDepartmentIds(actor);
                 }
                 if (!manageable.contains(resolved.department().getId())) {
                     throw BizException.of(ErrorCode.FORBIDDEN, "无权向该部门导入成员");
@@ -146,7 +145,7 @@ public class MemberImportProcessor {
     /**
      * 按「技术中心/后端组」逐级查找部门；允许自动创建时逐级补建。
      */
-    private ResolvedDepartment resolveDepartment(OrgMember actor, String path, boolean autoCreate) {
+    private ResolvedDepartment resolveDepartment(OrgActor actor, String path, boolean autoCreate) {
         Department current = null;
         boolean created = false;
         for (String raw : path.split("/")) {

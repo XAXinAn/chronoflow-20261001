@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import type { StoredSession } from '../auth/tokenStore';
 import {
@@ -13,6 +22,11 @@ import type { AppRuntime } from '../runtime';
 import { createApiClient, type ApiClient } from '../api/client';
 import { createEndpoints, type Endpoints } from '../api/endpoints';
 import { createTheme, type AppTheme } from '../theme';
+import {
+  createSecureThemeStore,
+  nextScheme,
+  type ThemePreferenceStore,
+} from '../theme/preference';
 import type { ColorScheme } from '@xa-todo/design-tokens';
 
 interface AppContextValue {
@@ -63,9 +77,28 @@ export function AppProvider({
 
   const scheme = override ?? systemScheme;
   const theme = useMemo(() => createTheme(scheme), [scheme]);
+  // 深色模式偏好要持久化：只存 React state 的话，App 一重启就回到系统配色（spec §7.6.6）
+  const themeStoreRef = useRef<ThemePreferenceStore | null>(null);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const store = await createSecureThemeStore();
+      themeStoreRef.current = store;
+      const stored = await store.read();
+      if (active && stored) {
+        setOverride(stored);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const toggleScheme = useCallback(() => {
-    setOverride((current) => ((current ?? systemScheme) === 'light' ? 'dark' : 'light'));
-  }, [systemScheme]);
+    const next = nextScheme(override, systemScheme);
+    setOverride(next);
+    void themeStoreRef.current?.write(next);
+  }, [override, systemScheme]);
 
   const persist = useCallback(async (next: StoredOrgAccount[]) => {
     setOrgAccounts(next);

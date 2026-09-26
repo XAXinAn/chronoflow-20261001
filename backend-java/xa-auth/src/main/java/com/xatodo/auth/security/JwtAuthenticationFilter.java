@@ -38,6 +38,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     /**
      * 后台接口由 {@code AdminAuthenticationFilter} 负责，两边路径互斥，避免令牌语义互相干扰。
+     *
+     * <p>例外是组织管理端前缀 {@code /org-admin/**}：它既服务后台组织管理员，也服务 App 里的组织身份，
+     * 因此两个过滤器都会尝试解析，谁能解析成功谁就把认证写进上下文。
      */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

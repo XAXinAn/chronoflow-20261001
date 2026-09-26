@@ -237,4 +237,50 @@ public final class OrgDtos {
                                         @Size(max = 64) String timezone,
                                         Boolean redispatch) {
     }
+
+    /**
+     * 组织管理端（Web）的组织日程条目：比成员侧多出下发范围与回执统计（spec §4.3 组织日历管理）。
+     */
+    public record OrgEventManageItem(Long eventId,
+                                     Long dispatchId,
+                                     String title,
+                                     String description,
+                                     String location,
+                                     OffsetDateTime startAt,
+                                     OffsetDateTime endAt,
+                                     Boolean allDay,
+                                     String timezone,
+                                     String scopeType,
+                                     Long departmentId,
+                                     Boolean requireReceipt,
+                                     int recipientCount,
+                                     int pendingCount,
+                                     int acceptedCount,
+                                     int declinedCount,
+                                     int completedCount) {
+    }
+
+    // -------------------------------------------------------------- 组织设置
+
+    /**
+     * 组织设置（spec §4.3）。成员上限只读——上限由平台超管在 §4.4 控制，组织侧不能自行上调。
+     */
+    public record OrgSettingsResponse(Long orgId,
+                                      String name,
+                                      String code,
+                                      String logoUrl,
+                                      String contactName,
+                                      String contactPhone,
+                                      String timezone,
+                                      String status,
+                                      Integer maxMembers,
+                                      long memberCount) {
+    }
+
+    public record OrgSettingsUpdateRequest(@Size(max = 128) String name,
+                                           @Size(max = 512) String logoUrl,
+                                           @Size(max = 64) String contactName,
+                                           @Size(max = 20) String contactPhone,
+                                           @Size(max = 64) String timezone) {
+    }
 }

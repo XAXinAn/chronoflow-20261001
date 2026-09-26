@@ -12,6 +12,7 @@ import com.xatodo.org.dto.OrgDtos.ReceiptRequest;
 import com.xatodo.org.dto.OrgDtos.ReceiptSummaryResponse;
 import com.xatodo.org.entity.OrgMember;
 import com.xatodo.org.service.DepartmentService;
+import com.xatodo.org.service.OrgActor;
 import com.xatodo.org.service.OrgEventService;
 import com.xatodo.org.service.OrgMemberService;
 import com.xatodo.org.service.OrgPermissionService;
@@ -66,8 +67,7 @@ public class OrgController {
 
     @GetMapping("/members")
     public ApiResponse<List<OrgMemberResponse>> members(@RequestParam(required = false) Long departmentId) {
-        OrgMember member = currentMember();
-        return ApiResponse.ok(orgMemberService.list(member, departmentId));
+        return ApiResponse.ok(orgMemberService.list(actor(), departmentId));
     }
 
     /**
@@ -97,8 +97,7 @@ public class OrgController {
 
     @GetMapping("/events/{id}/recipients")
     public ApiResponse<ReceiptSummaryResponse> recipients(@PathVariable Long id) {
-        OrgMember member = currentMember();
-        return ApiResponse.ok(orgEventService.receiptSummary(member, id));
+        return ApiResponse.ok(orgEventService.receiptSummary(actor(), id));
     }
 
     /**
@@ -107,11 +106,16 @@ public class OrgController {
     @GetMapping("/events/{id}/recipients/mine")
     public ApiResponse<ReceiptItem> myRecipient(@PathVariable Long id) {
         OrgMember member = currentMember();
-        ReceiptSummaryResponse summary = orgEventService.receiptSummary(member, id);
+        ReceiptSummaryResponse summary = orgEventService.receiptSummary(actor(), id);
         return ApiResponse.ok(summary.items().stream()
                 .filter(item -> item.orgMemberId().equals(member.getId()))
                 .findFirst()
                 .orElse(null));
+    }
+
+    /** 成员视角的执行者：组织身份，权限来自本人所属部门与部门管理员授权。 */
+    private OrgActor actor() {
+        return permission.memberActor(currentMember());
     }
 
     private OrgMember currentMember() {
