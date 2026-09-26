@@ -19,7 +19,6 @@ export interface DispatchForm {
   endTime: string;
   /** 下发对象：成员 id 列表（在选人页里挑好后回填） */
   memberIds: number[];
-  requireReceipt: boolean;
 }
 
 /** 能下发的人：组织管理员，或被授权了某些部门的部门管理员（spec §4.2.2）。 */
@@ -72,7 +71,6 @@ export function buildDispatchPayload(form: DispatchForm, timezone: string): OrgD
     // 下发对象就是人名单：服务端按 MEMBER 范围逐个校验「这个人我能不能下发」
     scopeType: 'MEMBER',
     memberIds: form.memberIds,
-    requireReceipt: form.requireReceipt,
   };
   if (form.description.trim()) {
     payload.description = form.description.trim();

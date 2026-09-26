@@ -70,8 +70,6 @@ export interface DashboardStats {
   taskCount: number;
   completedTaskCount: number;
   dispatchCount: number;
-  receiptCount: number;
-  pendingReceiptCount: number;
 }
 
 export interface AuditLog {
@@ -140,36 +138,7 @@ export interface OrgEventItem {
   timezone: string;
   scopeType: 'ALL' | 'DEPARTMENT' | 'MEMBER';
   departmentId?: number;
-  requireReceipt: boolean;
   recipientCount: number;
-  pendingCount: number;
-  acceptedCount: number;
-  declinedCount: number;
-  completedCount: number;
-}
-
-export interface ReceiptItem {
-  orgMemberId: number;
-  realName?: string;
-  departmentName?: string;
-  receiptStatus: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'COMPLETED';
-  receiptAt?: string;
-  remark?: string;
-  read: boolean;
-}
-
-export interface ReceiptSummary {
-  dispatchId: number;
-  eventId: number;
-  scopeType: string;
-  requireReceipt: boolean;
-  total: number;
-  pending: number;
-  accepted: number;
-  declined: number;
-  completed: number;
-  readCount: number;
-  items: ReceiptItem[];
 }
 
 export interface ImportRowResult {

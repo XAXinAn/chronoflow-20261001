@@ -14,7 +14,6 @@ import com.xatodo.org.dto.OrgDtos.OrgMemberResponse;
 import com.xatodo.org.dto.OrgDtos.OrgMemberUpdateRequest;
 import com.xatodo.org.dto.OrgDtos.OrgSettingsResponse;
 import com.xatodo.org.dto.OrgDtos.OrgSettingsUpdateRequest;
-import com.xatodo.org.dto.OrgDtos.ReceiptSummaryResponse;
 import com.xatodo.org.dto.OrgDtos.ImportBatchResponse;
 import com.xatodo.org.entity.Department;
 import com.xatodo.org.entity.ImportBatch;
@@ -226,12 +225,6 @@ public class OrgAdminController {
         orgEventService.delete(actor, id);
         audit.record(actor, "ORG_EVENT_DELETE", "EVENT", id, null);
         return ApiResponse.ok();
-    }
-
-    @GetMapping("/events/{id}/receipts")
-    public ApiResponse<ReceiptSummaryResponse> receipts(@PathVariable Long id) {
-        OrgActor actor = actor();
-        return ApiResponse.ok(orgEventService.receiptSummary(actor, id));
     }
 
     // -------------------------------------------------------------- 组织设置

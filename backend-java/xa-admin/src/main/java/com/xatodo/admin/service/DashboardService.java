@@ -71,13 +71,9 @@ public class DashboardService {
                         .isNull(Task::getDeletedAt)
                         .eq(Task::getStatus, Task.STATUS_DONE)));
         long dispatches = count(eventDispatchMapper.selectCount(null));
-        long receipts = count(eventRecipientMapper.selectCount(null));
-        long pendingReceipts = count(eventRecipientMapper.selectCount(
-                new LambdaQueryWrapper<EventRecipient>()
-                        .eq(EventRecipient::getReceiptStatus, EventRecipient.PENDING)));
 
         return new DashboardResponse(organizations, activeOrganizations, accounts, disabledAccounts,
-                orgMembers, personalEvents, tasks, completedTasks, dispatches, receipts, pendingReceipts);
+                orgMembers, personalEvents, tasks, completedTasks, dispatches);
     }
 
     private long count(Long value) {

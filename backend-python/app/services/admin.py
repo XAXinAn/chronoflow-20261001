@@ -439,10 +439,6 @@ class AdminService:
                 "SELECT count(*) FROM task WHERE deleted_at IS NULL AND status = 'DONE'"
             ),
             "dispatchCount": scalar("SELECT count(*) FROM event_dispatch"),
-            "receiptCount": scalar("SELECT count(*) FROM event_recipient"),
-            "pendingReceiptCount": scalar(
-                "SELECT count(*) FROM event_recipient WHERE receipt_status = 'PENDING'"
-            ),
         }
 
     # ---------------------------------------------------------------- 审计

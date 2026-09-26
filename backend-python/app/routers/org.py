@@ -64,7 +64,6 @@ class DispatchRequest(BaseModel):
     departmentId: int | None = None
     includeSubDepartments: bool | None = None
     memberIds: list[int] | None = None
-    requireReceipt: bool | None = None
 
 
 class OrgEventUpdate(BaseModel):
@@ -86,12 +85,6 @@ class OrgSettingsUpdate(BaseModel):
     contactName: str | None = None
     contactPhone: str | None = None
     timezone: str | None = None
-
-
-class ReceiptRequest(BaseModel):
-    status: str
-    remark: str | None = None
-    occurrenceDate: str | None = None
 
 
 def _service(session: Session = Depends(get_session)) -> OrgService:
@@ -144,17 +137,6 @@ def org_events(
     return envelope(service.list_org_events(member, start, end))
 
 
-@router.post("/org/events/{id}/receipt")
-def org_event_receipt(
-    id: int,
-    payload: ReceiptRequest,
-    principal: IdentityPrincipal = Depends(current_identity),
-    service=Depends(_service),
-) -> dict:
-    member = _member(principal, service)
-    return envelope(service.submit_receipt(member, id, payload.status, payload.remark))
-
-
 @router.post("/org/events/{id}/read")
 def org_event_read(
     id: int, principal: IdentityPrincipal = Depends(current_identity), service=Depends(_service)
@@ -162,14 +144,6 @@ def org_event_read(
     member = _member(principal, service)
     service.mark_read(member, id)
     return envelope(None)
-
-
-@router.get("/org/events/{id}/recipients")
-def org_event_recipients(
-    id: int, principal: IdentityPrincipal = Depends(current_identity), service=Depends(_service)
-) -> dict:
-    member = _member(principal, service)
-    return envelope(service.receipt_summary(member, id))
 
 
 @router.get("/org-admin/departments")
@@ -400,14 +374,6 @@ def revoke_dispatch(
     service.revoke_dispatch(actor, id)
     service.record_org_audit(actor, "ORG_EVENT_REVOKE", "EVENT", id)
     return envelope(None)
-
-
-@router.get("/org-admin/events/{id}/receipts")
-def org_event_receipts(
-    id: int, principal=Depends(current_org_actor), service=Depends(_service)
-) -> dict:
-    actor = _actor(principal, service)
-    return envelope(service.receipt_summary(actor, id))
 
 
 @router.get("/org-admin/settings")

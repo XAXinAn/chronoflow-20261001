@@ -1,4 +1,4 @@
-import type { EventOccurrence, ReceiptStatus, Task } from '../api/types';
+import type { EventOccurrence, Task } from '../api/types';
 
 /** 把 ISO 时间转成指定时区的 `YYYY-MM-DD`。 */
 export function localDateKey(iso: string, timeZone: string): string {
@@ -100,18 +100,6 @@ export function formatTimeRange(startIso: string, endIso: string, allDay: boolea
   return `${formatter.format(new Date(startIso))} – ${formatter.format(new Date(endIso))}`;
 }
 
-const RECEIPT_LABELS: Record<ReceiptStatus, string> = {
-  PENDING: '待回执',
-  ACCEPTED: '已参加',
-  DECLINED: '不参加',
-  COMPLETED: '已完成',
-};
-
-export function receiptLabel(status: ReceiptStatus | null): string {
-  return status ? RECEIPT_LABELS[status] : '—';
-}
-
-/** 待办排序：未完成在前，其次按截止时间（无时间排最后），再按优先级。 */
 export function sortTasks(tasks: Task[]): Task[] {
   const priorityRank: Record<Task['priority'], number> = { URGENT: 0, HIGH: 1, NORMAL: 2, LOW: 3 };
   return [...tasks].sort((a, b) => {

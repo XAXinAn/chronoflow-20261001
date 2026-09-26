@@ -471,9 +471,9 @@ class OrgService:
         dispatch = self._session.execute(
             text(
                 "INSERT INTO event_dispatch (event_id, org_id, scope_type, department_id,"
-                " include_sub_departments, require_receipt, created_by_member_id,"
+                " include_sub_departments, created_by_member_id,"
                 " created_by_admin_id, status, recipient_count) VALUES (:event_id, :org_id,"
-                " :scope_type, :department_id, :include_sub, :require_receipt, :member_id,"
+                " :scope_type, :department_id, :include_sub, :member_id,"
                 " :admin_id, 'ACTIVE', :count) RETURNING *"
             ),
             {
@@ -485,7 +485,6 @@ class OrgService:
                 "include_sub": True
                 if payload.get("includeSubDepartments") is None
                 else bool(payload["includeSubDepartments"]),
-                "require_receipt": bool(payload.get("requireReceipt")),
                 # 发起方二选一：成员（App）记成员 id，后台管理员（Web）记 admin_user id（spec §5.6）
                 "member_id": member["id"],
                 "admin_id": member.get("admin_id"),
@@ -500,8 +499,8 @@ class OrgService:
             self._session.execute(
                 text(
                     "INSERT INTO event_recipient (dispatch_id, event_id, org_member_id,"
-                    " department_id, receipt_status) VALUES (:dispatch_id, :event_id, :member_id,"
-                    " :department_id, 'PENDING')"
+                    " department_id) VALUES (:dispatch_id, :event_id, :member_id,"
+                    " :department_id)"
                 ),
                 {
                     "dispatch_id": dispatch["id"],
@@ -593,7 +592,7 @@ class OrgService:
     def list_org_events(self, member: dict, start: datetime, end: datetime) -> list[dict]:
         rows = self._session.execute(
             text(
-                "SELECT r.*, d.scope_type, d.department_id, d.require_receipt,"
+                "SELECT r.*, d.scope_type, d.department_id,"
                 " d.created_by_member_id, d.created_by_admin_id, e.* FROM event_recipient r"
                 " JOIN event_dispatch d ON d.id = r.dispatch_id"
                 " JOIN event e ON e.id = r.event_id"
@@ -631,59 +630,12 @@ class OrgService:
                         "allDay": occurrence["allDay"],
                         "timezone": occurrence["timezone"],
                         "rrule": event["rrule"],
-                        "requireReceipt": bool(row["require_receipt"]),
-                        "receiptStatus": row["receipt_status"],
-                        "receiptAt": row["receipt_at"],
-                        "remark": row["remark"],
                         "read": row["read_at"] is not None,
                         "canEdit": can_edit,
                     }
                 )
         result.sort(key=lambda item: (item["startAt"], item["eventId"]))
         return result
-
-    def submit_receipt(self, member: dict, event_id: int, status: str, remark: str | None) -> dict:
-        if status not in ("ACCEPTED", "DECLINED", "COMPLETED"):
-            raise ApiError(ErrorCode.PARAM_INVALID, f"回执状态取值非法: {status}")
-        row = self._session.execute(
-            text(
-                "SELECT r.*, d.status AS dispatch_status, d.require_receipt, e.* FROM event_recipient r"
-                " JOIN event_dispatch d ON d.id = r.dispatch_id"
-                " JOIN event e ON e.id = r.event_id"
-                " WHERE r.event_id = :event_id AND r.org_member_id = :member_id"
-            ),
-            {"event_id": event_id, "member_id": member["id"]},
-        ).mappings().first()
-        if row is None:
-            raise ApiError(ErrorCode.FORBIDDEN, "该日程未下发给当前成员")
-        if row["dispatch_status"] != "ACTIVE":
-            raise ApiError(ErrorCode.FORBIDDEN, "该下发已撤回")
-        self._session.execute(
-            text(
-                "UPDATE event_recipient SET receipt_status = :status, receipt_at = now(),"
-                " remark = :remark, read_at = COALESCE(read_at, now()), updated_at = now()"
-                " WHERE id = :id"
-            ),
-            {"id": row["id"], "status": status, "remark": remark},
-        )
-        self._session.commit()
-        return {
-            "eventId": row["event_id"],
-            "dispatchId": row["dispatch_id"],
-            "title": row["title"],
-            "description": row["description"],
-            "location": row["location_name"],
-            "startAt": row["start_at"],
-            "endAt": row["end_at"],
-            "allDay": bool(row["all_day"]),
-            "timezone": row["timezone"],
-            "rrule": row["rrule"],
-            "requireReceipt": bool(row["require_receipt"]),
-            "receiptStatus": status,
-            "receiptAt": datetime.now(),
-            "remark": remark,
-            "read": True,
-        }
 
     def mark_read(self, member: dict, event_id: int) -> None:
         result = self._session.execute(
@@ -696,51 +648,6 @@ class OrgService:
         if result.rowcount == 0:
             raise ApiError(ErrorCode.FORBIDDEN, "该日程未下发给当前成员")
         self._session.commit()
-
-    def receipt_summary(self, member: dict, event_id: int) -> dict:
-        dispatch = self._require_active_dispatch(member["org_id"], event_id)
-        # 走共用判定：这里原来是照抄一遍的权限规则，加了「发起人」之后立刻就不一致了
-        self._require_can_view_dispatch(member, dispatch)
-        rows = self._session.execute(
-            text(
-                "SELECT r.*, m.real_name, d.name AS department_name FROM event_recipient r"
-                " LEFT JOIN org_member m ON m.id = r.org_member_id"
-                " LEFT JOIN department d ON d.id = r.department_id"
-                " WHERE r.dispatch_id = :dispatch_id ORDER BY r.id"
-            ),
-            {"dispatch_id": dispatch["id"]},
-        ).mappings().all()
-        counts = {"PENDING": 0, "ACCEPTED": 0, "DECLINED": 0, "COMPLETED": 0}
-        read_count = 0
-        items = []
-        for row in rows:
-            counts[row["receipt_status"]] = counts.get(row["receipt_status"], 0) + 1
-            if row["read_at"]:
-                read_count += 1
-            items.append(
-                {
-                    "orgMemberId": row["org_member_id"],
-                    "realName": row["real_name"],
-                    "departmentName": row["department_name"],
-                    "receiptStatus": row["receipt_status"],
-                    "receiptAt": row["receipt_at"],
-                    "remark": row["remark"],
-                    "read": row["read_at"] is not None,
-                }
-            )
-        return {
-            "dispatchId": dispatch["id"],
-            "eventId": event_id,
-            "scopeType": dispatch["scope_type"],
-            "requireReceipt": bool(dispatch["require_receipt"]),
-            "total": len(rows),
-            "pending": counts["PENDING"],
-            "accepted": counts["ACCEPTED"],
-            "declined": counts["DECLINED"],
-            "completed": counts["COMPLETED"],
-            "readCount": read_count,
-            "items": items,
-        }
 
     def _require_active_dispatch(self, org_id: int, event_id: int) -> dict:
         row = self._session.execute(
@@ -755,17 +662,12 @@ class OrgService:
         return dict(row)
 
     def revoke_dispatch(self, member: dict, event_id: int) -> None:
+        """撤回下发：撤回后成员端不再展示（spec §4.2.2）。
+
+        首版不收集回执，因此没有「已回执不可撤回」这回事。
+        """
         dispatch = self._require_active_dispatch(member["org_id"], event_id)
         self.require_is_initiator(member, dispatch)
-        receipted = self._session.execute(
-            text(
-                "SELECT count(*) FROM event_recipient WHERE dispatch_id = :id"
-                " AND receipt_status <> 'PENDING'"
-            ),
-            {"id": dispatch["id"]},
-        ).scalar_one()
-        if receipted:
-            raise ApiError(ErrorCode.DISPATCH_ALREADY_RECEIPTED)
         self._session.execute(
             text("UPDATE event_dispatch SET status = 'REVOKED' WHERE id = :id"), {"id": dispatch["id"]}
         )
@@ -812,11 +714,6 @@ class OrgService:
         )
         self._session.commit()
 
-    def _require_can_view_dispatch(self, member: dict, dispatch: dict) -> None:
-        if self.can_view_dispatch_stats(member, dispatch):
-            return
-        raise ApiError(ErrorCode.FORBIDDEN, "无权查看该下发的回执")
-
     def is_initiator(self, member: dict, dispatch: dict) -> bool:
         """我是不是这条下发的**发起人**（spec §4.2.2）。"""
         if member.get("admin_id") is not None:
@@ -830,27 +727,16 @@ class OrgService:
         if not self.is_initiator(member, dispatch):
             raise ApiError(ErrorCode.FORBIDDEN, "只有下发者本人可以修改这条组织日程")
 
-    def can_view_dispatch_stats(self, member: dict, dispatch: dict) -> bool:
-        """回执统计是**读**：组织管理员、被授权部门的负责人、以及发起人都看得到。"""
-        if self.is_org_admin(member) or self.is_initiator(member, dispatch):
-            return True
-        return (
-            dispatch["scope_type"] == "DEPARTMENT"
-            and dispatch["department_id"] is not None
-            and dispatch["department_id"] in self.manageable_department_ids(member)
-        )
-
-    # ------------------------------------------------------- 组织管理端（Web）
     def admin_event_list(self, member: dict, start: datetime, end: datetime) -> list[dict]:
         """组织管理端的组织日程列表（spec §6.3 `GET /org-admin/events`）。
 
-        与管理端下拉一致：只列**活跃下发**，并附回执分布。
+        只列**活跃下发**（首版不收集回执，spec §4.2.2）。
         """
         self.require_org_admin(member)
         rows = self._session.execute(
             text(
                 "SELECT e.*, d.id AS dispatch_id, d.scope_type, d.department_id,"
-                " d.require_receipt, d.recipient_count FROM event e"
+                " d.recipient_count FROM event e"
                 " JOIN event_dispatch d ON d.event_id = e.id AND d.status = 'ACTIVE'"
                 " WHERE e.org_id = :org_id AND e.deleted_at IS NULL"
                 " AND e.start_at < :end AND e.end_at > :start ORDER BY e.start_at"
@@ -859,21 +745,8 @@ class OrgService:
         ).mappings().all()
         if not rows:
             return []
-        dispatch_ids = [row["dispatch_id"] for row in rows]
-        receipts = self._session.execute(
-            text(
-                "SELECT dispatch_id, receipt_status, count(*) AS total FROM event_recipient"
-                " WHERE dispatch_id = ANY(:ids) GROUP BY dispatch_id, receipt_status"
-            ),
-            {"ids": dispatch_ids},
-        ).mappings().all()
-        tally: dict[int, dict[str, int]] = {}
-        for row in receipts:
-            tally.setdefault(row["dispatch_id"], {})[row["receipt_status"]] = row["total"]
-
         result = []
         for row in rows:
-            counts = tally.get(row["dispatch_id"], {})
             result.append(
                 {
                     "eventId": row["id"],
@@ -887,12 +760,7 @@ class OrgService:
                     "timezone": row["timezone"],
                     "scopeType": row["scope_type"],
                     "departmentId": row["department_id"],
-                    "requireReceipt": bool(row["require_receipt"]),
                     "recipientCount": row["recipient_count"],
-                    "pendingCount": counts.get("PENDING", 0),
-                    "acceptedCount": counts.get("ACCEPTED", 0),
-                    "declinedCount": counts.get("DECLINED", 0),
-                    "completedCount": counts.get("COMPLETED", 0),
                 }
             )
         return result
@@ -1328,7 +1196,7 @@ def _member_view(row, department_names: dict, is_manager: bool) -> dict:
     }
 
 
-def _org_event_view(event, dispatch, receipt, can_edit: bool = True) -> dict:
+def _org_event_view(event, dispatch, recipient, can_edit: bool = True) -> dict:
     """组织日程的响应体。
 
     `can_edit` 默认 True：调用方能拿到这个返回体，说明刚刚通过了权限校验
@@ -1345,10 +1213,6 @@ def _org_event_view(event, dispatch, receipt, can_edit: bool = True) -> dict:
         "allDay": bool(event["all_day"]),
         "timezone": event["timezone"],
         "rrule": event["rrule"],
-        "requireReceipt": bool(dispatch["require_receipt"]),
-        "receiptStatus": receipt["receipt_status"] if receipt else None,
-        "receiptAt": receipt["receipt_at"] if receipt else None,
-        "remark": receipt["remark"] if receipt else None,
-        "read": bool(receipt and receipt["read_at"]),
+        "read": bool(recipient and recipient["read_at"]),
         "canEdit": can_edit,
     }

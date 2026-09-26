@@ -14,25 +14,18 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { OrgCurrent, OrgEvent, ReceiptStatus } from '../api/types';
+import type { OrgCurrent, OrgEvent } from '../api/types';
 import type { Endpoints } from '../api/endpoints';
 import { ApiError } from '../api/client';
 import { MonthCalendar } from '../components/MonthCalendar';
-import { Card, EmptyState, GhostButton, Pill, Screen } from '../components/ui';
+import { Card, EmptyState, Screen } from '../components/ui';
 import { WheelDatePicker } from '../components/WheelDatePicker';
 import { useAppTheme } from '../context/AppContext';
-import { dayHeading, formatTimeRange, localDateKey, receiptLabel } from '../domain/agenda';
+import { dayHeading, formatTimeRange, localDateKey } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 import { canDispatch } from '../domain/orgDispatch';
 import type { RecognizedEventDraft } from '../domain/vision';
 import { recognizePhoto, resolveDraftPlaces } from '../vision/recognizer';
-
-const RECEIPT_TONE: Record<ReceiptStatus, 'neutral' | 'success' | 'warning' | 'danger'> = {
-  PENDING: 'warning',
-  ACCEPTED: 'success',
-  DECLINED: 'neutral',
-  COMPLETED: 'success',
-};
 
 function todayKey(): string {
   return localDateKey(new Date().toISOString(), APP_TIMEZONE);
@@ -166,15 +159,6 @@ export function OrgEventsScreen({
     setSelectedDateKey(inThisMonth ? today : `${nextYear}-${pad(nextMonth)}-01`);
   };
 
-  const submitReceipt = async (event: OrgEvent, status: ReceiptStatus) => {
-    try {
-      await api.submitReceipt(event.eventId, status);
-      await load();
-    } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '回执提交失败');
-    }
-  };
-
   const jumpToDate = (dateKey: string) => {
     const [focusYear, focusMonth] = dateKey.split('-').map(Number) as [number, number];
     setView({ year: focusYear, month: focusMonth });
@@ -302,11 +286,8 @@ export function OrgEventsScreen({
                   </Text>
                 </View>
                 <View style={styles.pills}>
-                  {/* 组织日程对成员只读，这里只暴露「我的回执」状态 */}
-                  {item.receiptStatus ? (
-                    <Pill text={receiptLabel(item.receiptStatus)} tone={RECEIPT_TONE[item.receiptStatus]} />
-                  ) : null}
-                  {/* 只有发起人本人能改（其他人只读，spec §4.2.2） */}
+                  {/* 首版不收集回执（spec §4.2.2）：卡片与日历页长得一样，
+                      唯一的差别是发起人自己那条多一个「编辑」 */}
                   {item.canEdit ? (
                     <Pressable
                       accessibilityRole="button"
@@ -320,19 +301,6 @@ export function OrgEventsScreen({
                 </View>
               </View>
 
-              {item.requireReceipt ? (
-                <View style={[styles.actions, { marginTop: theme.spacing.sm }]}>
-                  <View style={styles.action}>
-                    <GhostButton title="参加" onPress={() => void submitReceipt(item, 'ACCEPTED')} />
-                  </View>
-                  <View style={styles.action}>
-                    <GhostButton title="不参加" onPress={() => void submitReceipt(item, 'DECLINED')} />
-                  </View>
-                  <View style={styles.action}>
-                    <GhostButton title="已完成" onPress={() => void submitReceipt(item, 'COMPLETED')} />
-                  </View>
-                </View>
-              ) : null}
             </Card>
           </View>
         ))}

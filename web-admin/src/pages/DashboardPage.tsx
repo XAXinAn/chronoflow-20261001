@@ -13,8 +13,6 @@ const METRICS: Array<{ key: string; label: string }> = [
   { key: 'taskCount', label: '待办总数' },
   { key: 'completedTaskCount', label: '已完成待办' },
   { key: 'dispatchCount', label: '组织日程下发次数' },
-  { key: 'receiptCount', label: '回执记录数' },
-  { key: 'pendingReceiptCount', label: '待回执' },
 ];
 
 const formatter = new Intl.NumberFormat('zh-CN');

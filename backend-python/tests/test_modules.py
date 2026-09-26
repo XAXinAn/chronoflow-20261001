@@ -885,7 +885,6 @@ def test_dispatch_snapshot_excludes_new_members(client, db) -> None:
             "startAt": "2026-10-08T09:00:00+08:00",
             "endAt": "2026-10-08T11:00:00+08:00",
             "scopeType": "ALL",
-            "requireReceipt": True,
         },
         headers=headers,
     ).json()
@@ -897,17 +896,11 @@ def test_dispatch_snapshot_excludes_new_members(client, db) -> None:
     new_headers = claim_org_account(client, register(client, "13900002042"), org_id, "13900002042")
     assert client.get("/api/v1/org/events", params=window, headers=new_headers).json()["data"] == []
 
-    # 老成员能看到并提交回执
+    # 老成员能看到（首版不收集回执，spec §4.2.2）
     old_headers = claim_org_account(client, register(client, "13900002041"), org_id, "13900002041")
     old_events = client.get("/api/v1/org/events", params=window, headers=old_headers).json()["data"]
     assert len(old_events) == 1
-    receipt = client.post(
-        f"/api/v1/org/events/{old_events[0]['eventId']}/receipt",
-        json={"status": "ACCEPTED", "remark": "准时参加"},
-        headers=old_headers,
-    ).json()
-    assert receipt["code"] == 0, receipt
-    assert receipt["data"]["receiptStatus"] == "ACCEPTED"
+    assert "receiptStatus" not in old_events[0]
 
 
 def test_org_account_claim_list_and_unlink(client, db) -> None:
@@ -1167,7 +1160,6 @@ def test_org_console_token_can_open_up_a_new_organization(client, db) -> None:
             "startAt": "2026-10-08T09:00:00+08:00",
             "endAt": "2026-10-08T11:00:00+08:00",
             "scopeType": "ALL",
-            "requireReceipt": True,
         },
         headers=console,
     ).json()
@@ -1181,7 +1173,6 @@ def test_org_console_token_can_open_up_a_new_organization(client, db) -> None:
     assert len(events) == 1
     assert events[0]["title"] == "新组织第一场会"
     assert events[0]["recipientCount"] == 2
-    assert events[0]["pendingCount"] == 2
     event_id = events[0]["eventId"]
     assert db.execute(
         "SELECT creator_identity_id FROM event WHERE id = %s", (event_id,)
@@ -1250,7 +1241,6 @@ def test_org_console_token_is_scoped_and_member_is_rejected(client, db) -> None:
             "endAt": "2026-10-08T10:00:00+08:00",
             "scopeType": "MEMBER",
             "memberIds": [target_id],
-            "requireReceipt": True,
         },
         headers=manager,
     ).json()
@@ -1265,10 +1255,10 @@ def test_org_console_token_is_scoped_and_member_is_rejected(client, db) -> None:
     ).json()["data"]
     assert len(mine) == 1
     assert mine[0]["canEdit"] is True
-    # 收件人是「同事 + 自己」两个人
-    assert client.get(
-        f"/api/v1/org/events/{event_id}/recipients", headers=manager
-    ).json()["data"]["total"] == 2
+    # 收件人是「同事 + 自己」两个人（首版不回执，直接查库）
+    assert db.execute(
+        "SELECT count(*) FROM event_recipient WHERE event_id = %s", (event_id,)
+    ).fetchone()[0] == 2
     # 同事只是收件人：看得到，但不能改
     seen = client.get(
         "/api/v1/org/events",
@@ -1284,9 +1274,11 @@ def test_org_console_token_is_scoped_and_member_is_rejected(client, db) -> None:
     assert client.patch(
         f"/api/v1/org-admin/events/{event_id}", json={"title": "管理员替人改"}, headers=console
     ).json()["code"] == 20003
-    # 后台管理员走的是组织管理端的回执接口（/org/** 只认组织身份令牌）
+    # 后台管理员看组织管理端的日程列表（/org/** 只认组织身份令牌）
     assert client.get(
-        f"/api/v1/org-admin/events/{event_id}/receipts", headers=console
+        "/api/v1/org-admin/events",
+        params={"start": "2026-10-01T00:00:00+08:00", "end": "2026-11-01T00:00:00+08:00"},
+        headers=console,
     ).json()["code"] == 0
     assert client.patch(
         f"/api/v1/org-admin/events/{event_id}", json={"title": "同事改别人的"}, headers=viewer

@@ -182,7 +182,6 @@ export function RecognizedEventsScreen({
             // 下发对象就是这份人名单（spec §4.2.2）
             scopeType: 'MEMBER',
             memberIds: recipients,
-            requireReceipt: true,
           });
           eventCount += 1;
           continue;

@@ -20,7 +20,6 @@ function form(overrides: Partial<DispatchForm> = {}): DispatchForm {
     startTime: '09:00',
     endTime: '10:00',
     memberIds: [11, 12],
-    requireReceipt: true,
     ...overrides,
   };
 }

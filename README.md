@@ -28,14 +28,14 @@ xa-todo/
 | 后端 Java（common / auth / personal / org / admin / support） | 完成（89 项集成测试 + 契约门禁） |
 | 设计令牌 packages/design-tokens | 完成（7 项测试） |
 | Web 后台 web-admin | 完成：超管端 + 组织管理端 + 意见反馈（18 项测试） |
-| App 端 app | 核心流程可用（99 项纯逻辑层测试，组件无渲染测试） |
+| App 端 app | 核心流程可用（98 项纯逻辑层测试，组件无渲染测试） |
 | 阶段二 backend-python | 完成（契约覆盖率 100%，50 项测试） |
 | CI 与 API 契约测试 | 完成（GitHub Actions） |
 | 生产部署编排（Dockerfile / Nginx） | 未开始 |
 
 ## API 契约
 
-[`contract/api-contract.json`](./contract/api-contract.json) 是**跨语言共享**的接口清单（**104 个端点**）。
+[`contract/api-contract.json`](./contract/api-contract.json) 是**跨语言共享**的接口清单（**101 个端点**）。
 Java 版与阶段二的 Python 版都必须满足它——改动这个文件等于改动契约，
 必须同时更新两版实现与 `spec.md`。
 

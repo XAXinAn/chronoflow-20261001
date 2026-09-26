@@ -136,9 +136,7 @@ public final class AdminDtos {
                                     long personalEventCount,
                                     long taskCount,
                                     long completedTaskCount,
-                                    long dispatchCount,
-                                    long receiptCount,
-                                    long pendingReceiptCount) {
+                                    long dispatchCount) {
     }
 
     // ------------------------------------------------------------------ 审计

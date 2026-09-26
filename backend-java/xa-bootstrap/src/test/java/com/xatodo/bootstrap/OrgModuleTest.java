@@ -220,8 +220,8 @@ class OrgModuleTest {
     }
 
     @Test
-    @DisplayName("下发到部门：成员只看到自己的日程并可提交回执，管理员查看回执统计")
-    void dispatchToDepartmentAndMemberReceipt() throws Exception {
+    @DisplayName("下发到部门：被下发到的成员看得到，没被下发到的看不到（首版不收集回执）")
+    void dispatchToDepartmentReachesItsMembers() throws Exception {
         Fixture fixture = seedOrg("DISP", "13700001109");
         long deptId = createDepartment(fixture, fixture.rootDepartmentId(), "产品部");
         createMember(fixture, "13700001110", "产品同学A", deptId);
@@ -229,31 +229,24 @@ class OrgModuleTest {
 
         JsonNode dispatched = postJson("/api/v1/org-admin/events", fixture.ownerToken(),
                 dispatchBody("产品评审", "DEPARTMENT", deptId, true, null));
-        long eventId = dispatched.path("data").path("eventId").asLong();
-        // 下发响应不含成员侧回执字段（null 字段被 non_null 策略省略），因此断言为 missing
-        assertThat(eventId).isPositive();
-        assertThat(dispatched.path("data").path("receiptStatus").isMissingNode()).isTrue();
+        assertThat(dispatched.path("data").path("eventId").asLong()).isPositive();
 
         String memberToken = claimOrgAccount(fixture.orgCode(), "13700001110");
         JsonNode events = rangeQuery("/api/v1/org/events", memberToken);
         assertThat(events.path("data")).hasSize(1);
         assertThat(events.path("data").get(0).path("title").asText()).isEqualTo("产品评审");
-        assertThat(events.path("data").get(0).path("receiptStatus").asText()).isEqualTo("PENDING");
+        // 响应体里没有回执状态这种东西了（首版不收集回执，spec §4.2.2）
+        assertThat(events.path("data").get(0).path("receiptStatus").isMissingNode()).isTrue();
+        assertThat(events.path("data").get(0).path("canEdit").asBoolean()).isFalse();
 
-        JsonNode receipt = postJson("/api/v1/org/events/" + eventId + "/receipt", memberToken,
-                "{\"status\":\"ACCEPTED\",\"remark\":\"准时参加\"}");
-        assertThat(receipt.path("data").path("receiptStatus").asText()).isEqualTo("ACCEPTED");
-
-        JsonNode summary = getJson("/api/v1/org-admin/events/" + eventId + "/receipts", fixture.ownerToken());
-        // 3 = 产品部 2 人 + 发起人自己：下发者也要看得到自己发的日程（spec §4.2.2）
-        assertThat(summary.path("data").path("total").asInt()).isEqualTo(3);
-        assertThat(summary.path("data").path("accepted").asInt()).isEqualTo(1);
-        assertThat(summary.path("data").path("pending").asInt()).isEqualTo(2);
-        assertThat(summary.path("data").path("items")).hasSize(3);
+        // 发起人自己也看得到，并且只有他能编辑
+        JsonNode ownerSees = rangeQuery("/api/v1/org/events", fixture.ownerToken());
+        assertThat(ownerSees.path("data")).hasSize(1);
+        assertThat(ownerSees.path("data").get(0).path("canEdit").asBoolean()).isTrue();
     }
 
     @Test
-    @DisplayName("成员无法创建组织日程，也无法读取他人的回执统计")
+    @DisplayName("成员无法创建组织日程，也看不到下发给别人的日程")
     void memberCannotDispatchOrInspectOthers() throws Exception {
         Fixture fixture = seedOrg("DENY", "13700001112");
         long deptA = createDepartment(fixture, fixture.rootDepartmentId(), "A部");
@@ -274,20 +267,15 @@ class OrgModuleTest {
                 dispatchBody("B部专属会议", "DEPARTMENT", deptB, false, null));
         long eventId = dispatched.path("data").path("eventId").asLong();
 
-        mockMvc.perform(get("/api/v1/org-admin/events/" + eventId + "/receipts")
-                        .header("Authorization", "Bearer " + memberToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(20003));
-
         // A 部成员看不到下发给 B 部的日程
         JsonNode aEvents = rangeQuery("/api/v1/org/events", memberToken);
         assertThat(aEvents.path("data")).isEmpty();
 
-        // 也不能替未下发到的日程提交回执
-        mockMvc.perform(post("/api/v1/org/events/" + eventId + "/receipt")
+        // 也不能改别人的下发（只有发起人能改，spec §4.2.2）
+        mockMvc.perform(patch("/api/v1/org-admin/events/" + eventId)
                         .header("Authorization", "Bearer " + memberToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"ACCEPTED\"}"))
+                        .content("{\"title\":\"我要改别人的\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(20003));
     }
@@ -312,8 +300,8 @@ class OrgModuleTest {
     }
 
     @Test
-    @DisplayName("已有成员回执后不允许撤回下发")
-    void revokeRejectedAfterReceipt() throws Exception {
+    @DisplayName("撤回下发后成员端不再展示（首版不收集回执，所以没有「已回执不可撤回」）")
+    void revokeHidesEventFromMembers() throws Exception {
         Fixture fixture = seedOrg("REV", "13700001118");
         long deptId = createDepartment(fixture, fixture.rootDepartmentId(), "运营部");
         createMember(fixture, "13700001119", "运营同学", deptId);
@@ -322,22 +310,14 @@ class OrgModuleTest {
                 dispatchBody("运营例会", "DEPARTMENT", deptId, true, null));
         long eventId = dispatched.path("data").path("eventId").asLong();
 
-        // 无人回执时可以撤回
+        String memberToken = claimOrgAccount(fixture.orgCode(), "13700001119");
+        assertThat(rangeQuery("/api/v1/org/events", memberToken).path("data")).hasSize(1);
+
         postJson("/api/v1/org-admin/events/" + eventId + "/revoke", fixture.ownerToken(), "{}");
 
-        // 重新下发一条，成员回执后再撤回应被拒绝
-        JsonNode second = postJson("/api/v1/org-admin/events", fixture.ownerToken(),
-                dispatchBody("运营例会2", "DEPARTMENT", deptId, true, null));
-        long secondEventId = second.path("data").path("eventId").asLong();
-        String memberToken = claimOrgAccount(fixture.orgCode(), "13700001119");
-        postJson("/api/v1/org/events/" + secondEventId + "/receipt", memberToken,
-                "{\"status\":\"DECLINED\",\"remark\":\"有冲突\"}");
-
-        mockMvc.perform(post("/api/v1/org-admin/events/" + secondEventId + "/revoke")
-                        .header("Authorization", "Bearer " + fixture.ownerToken())
-                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(50002));
+        // 撤回后成员端（含发起人自己）都不再展示
+        assertThat(rangeQuery("/api/v1/org/events", memberToken).path("data")).isEmpty();
+        assertThat(rangeQuery("/api/v1/org/events", fixture.ownerToken()).path("data")).isEmpty();
     }
 
     @Test
@@ -517,7 +497,6 @@ class OrgModuleTest {
         assertThat(events.path("data")).hasSize(1);
         assertThat(events.path("data").get(0).path("title").asText()).isEqualTo("新组织第一场会");
         assertThat(events.path("data").get(0).path("recipientCount").asInt()).isEqualTo(2);
-        assertThat(events.path("data").get(0).path("pendingCount").asInt()).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT creator_identity_id FROM event WHERE id = ?", Long.class, eventId)).isNull();
         assertThat(jdbcTemplate.queryForObject(
@@ -552,7 +531,7 @@ class OrgModuleTest {
         long eventId = postJson("/api/v1/org-admin/events", managerToken,
                 "{\"title\":\"组内同步\",\"startAt\":\"" + RANGE_START + "\","
                         + "\"endAt\":\"2026-10-01T09:00:00+08:00\",\"scopeType\":\"MEMBER\","
-                        + "\"memberIds\":[" + targetId + "],\"requireReceipt\":true}")
+                        + "\"memberIds\":[" + targetId + "]}")
                 .path("data").path("eventId").asLong();
 
         // ① 发起人自己也要看得到：组织 tab 的口径是「发给我 / 我参与的」
@@ -560,8 +539,9 @@ class OrgModuleTest {
         assertThat(mine.path("data")).as("发起人应该能看到自己下发的日程").hasSize(1);
         assertThat(mine.path("data").get(0).path("canEdit").asBoolean()).isTrue();
         // 收件人里包含发起人自己（同事 + 自己 = 2）
-        assertThat(getJson("/api/v1/org/events/" + eventId + "/recipients", managerToken)
-                .path("data").path("total").asInt()).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM event_recipient WHERE event_id = ?", Integer.class, eventId))
+                .isEqualTo(2);
 
         // ② 发起人能改、能撤自己下发的（原来「指定成员」范围会让他被判无权限）
         JsonNode updated = patchJson("/api/v1/org-admin/events/" + eventId, managerToken,
@@ -579,9 +559,6 @@ class OrgModuleTest {
         JsonNode adminDenied = patchJson("/api/v1/org-admin/events/" + eventId, fixture.ownerToken(),
                 "{\"title\":\"管理员替人改\"}");
         assertThat(adminDenied.path("code").asInt()).isEqualTo(20003);
-        // 但回执统计属于「读」，组织管理员仍然看得到
-        assertThat(getJson("/api/v1/org/events/" + eventId + "/recipients", fixture.ownerToken())
-                .path("code").asInt()).isZero();
 
         // 撤回同样按发起人放行
         JsonNode revoked = postJson("/api/v1/org-admin/events/" + eventId + "/revoke", managerToken, "{}");
@@ -752,8 +729,7 @@ class OrgModuleTest {
                 .append("\"endAt\":\"2026-10-08T11:00:00+08:00\",")
                 .append("\"timezone\":\"Asia/Shanghai\",")
                 .append("\"scopeType\":\"").append(scopeType).append("\",")
-                .append("\"includeSubDepartments\":").append(includeSub).append(",")
-                .append("\"requireReceipt\":true");
+                .append("\"includeSubDepartments\":").append(includeSub);
         if (departmentId != null) {
             body.append(",\"departmentId\":").append(departmentId);
         }

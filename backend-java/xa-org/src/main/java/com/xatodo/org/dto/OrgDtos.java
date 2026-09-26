@@ -147,24 +147,25 @@ public final class OrgDtos {
             @NotBlank(message = "下发范围不能为空") String scopeType,
             Long departmentId,
             Boolean includeSubDepartments,
-            List<Long> memberIds,
-            Boolean requireReceipt) {
+            List<Long> memberIds) {
     }
 
+    /**
+     * 成员端与发起人看到的组织日程。
+     *
+     * <p>首版**不收集回执**（spec §4.2.2）：所以这里没有回执状态字段，
+     * 卡片与个人日程长得一样，差别只有 `canEdit`（只有发起人为 true）。
+     */
     public record OrgEventResponse(Long eventId,
                                    Long dispatchId,
                                    String title,
                                    String description,
                                    String location,
                                    OffsetDateTime startAt,
-                                  OffsetDateTime endAt,
+                                   OffsetDateTime endAt,
                                    Boolean allDay,
                                    String timezone,
                                    String rrule,
-                                   Boolean requireReceipt,
-                                   String receiptStatus,
-                                   OffsetDateTime receiptAt,
-                                   String remark,
                                    boolean read,
                                    /**
                                     * 当前身份能不能改这条组织日程（发起人 / 组织管理员 / 被授权部门的管理者）。
@@ -172,34 +173,6 @@ public final class OrgDtos {
                                     * <p>由服务端判定：App 里「编辑」入口显不显示靠它，而不是靠前端猜权限。
                                     */
                                    boolean canEdit) {
-    }
-
-    public record ReceiptRequest(
-            @NotBlank(message = "回执状态不能为空") String status,
-            @Size(max = 512) String remark,
-            LocalDate occurrenceDate) {
-    }
-
-    public record ReceiptItem(Long orgMemberId,
-                              String realName,
-                              String departmentName,
-                              String receiptStatus,
-                              OffsetDateTime receiptAt,
-                              String remark,
-                              boolean read) {
-    }
-
-    public record ReceiptSummaryResponse(Long dispatchId,
-                                         Long eventId,
-                                         String scopeType,
-                                         boolean requireReceipt,
-                                         int total,
-                                         int pending,
-                                         int accepted,
-                                         int declined,
-                                         int completed,
-                                         int readCount,
-                                         List<ReceiptItem> items) {
     }
 
     // -------------------------------------------------------------- 成员导入
@@ -258,12 +231,7 @@ public final class OrgDtos {
                                      String timezone,
                                      String scopeType,
                                      Long departmentId,
-                                     Boolean requireReceipt,
-                                     int recipientCount,
-                                     int pendingCount,
-                                     int acceptedCount,
-                                     int declinedCount,
-                                     int completedCount) {
+                                     int recipientCount) {
     }
 
     // -------------------------------------------------------------- 组织设置

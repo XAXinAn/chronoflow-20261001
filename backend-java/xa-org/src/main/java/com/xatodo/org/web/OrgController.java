@@ -7,12 +7,8 @@ import com.xatodo.org.dto.OrgDtos.DepartmentNode;
 import com.xatodo.org.dto.OrgDtos.OrgCurrentResponse;
 import com.xatodo.org.dto.OrgDtos.OrgEventResponse;
 import com.xatodo.org.dto.OrgDtos.OrgMemberResponse;
-import com.xatodo.org.dto.OrgDtos.ReceiptItem;
-import com.xatodo.org.dto.OrgDtos.ReceiptRequest;
-import com.xatodo.org.dto.OrgDtos.ReceiptSummaryResponse;
 import com.xatodo.org.entity.OrgMember;
 import com.xatodo.org.service.DepartmentService;
-import com.xatodo.org.service.OrgActor;
 import com.xatodo.org.service.OrgEventService;
 import com.xatodo.org.service.OrgMemberService;
 import com.xatodo.org.service.OrgPermissionService;
@@ -67,11 +63,12 @@ public class OrgController {
 
     @GetMapping("/members")
     public ApiResponse<List<OrgMemberResponse>> members(@RequestParam(required = false) Long departmentId) {
-        return ApiResponse.ok(orgMemberService.list(actor(), departmentId));
+        OrgMember member = currentMember();
+        return ApiResponse.ok(orgMemberService.list(permission.memberActor(member), departmentId));
     }
 
     /**
-     * 成员视角的组织日程：只返回下发给本人的日程，附回执状态。
+     * 成员视角的组织日程：只返回下发给本人的日程（首版不收集回执，spec §4.2.2）。
      */
     @GetMapping("/events")
     public ApiResponse<List<OrgEventResponse>> events(
@@ -81,41 +78,11 @@ public class OrgController {
         return ApiResponse.ok(orgEventService.listForMember(member, start.toInstant(), end.toInstant()));
     }
 
-    @PostMapping("/events/{id}/receipt")
-    public ApiResponse<OrgEventResponse> receipt(@PathVariable Long id,
-                                                 @Valid @RequestBody ReceiptRequest request) {
-        OrgMember member = currentMember();
-        return ApiResponse.ok(orgEventService.submitReceipt(member, id, request));
-    }
-
     @PostMapping("/events/{id}/read")
     public ApiResponse<Void> markRead(@PathVariable Long id) {
         OrgMember member = currentMember();
         orgEventService.markRead(member, id);
         return ApiResponse.ok();
-    }
-
-    @GetMapping("/events/{id}/recipients")
-    public ApiResponse<ReceiptSummaryResponse> recipients(@PathVariable Long id) {
-        return ApiResponse.ok(orgEventService.receiptSummary(actor(), id));
-    }
-
-    /**
-     * 便捷接口：当前成员可见的回执条目（等价于回执统计中的 items）。
-     */
-    @GetMapping("/events/{id}/recipients/mine")
-    public ApiResponse<ReceiptItem> myRecipient(@PathVariable Long id) {
-        OrgMember member = currentMember();
-        ReceiptSummaryResponse summary = orgEventService.receiptSummary(actor(), id);
-        return ApiResponse.ok(summary.items().stream()
-                .filter(item -> item.orgMemberId().equals(member.getId()))
-                .findFirst()
-                .orElse(null));
-    }
-
-    /** 成员视角的执行者：组织身份，权限来自本人所属部门与部门管理员授权。 */
-    private OrgActor actor() {
-        return permission.memberActor(currentMember());
     }
 
     private OrgMember currentMember() {

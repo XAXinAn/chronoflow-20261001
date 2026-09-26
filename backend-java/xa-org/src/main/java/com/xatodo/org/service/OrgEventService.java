@@ -7,9 +7,6 @@ import com.xatodo.org.dto.OrgDtos.OrgEventDispatchRequest;
 import com.xatodo.org.dto.OrgDtos.OrgEventManageItem;
 import com.xatodo.org.dto.OrgDtos.OrgEventResponse;
 import com.xatodo.org.dto.OrgDtos.OrgEventUpdateRequest;
-import com.xatodo.org.dto.OrgDtos.ReceiptItem;
-import com.xatodo.org.dto.OrgDtos.ReceiptRequest;
-import com.xatodo.org.dto.OrgDtos.ReceiptSummaryResponse;
 import com.xatodo.org.entity.Department;
 import com.xatodo.org.entity.EventDispatch;
 import com.xatodo.org.entity.EventRecipient;
@@ -51,9 +48,6 @@ import java.util.stream.Collectors;
  */
 @Service
 public class OrgEventService {
-
-    private static final Set<String> RECEIPT_STATUSES =
-            Set.of(EventRecipient.ACCEPTED, EventRecipient.DECLINED, EventRecipient.COMPLETED);
 
     private final OrgPermissionService permission;
     private final DepartmentService departmentService;
@@ -136,7 +130,6 @@ public class OrgEventService {
         dispatch.setDepartmentId(request.departmentId());
         dispatch.setIncludeSubDepartments(request.includeSubDepartments() == null
                 || Boolean.TRUE.equals(request.includeSubDepartments()));
-        dispatch.setRequireReceipt(Boolean.TRUE.equals(request.requireReceipt()));
         // 发起方二选一：成员（App）记成员 id，后台组织管理员（Web）记 admin_user id（spec §5.6）
         dispatch.setCreatedByMemberId(actor.getId());
         dispatch.setCreatedByAdminId(actor.getAdminId());
@@ -153,27 +146,20 @@ public class OrgEventService {
             row.setEventId(event.getId());
             row.setOrgMemberId(recipient.getId());
             row.setDepartmentId(recipient.getDepartmentId());
-            row.setReceiptStatus(EventRecipient.PENDING);
             eventRecipientMapper.insert(row);
         }
 
-        return toResponse(event, dispatch, null);
+        return toResponse(event, dispatch);
     }
 
     /**
-     * 撤回下发。已有成员回执时不允许撤回（spec §4.2.2）。
+     * 撤回下发：撤回后成员端不再展示（spec §4.2.2）。首版不收集回执，因此没有「已回执不可撤回」这回事。
      */
     @Transactional
     public void revoke(OrgActor actor, Long eventId) {
         EventDispatch dispatch = requireActiveDispatch(actor.getOrgId(), eventId);
         requireIsInitiator(actor, dispatch);
 
-        Long receipted = eventRecipientMapper.selectCount(new LambdaQueryWrapper<EventRecipient>()
-                .eq(EventRecipient::getDispatchId, dispatch.getId())
-                .ne(EventRecipient::getReceiptStatus, EventRecipient.PENDING));
-        if (receipted != null && receipted > 0) {
-            throw BizException.of(ErrorCode.DISPATCH_ALREADY_RECEIPTED);
-        }
         dispatch.setStatus(EventDispatch.STATUS_REVOKED);
         eventDispatchMapper.updateById(dispatch);
     }
@@ -220,7 +206,7 @@ public class OrgEventService {
         if (Boolean.TRUE.equals(request.redispatch())) {
             redispatch(actor, dispatch);
         }
-        return toResponse(event, dispatch, null);
+        return toResponse(event, dispatch);
     }
 
     /**
@@ -276,7 +262,6 @@ public class OrgEventService {
             row.setEventId(dispatch.getEventId());
             row.setOrgMemberId(target.getId());
             row.setDepartmentId(target.getDepartmentId());
-            row.setReceiptStatus(EventRecipient.PENDING);
             eventRecipientMapper.insert(row);
             added++;
         }
@@ -315,6 +300,11 @@ public class OrgEventService {
                                         mine.stream().map(EventRecipient::getDispatchId).toList())
                                 .eq(EventDispatch::getStatus, EventDispatch.STATUS_ACTIVE))
                 .stream().map(EventDispatch::getId).collect(Collectors.toSet());
+        if (activeDispatchIds.isEmpty()) {
+            // 下发都被撤回了：成员端不该再看到任何东西。
+            // 这里必须提前返回——空集合进 `IN ()` 会拼出非法 SQL 直接 500（实测踩过）。
+            return List.of();
+        }
         Map<Long, EventDispatch> dispatches = eventDispatchMapper.selectList(
                         new LambdaQueryWrapper<EventDispatch>()
                                 .in(EventDispatch::getId, activeDispatchIds))
@@ -340,50 +330,13 @@ public class OrgEventService {
                         OffsetDateTime.ofInstant(occurrence.startAt(), ZoneOffset.UTC),
                         OffsetDateTime.ofInstant(occurrence.endAt(), ZoneOffset.UTC),
                         occurrence.allDay(), occurrence.timezone(), event.getRrule(),
-                        dispatch.getRequireReceipt(), receipt.getReceiptStatus(), receipt.getReceiptAt(),
-                        receipt.getRemark(), receipt.getReadAt() != null,
+                        receipt.getReadAt() != null,
                         isInitiator(permission.memberActor(member), dispatch)));
             }
         }
         result.sort(Comparator.comparing(OrgEventResponse::startAt)
                 .thenComparing(OrgEventResponse::eventId));
         return result;
-    }
-
-    /**
-     * 提交回执。成员只能改动属于自己那条收件记录，组织日程本身对成员始终只读。
-     */
-    @Transactional
-    public OrgEventResponse submitReceipt(OrgMember member, Long eventId, ReceiptRequest request) {
-        if (!RECEIPT_STATUSES.contains(request.status())) {
-            throw BizException.of(ErrorCode.PARAM_INVALID, "回执状态取值非法: " + request.status());
-        }
-        EventRecipient recipient = eventRecipientMapper.selectOne(
-                new LambdaQueryWrapper<EventRecipient>()
-                        .eq(EventRecipient::getEventId, eventId)
-                        .eq(EventRecipient::getOrgMemberId, member.getId()));
-        if (recipient == null) {
-            throw BizException.of(ErrorCode.FORBIDDEN, "该日程未下发给当前成员");
-        }
-        EventDispatch dispatch = eventDispatchMapper.selectById(recipient.getDispatchId());
-        if (dispatch == null || !EventDispatch.STATUS_ACTIVE.equals(dispatch.getStatus())) {
-            throw BizException.of(ErrorCode.FORBIDDEN, "该下发已撤回");
-        }
-
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        recipient.setReceiptStatus(request.status());
-        recipient.setReceiptAt(now);
-        recipient.setRemark(request.remark());
-        recipient.setReadAt(now);
-        eventRecipientMapper.updateById(recipient);
-
-        Event event = eventMapper.selectById(eventId);
-        return new OrgEventResponse(event.getId(), dispatch.getId(), event.getTitle(),
-                event.getDescription(), event.getLocationName(), event.getStartAt(), event.getEndAt(),
-                event.getAllDay(), event.getTimezone(), event.getRrule(),
-                dispatch.getRequireReceipt(), recipient.getReceiptStatus(), recipient.getReceiptAt(),
-                recipient.getRemark(), true,
-                isInitiator(permission.memberActor(member), dispatch));
     }
 
     @Transactional
@@ -430,80 +383,18 @@ public class OrgEventService {
                                 .eq(EventDispatch::getStatus, EventDispatch.STATUS_ACTIVE))
                 .stream().collect(Collectors.toMap(EventDispatch::getEventId, dispatch -> dispatch,
                         (existing, replacement) -> existing));
-        List<Long> dispatchIds = dispatches.values().stream().map(EventDispatch::getId).toList();
-        Map<Long, List<EventRecipient>> receiptsByDispatch = dispatchIds.isEmpty() ? Map.of()
-                : eventRecipientMapper.selectList(new LambdaQueryWrapper<EventRecipient>()
-                        .in(EventRecipient::getDispatchId, dispatchIds))
-                .stream().collect(Collectors.groupingBy(EventRecipient::getDispatchId));
-
         List<OrgEventManageItem> result = new ArrayList<>();
         for (Event event : events) {
             EventDispatch dispatch = dispatches.get(event.getId());
             if (dispatch == null) {
                 continue;   // 没有活跃下发记录的日程不属于管理端列表
             }
-            int pending = 0;
-            int accepted = 0;
-            int declined = 0;
-            int completed = 0;
-            for (EventRecipient row : receiptsByDispatch.getOrDefault(dispatch.getId(), List.of())) {
-                switch (row.getReceiptStatus()) {
-                    case EventRecipient.ACCEPTED -> accepted++;
-                    case EventRecipient.DECLINED -> declined++;
-                    case EventRecipient.COMPLETED -> completed++;
-                    default -> pending++;
-                }
-            }
             result.add(new OrgEventManageItem(event.getId(), dispatch.getId(), event.getTitle(),
                     event.getDescription(), event.getLocationName(), event.getStartAt(), event.getEndAt(),
                     event.getAllDay(), event.getTimezone(), dispatch.getScopeType(),
-                    dispatch.getDepartmentId(), dispatch.getRequireReceipt(), dispatch.getRecipientCount(),
-                    pending, accepted, declined, completed));
+                    dispatch.getDepartmentId(), dispatch.getRecipientCount()));
         }
         return result;
-    }
-
-    public ReceiptSummaryResponse receiptSummary(OrgActor actor, Long eventId) {
-        EventDispatch dispatch = requireActiveDispatch(actor.getOrgId(), eventId);
-        requireCanViewDispatchStats(actor, dispatch);
-
-        List<EventRecipient> rows = eventRecipientMapper.selectList(
-                new LambdaQueryWrapper<EventRecipient>()
-                        .eq(EventRecipient::getDispatchId, dispatch.getId()));
-        Map<Long, OrgMember> members = rows.isEmpty() ? Map.of()
-                : orgMemberMapper.selectBatchIds(rows.stream().map(EventRecipient::getOrgMemberId).toList())
-                .stream().collect(Collectors.toMap(OrgMember::getId, m -> m));
-        Map<Long, Department> departments = new HashMap<>();
-        permission.allDepartments(actor.getOrgId())
-                .forEach(department -> departments.put(department.getId(), department));
-
-        int pending = 0;
-        int accepted = 0;
-        int declined = 0;
-        int completed = 0;
-        int readCount = 0;
-        List<ReceiptItem> items = new ArrayList<>();
-        for (EventRecipient row : rows) {
-            switch (row.getReceiptStatus()) {
-                case EventRecipient.ACCEPTED -> accepted++;
-                case EventRecipient.DECLINED -> declined++;
-                case EventRecipient.COMPLETED -> completed++;
-                default -> pending++;
-            }
-            if (row.getReadAt() != null) {
-                readCount++;
-            }
-            OrgMember member = members.get(row.getOrgMemberId());
-            Department department = departments.get(row.getDepartmentId());
-            items.add(new ReceiptItem(row.getOrgMemberId(),
-                    member == null ? null : member.getRealName(),
-                    department == null ? null : department.getName(),
-                    row.getReceiptStatus(), row.getReceiptAt(), row.getRemark(), row.getReadAt() != null));
-        }
-
-        return new ReceiptSummaryResponse(dispatch.getId(), dispatch.getEventId(), dispatch.getScopeType(),
-                Boolean.TRUE.equals(dispatch.getRequireReceipt()),
-                rows.size(), pending, accepted, declined, completed, readCount, items);
     }
 
     // ------------------------------------------------------------- 内部实现
@@ -601,24 +492,6 @@ public class OrgEventService {
         }
     }
 
-    /**
-     * 回执统计是**读**：组织管理员、被授权部门的负责人、以及发起人自己都看得到。
-     * （「其他人只读」指的是不能改内容，不代表连回执都看不到。）
-     */
-    private boolean canViewDispatchStats(OrgActor actor, EventDispatch dispatch) {
-        if (permission.isOrgAdmin(actor) || isInitiator(actor, dispatch)) {
-            return true;
-        }
-        return EventDispatch.SCOPE_DEPARTMENT.equals(dispatch.getScopeType())
-                && dispatch.getDepartmentId() != null
-                && permission.manageableDepartmentIds(actor).contains(dispatch.getDepartmentId());
-    }
-
-    private void requireCanViewDispatchStats(OrgActor actor, EventDispatch dispatch) {
-        if (!canViewDispatchStats(actor, dispatch)) {
-            throw BizException.of(ErrorCode.FORBIDDEN, "无权查看该下发的回执");
-        }
-    }
 
     private EventDispatch requireActiveDispatch(Long orgId, Long eventId) {
         EventDispatch dispatch = eventDispatchMapper.selectOne(new LambdaQueryWrapper<EventDispatch>()
@@ -658,14 +531,10 @@ public class OrgEventService {
         return calendar;
     }
 
-    private OrgEventResponse toResponse(Event event, EventDispatch dispatch, EventRecipient receipt) {
+    private OrgEventResponse toResponse(Event event, EventDispatch dispatch) {
         return new OrgEventResponse(event.getId(), dispatch.getId(), event.getTitle(),
                 event.getDescription(), event.getLocationName(), event.getStartAt(), event.getEndAt(),
-                event.getAllDay(), event.getTimezone(), event.getRrule(), dispatch.getRequireReceipt(),
-                receipt == null ? null : receipt.getReceiptStatus(),
-                receipt == null ? null : receipt.getReceiptAt(),
-                receipt == null ? null : receipt.getRemark(),
-                receipt != null && receipt.getReadAt() != null,
+                event.getAllDay(), event.getTimezone(), event.getRrule(), false,
                 // 能走到这里的调用者已经过了权限校验（下发/修改的返回体）：对自己刚动过的东西当然可编辑
                 true);
     }

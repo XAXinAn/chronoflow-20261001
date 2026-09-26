@@ -155,8 +155,6 @@ export interface Task {
   sortOrder: number;
 }
 
-export type ReceiptStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'COMPLETED';
-
 /**
  * 检索结果条目（GET /search）。
  *
@@ -258,10 +256,6 @@ export interface OrgEvent {
   allDay: boolean;
   timezone: string;
   rrule: string | null;
-  requireReceipt: boolean;
-  receiptStatus: ReceiptStatus | null;
-  receiptAt: string | null;
-  remark: string | null;
   read: boolean;
   /**
    * 我能不能改这条（spec §4.2.2：**只有发起人本人**能改自己下发的）。
@@ -335,5 +329,4 @@ export interface OrgDispatchRequest {
   departmentId?: number | null;
   includeSubDepartments?: boolean;
   memberIds?: number[];
-  requireReceipt?: boolean;
 }

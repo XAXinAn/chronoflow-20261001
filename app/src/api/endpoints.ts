@@ -259,8 +259,6 @@ export function createEndpoints(client: ApiClient) {
     /** 撤回下发：成员端随即不再展示。已有回执时服务端会拒绝（spec §4.2.2）。 */
     revokeOrgEvent: (eventId: number) =>
       client.post<void>(`/api/v1/org-admin/events/${eventId}/revoke`),
-    submitReceipt: (eventId: number, status: string, remark?: string) =>
-      client.post<OrgEvent>(`/api/v1/org/events/${eventId}/receipt`, { status, remark }),
     markOrgEventRead: (eventId: number) =>
       client.post<void>(`/api/v1/org/events/${eventId}/read`),
   };

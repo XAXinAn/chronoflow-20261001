@@ -6,7 +6,6 @@ import {
   formatTimeRange,
   groupByDay,
   localDateKey,
-  receiptLabel,
   sortTasks,
 } from '../src/domain/agenda';
 
@@ -46,14 +45,6 @@ describe('日程领域逻辑', () => {
     expect(
       formatTimeRange('2026-10-05T01:00:00Z', '2026-10-05T02:00:00Z', false, 'Asia/Shanghai'),
     ).toBe('09:00 – 10:00');
-  });
-
-  it('receiptLabel 覆盖四种回执状态', () => {
-    expect(receiptLabel('PENDING')).toBe('待回执');
-    expect(receiptLabel('ACCEPTED')).toBe('已参加');
-    expect(receiptLabel('DECLINED')).toBe('不参加');
-    expect(receiptLabel('COMPLETED')).toBe('已完成');
-    expect(receiptLabel(null)).toBe('—');
   });
 
   it('sortTasks 未完成在前、按截止时间、无时间排最后', () => {

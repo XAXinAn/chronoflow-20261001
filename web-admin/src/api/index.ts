@@ -13,7 +13,6 @@ import type {
   OrgMember,
   OrgSettings,
   Organization,
-  ReceiptSummary,
   SystemConfig,
 } from './types';
 
@@ -169,7 +168,6 @@ export const api = {
     departmentId?: number;
     includeSubDepartments?: boolean;
     memberIds?: number[];
-    requireReceipt?: boolean;
   }) => client.post<OrgEventItem>('/api/v1/org-admin/events', payload),
   updateOrgEvent: (
     eventId: number,
@@ -178,8 +176,6 @@ export const api = {
   revokeOrgEvent: (eventId: number) =>
     client.post<void>(`/api/v1/org-admin/events/${eventId}/revoke`),
   deleteOrgEvent: (eventId: number) => client.del<void>(`/api/v1/org-admin/events/${eventId}`),
-  orgEventReceipts: (eventId: number) =>
-    client.get<ReceiptSummary>(`/api/v1/org-admin/events/${eventId}/receipts`),
 
   importOrgMembers: (file: File, autoCreateDepartment: boolean) => {
     const form = new FormData();

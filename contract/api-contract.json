@@ -75,9 +75,7 @@
     { "method": "GET", "path": "/api/v1/org/departments/tree", "auth": "access" },
     { "method": "GET", "path": "/api/v1/org/members", "auth": "access" },
     { "method": "GET", "path": "/api/v1/org/events", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/org/events/{id}/receipt", "auth": "access" },
     { "method": "POST", "path": "/api/v1/org/events/{id}/read", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org/events/{id}/recipients", "auth": "access" },
 
     { "method": "POST", "path": "/api/v1/org-admin/departments", "auth": "access" },
     { "method": "GET", "path": "/api/v1/org-admin/departments", "auth": "access" },
@@ -99,7 +97,6 @@
     { "method": "PATCH", "path": "/api/v1/org-admin/events/{id}", "auth": "access" },
     { "method": "DELETE", "path": "/api/v1/org-admin/events/{id}", "auth": "access" },
     { "method": "POST", "path": "/api/v1/org-admin/events/{id}/revoke", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-admin/events/{id}/receipts", "auth": "access" },
     { "method": "GET", "path": "/api/v1/org-admin/settings", "auth": "access" },
     { "method": "PATCH", "path": "/api/v1/org-admin/settings", "auth": "access" },
     { "method": "GET", "path": "/api/v1/org-admin/logs", "auth": "access" },

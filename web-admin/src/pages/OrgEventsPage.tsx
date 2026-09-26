@@ -4,35 +4,25 @@ import {
   Alert,
   Button,
   DatePicker,
-  Drawer,
   Form,
   Input,
   Modal,
   Popconfirm,
   Select,
   Space,
-  Switch,
   Table,
-  Tag,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useMemo, useState } from 'react';
 
 import { api } from '../api';
-import type { DepartmentNode, OrgEventItem, OrgMember, ReceiptSummary } from '../api/types';
+import type { DepartmentNode, OrgEventItem, OrgMember } from '../api/types';
 import { useLoad } from '../hooks/useLoad';
 
 const SCOPE_LABEL: Record<string, string> = {
   ALL: '全组织',
   DEPARTMENT: '部门',
   MEMBER: '指定成员',
-};
-
-const RECEIPT_LABEL: Record<string, string> = {
-  PENDING: '待回执',
-  ACCEPTED: '参加',
-  DECLINED: '不参加',
-  COMPLETED: '已完成',
 };
 
 function flattenDepartments(nodes: DepartmentNode[], prefix = ''): { label: string; value: number }[] {
@@ -50,7 +40,6 @@ interface DispatchForm {
   scopeType: string;
   departmentId?: number;
   memberIds?: number[];
-  requireReceipt?: boolean;
 }
 
 /**
@@ -71,7 +60,6 @@ export function OrgEventsPage() {
 
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [receipts, setReceipts] = useState<ReceiptSummary | null>(null);
   const [form] = Form.useForm<DispatchForm>();
   const scopeType = Form.useWatch('scopeType', form);
 
@@ -94,7 +82,6 @@ export function OrgEventsPage() {
         departmentId: values.departmentId,
         includeSubDepartments: true,
         memberIds: values.memberIds,
-        requireReceipt: values.requireReceipt,
       });
       message.success('组织日程已下发');
       setOpen(false);
@@ -104,14 +91,6 @@ export function OrgEventsPage() {
       message.error(cause instanceof Error ? cause.message : '下发失败');
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const openReceipts = async (record: OrgEventItem) => {
-    try {
-      setReceipts(await api.orgEventReceipts(record.eventId));
-    } catch (cause) {
-      message.error(cause instanceof Error ? cause.message : '回执加载失败');
     }
   };
 
@@ -153,25 +132,15 @@ export function OrgEventsPage() {
             render: (value: string) => SCOPE_LABEL[value] ?? value,
           },
           {
-            title: '回执（待/参/拒/完成）',
-            width: 200,
-            render: (_, record) =>
-              `${record.pendingCount} / ${record.acceptedCount} / ${record.declinedCount} / ${record.completedCount}`,
-          },
-          {
-            title: '需回执',
-            dataIndex: 'requireReceipt',
-            width: 90,
-            render: (value: boolean) => (value ? <Tag bordered={false}>是</Tag> : '—'),
+            title: '收件人数',
+            dataIndex: 'recipientCount',
+            width: 110,
           },
           {
             title: '操作',
             width: 240,
             render: (_, record) => (
               <Space size="small">
-                <Button type="link" size="small" onClick={() => void openReceipts(record)}>
-                  回执明细
-                </Button>
                 <Popconfirm
                   title="撤回该下发？"
                   description="已有成员回执时就撤不回来了（spec §4.2.2）。"
@@ -224,7 +193,7 @@ export function OrgEventsPage() {
           layout="vertical"
           onFinish={dispatch}
           requiredMark={false}
-          initialValues={{ scopeType: 'ALL', requireReceipt: true }}
+          initialValues={{ scopeType: 'ALL' }}
         >
           <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
             <Input />
@@ -257,46 +226,9 @@ export function OrgEventsPage() {
               <Select mode="multiple" options={memberOptions} showSearch optionFilterProp="label" />
             </Form.Item>
           ) : null}
-          <Form.Item name="requireReceipt" label="需要回执" valuePropName="checked">
-            <Switch />
-          </Form.Item>
         </Form>
       </Modal>
 
-      <Drawer
-        title={receipts ? `回执明细（${receipts.total} 人）` : '回执明细'}
-        width={680}
-        open={receipts !== null}
-        onClose={() => setReceipts(null)}
-      >
-        {receipts ? (
-          <>
-            <Alert
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-              message={`待回执 ${receipts.pending} · 参加 ${receipts.accepted} · 不参加 ${receipts.declined} · 已完成 ${receipts.completed} · 已读 ${receipts.readCount}`}
-            />
-            <Table
-              rowKey="orgMemberId"
-              size="small"
-              dataSource={receipts.items}
-              pagination={{ pageSize: 20, hideOnSinglePage: true }}
-              columns={[
-                { title: '成员', dataIndex: 'realName' },
-                { title: '部门', dataIndex: 'departmentName' },
-                {
-                  title: '回执',
-                  dataIndex: 'receiptStatus',
-                  width: 110,
-                  render: (value: string) => RECEIPT_LABEL[value] ?? value,
-                },
-                { title: '备注', dataIndex: 'remark' },
-              ]}
-            />
-          </>
-        ) : null}
-      </Drawer>
     </div>
   );
 }

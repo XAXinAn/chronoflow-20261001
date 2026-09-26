@@ -58,7 +58,6 @@ export function OrgEventEditorScreen({
     startTime: event ? timeInZone(event.startAt, event.timezone || 'Asia/Shanghai') : '09:00',
     endTime: event ? timeInZone(event.endAt, event.timezone || 'Asia/Shanghai') : '10:00',
     memberIds: [],
-    requireReceipt: true,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -270,20 +269,6 @@ export function OrgEventEditorScreen({
             </FormRow>
           )}
         </Card>
-
-        <View style={{ marginTop: theme.spacing.md }}>
-          <Card>
-            <FormRow label="要求回执">
-              <Switch
-                value={form.requireReceipt}
-                onValueChange={(requireReceipt) => patch({ requireReceipt })}
-                accessibilityLabel="要求回执"
-                trackColor={{ false: theme.color.border, true: theme.color.accent }}
-                thumbColor={theme.color.surfaceRaised}
-              />
-            </FormRow>
-          </Card>
-        </View>
 
         {error ? (
           <Text style={{ color: theme.color.danger, marginTop: theme.spacing.md }}>{error}</Text>

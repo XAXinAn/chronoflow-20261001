@@ -111,12 +111,12 @@ XaTodo（心安待办），智能日程与待办 App。项目代号 `xa-todo`。
 | 部分 | 状态 | 测试 |
 | --- | --- | --- |
 | spec.md | 完成（v1.2） | — |
-| 跨语言契约 | `contract/api-contract.json`，**104 个端点** | Java 与 Python 各自校验 |
+| 跨语言契约 | `contract/api-contract.json`，**101 个端点** | Java 与 Python 各自校验 |
 | backend-java（7 模块，含新增 `xa-support`） | 完成 | **90 项集成测试全绿** |
 | backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **51 项全绿** |
 | packages/design-tokens | 完成 | 8 个用例（1 个测试文件；`node --test` 汇总会显示 1） |
 | web-admin（React + Vite + AntD） | 完成：超管六页 + **组织管理端五页** + 意见反馈 | 18 项 |
-| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程与回执、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记/拍照入口、头像上传、意见反馈、组织账号认领与账户管理、小安 tab、深色模式偏好持久化 | **99 项**（**仅纯逻辑层，组件未做渲染测试**） |
+| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程（无回执，与个人日程同一长相）、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记/拍照入口、头像上传、意见反馈、组织账号认领与账户管理、小安 tab、深色模式偏好持久化 | **98 项**（**仅纯逻辑层，组件未做渲染测试**） |
 
 最近几次提交（倒序）：
 
@@ -176,6 +176,7 @@ abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，�
 | 8 | 顺带修 | ①多部分请求缺 `file` → 现在 400/10001（原来掉进兜底返回 90001）；②批量导入补 `requireOrgAdmin`（spec §2.2）；③Python 导入模板从老的 6 列改回 4 列，与 Java 版和 spec §4.3 一致 | 冒烟时实测到 90001 才发现的第①条；②有 Java/Python 用例；③两版 `template()` 现在同列 |
 | 9 | **组织管理员在 App 里下发日程**（spec §4.2.2 / §4.2.3） | 组织 tab 的悬浮按钮与日历页**同一套**（拍照 / 跳到指定日期 / 新建）；新建进整页表单（`OrgEventEditorScreen`），**下发对象 = 选人**：点那一行 push 到独立选人页（`OrgRecipientPickerScreen`）——按二级单位分组、可搜姓名/工号/部门、可整组全选、多选，**顶部常驻已选列表**（可逐个移除）。提交的是**成员级名单**（`scopeType=MEMBER` + `memberIds`）。**没有下发权限的人不出现、也不能选**：可选范围 = `/org/current` 的 `manageableDepartmentIds`（`GET /org/members` 对普通成员会返回他自己，必须在选择阶段就按这条规则过滤，否则就是「能选但一点下发必然 403」）。一个可下发的人都没有时，「新建」按钮根本不显示 | `app/test/orgDispatch.test.ts` 9 项 + `app/test/orgRecipients.test.ts` 6 项（按二级单位分组 / 搜索 / 整组全选 / **无权限的人不出现在列表**）；**模拟器实机走通**：浙海大 OWNER 选人下发 → 事件出现在组织日历并带「待回执」与回执按钮 |
 | 11 | **发起人自己也收得到、也管得了自己下发的那条**（spec §4.2.2） | ①服务端展开收件人时**始终带上发起人自己**（组织 tab 的口径是「发给我 / 我参与的」，否则自己刚发的下一秒就看不见）；②**改 / 撤 / 删只有发起人本人**，其他成员只读——**组织管理员也不行**（已发给别人的通知，内容该由发的人负责）；③回执统计属于「读」：组织管理员、被授权部门负责人、发起人都能看到；④下发名单在编辑时**不可修改**（换收件人 = 撤回 + 重新下发）；⑤`OrgEventResponse` 新增 `canEdit`，App 的「编辑」入口按它显示，不自己猜权限 | Java `OrgModuleTest.initiatorSeesAndManagesOwnDispatch`（发起人可见 + 可改 + 同事 20003 + **管理员替人改也 20003** + 撤回放行 + 组织管理员仍能看回执统计）、Python 同名用例；既有 `dispatchToDepartmentAndMemberReceipt` 的期望从 2 改成 3（多出来的正是发起人） |
+| 12 | **回执整条下线**（spec §4.2.2，产品定了「所有日程都不需要回执」） | 组织日程与个人日程**长相一致**：卡片只有标题/时间/地点，成员只读、发起人多一个「编辑」。删掉的东西：`POST /org/events/{id}/receipt`、`GET /org/events/{id}/recipients`、`GET /org-admin/events/{id}/receipts`（契约 104 → **101**）、两版后端的回执逻辑与看板回执率、App 的参加/不参加/已完成按钮与「待回执」徽标、Web 组织日历的回执列与回执明细抽屉、下发表单里的「要求回执」开关。`event_dispatch.require_receipt` 与 `event_recipient.receipt_status/receipt_at/remark` 保留为**遗留列**（不做破坏性迁移，代码不再读写其语义） | Java 90 / Python 51 / App 98 / web-admin 18 全绿 + 契约门禁；实机确认组织日程卡片与个人日程一致（无回执按钮、无待回执徽标） |
 | 10 | 拍照入口在组织页也对齐（spec §4.1.9） | 组织页的拍照同样走「拍照/相册 → 上传 → 识别」，组织模式的识别确认页多一行「下发给」（点进同一个选人页），确认后批量下发；识别不可用时如实提示并给「手动新建组织日程」兜底。识别成功分支在模型接入前**无法端到端验证**（与日历页现状相同） | 实机确认按钮与入口存在；成功分支未验证（端侧模型未接入，后端返回 90002） |
 
 ### 3.2 节假日数据（2026-09-25 的新约定，别搞混）
@@ -457,6 +458,7 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 | **凭截图估算坐标去 adb 点按钮** | 我点「确定/取消/回到今天」连点三轮都没反应，以为是按钮坏了——实际 y 高了 70px，落在那上面一列滚轮的命中区里，只改了草稿 | 点之前先 `adb shell uiautomator dump` 拿真实 `bounds`，或直接看 `content-desc`；这台机器上滚轮列的可点范围比视觉高度更大 |
 | **模拟器「卡死」，但截图看着很正常** | `adb shell echo` 能用、`screencap` 也能出图（其实是一帧静止画面），可 `dumpsys activity` 报 `DEAD_OBJECT`、`settings`/`input`/`wm size` 报 `Broken pipe` | 这是 guest 的 **system_server 挂了**，不是 App 卡住（差别很大：前者重启模拟器，后者 reload 一下就行）。判据就是上面那三条命令。恢复：`adb reboot` 会被吞掉（`cat /proc/uptime` 不变）；`adb emu kill` 后直接重启会**恢复坏的 quick-boot 快照**（uptime 还是旧的）→ 必须冷启动 `emulator.exe -avd Medium_Phone -no-snapshot-load`。冷启动后别忘 `adb reverse tcp:8081/8080` |
 | **拿几分钟前的 bounds 去点新开的页面** | 编辑页有 `autoFocus` 时键盘会顶起布局，页面向上滚动，同一坐标在新页面上落到了别的控件——我因此在「新建组织日程」里误选了下发对象「指定部门」，还选了个部门，最后发出一条谁都没预期的全组织/部门日程 | **每一步点之前重新 `uiautomator dump`**，别复用上一次的坐标；点完再 dump 一次确认状态（这次就是靠「提示文案写着『指定部门』」和库里 `event_dispatch.scope_type` 才发现的）。自动化脚本里把「关键状态」也 dump 出来断言，别只看「点到了」 |
+| **MyBatis-Plus 的空集合 `.in()`** | 撤回下发之后，成员端查自己的组织日程直接 **500**：`activeDispatchIds` 为空时 `.in(EventDispatch::getId, 空集合)` 拼出非法 SQL（`IN ()`），PG 报 `syntax error at or near ")"` | 空集合要**提前 return**，别把空 `IN` 交给数据库。是新增「撤回后成员端看不到」的用例才暴露出来的（Python 版用单条 SQL 带 `d.status='ACTIVE'`，没有这个问题） |
 | 绝对定位的按钮压住同类控件 | 「今天」按钮绝对定位在月历头部左侧，正好压在上一月的 `‹` 上，两个可点区域重合 | 宁可改成规整三栏（左/中/右留等宽占位），也别用绝对定位往已有控件上叠 |
 | 横向 `ScrollView` 没定高 | 建议问法那排把整屏高度吃掉（它按内容撑满剩余空间） | 给横向滚轮/胶囊行显式 `style={{ flexGrow: 0, maxHeight: 48 }}` |
 | Expo Go 里引用原生模块 | `require('llama.rn')` 这类静态引用会让 Metro 在打包阶段就失败（不是运行时报错） | 端侧模块用**注册制**：`vision/onDevice.ts` 只放接口 + `registerOnDeviceEngine`，Dev Client 构建里再注册实现；Expo Go 下自动回落到服务端识别 |
@@ -508,7 +510,7 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 
 ### 6.2 跨语言契约（`contract/api-contract.json`）
 
-Java 与 Python 两版后端**读同一份契约**做校验，共 **104 个端点**。改动等于改契约，必须两版同步。
+Java 与 Python 两版后端**读同一份契约**做校验，共 **101 个端点**。改动等于改契约，必须两版同步。
 
 > 组织管理端的 6 个端点（`GET /org-admin/departments`、`GET /org-admin/events`、`GET|PATCH /org-admin/settings`、
 > `GET /org-admin/logs`、`GET /org-admin/imports/{id}/failures`）是 2026-09-26 补上的：
@@ -577,7 +579,7 @@ cd backend-python && .venv/bin/python -m pytest  # 期望 51 项全绿
 npm run build -w @xa-todo/design-tokens
 npm run build -w @xa-todo/web-admin
 npm run typecheck -w @xa-todo/app
-npm test                                        # 期望 design-tokens 8 例 + web-admin 18 项 + app 99 项全绿
+npm test                                        # 期望 design-tokens 8 例 + web-admin 18 项 + app 98 项全绿
 ```
 
 CI 在 `.github/workflows/ci.yml`，三个 job：Java / Python / 前端。
