@@ -90,6 +90,21 @@ def update_notifications(
     return envelope(service.update_notification_prefs(principal.identity_id, payload.prefs))
 
 
+@router.post("/deletion")
+def delete_account(
+    principal: IdentityPrincipal = Depends(current_identity),
+    service: AccountService = Depends(get_account_service),
+) -> dict:
+    """自助注销账号（商店规范 §2.7：App 内必须有对应的注销功能按钮）。
+
+    注销后本设备与其他设备的令牌同时失效，App 侧调完这个接口必须清掉本地会话。
+    用 POST 而不是 DELETE：它不是「删掉一个资源」，而是一次不可逆的账号处置动作，
+    与 /admin/accounts/{id}/status 保持同一风格。
+    """
+    service.delete_account(principal.account_id)
+    return envelope(None)
+
+
 _CAMEL_KEYS = {
     "identity_id": "identityId",
     "identity_type": "identityType",

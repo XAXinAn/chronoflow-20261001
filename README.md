@@ -35,7 +35,7 @@ xa-todo/
 
 ## API 契约
 
-[`contract/api-contract.json`](./contract/api-contract.json) 是**跨语言共享**的接口清单（**101 个端点**）。
+[`contract/api-contract.json`](./contract/api-contract.json) 是**跨语言共享**的接口清单（**103 个端点**）。
 Java 版与阶段二的 Python 版都必须满足它——改动这个文件等于改动契约，
 必须同时更新两版实现与 `spec.md`。
 
@@ -48,6 +48,24 @@ Java 版与阶段二的 Python 版都必须满足它——改动这个文件等�
 构建产物中的 `target/openapi/xatodo-api.json` 可在 CI 里作为 artifact 下载。
 
 详见 [backend-java/README.md](./backend-java/README.md) 与 [web-admin/README.md](./web-admin/README.md)。
+
+## 上架合规
+
+应用商店（应用宝）上架要求见 [spec.md §12](./spec.md)：
+
+- **合规文本**（隐私政策 / 用户协议 / 儿童隐私声明 / 两份清单）的唯一事实来源是
+  [`docs/legal/`](./docs/legal/)，后端渲染成纯静态 HTML 挂在 `GET /api/v1/legal/{doc}`，
+  **App 内也是 WebView 打开同一个地址**——因此「App 内与商店链接内容完全一致」是结构上成立的。
+- 逐条对照清单：[docs/legal/compliance-checklist.md](./docs/legal/compliance-checklist.md)。
+- 每个版本都要跑的自动门禁（CI 里已接入）：
+
+  ```bash
+  python3 scripts/check_compliance.py            # 日常：19 项自动检查
+  python3 scripts/check_compliance.py --strict    # 提交审核前：另把【待替换：…】占位判为错误
+  ```
+
+  运营主体是**舟山市时纪云人工智能应用软件开发有限公司**（统一社会信用代码 91330901MAK8W0UM38），
+  应用宝后台「基础信息 → 运营者 / 开发者」必须填同一个名称。
 
 ## 快速开始
 

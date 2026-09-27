@@ -5,6 +5,7 @@ import com.xatodo.auth.security.IdentityPrincipal;
 import com.xatodo.auth.security.TokenScope;
 import com.xatodo.auth.store.RefreshTokenRecord;
 import com.xatodo.auth.store.RefreshTokenStore;
+import com.xatodo.auth.store.AccountRevocationStore;
 import com.xatodo.common.api.ErrorCode;
 import com.xatodo.common.exception.BizException;
 import io.jsonwebtoken.Claims;
@@ -35,11 +36,15 @@ public class TokenService {
 
     private final AuthProperties properties;
     private final RefreshTokenStore refreshTokenStore;
+    private final AccountRevocationStore accountRevocationStore;
     private final SecretKey signingKey;
 
-    public TokenService(AuthProperties properties, RefreshTokenStore refreshTokenStore) {
+    public TokenService(AuthProperties properties,
+                        RefreshTokenStore refreshTokenStore,
+                        AccountRevocationStore accountRevocationStore) {
         this.properties = properties;
         this.refreshTokenStore = refreshTokenStore;
+        this.accountRevocationStore = accountRevocationStore;
         byte[] secret = properties.getJwtSecret().getBytes(StandardCharsets.UTF_8);
         if (secret.length < 32) {
             throw new IllegalStateException("xatodo.auth.jwt-secret 长度必须不少于 32 字节");
@@ -149,6 +154,21 @@ public class TokenService {
     /** 吊销某个身份的全部刷新令牌（解绑组织账号、身份被停用时用）。 */
     public void revokeAllForIdentity(Long identityId) {
         refreshTokenStore.deleteAllForIdentity(identityId);
+    }
+
+    /**
+     * 让该账号**已经签发出去的**访问令牌立即失效（注销 / 封禁时调用）。
+     *
+     * <p>TTL 取访问令牌有效期：等这一批令牌自然过期后，这个标记就没有意义了，
+     * 不需要额外的清理任务。
+     */
+    public void revokeAccountAccessTokens(Long accountId) {
+        accountRevocationStore.revoke(accountId, Duration.ofSeconds(accessTokenTtlSeconds()));
+    }
+
+    /** 该账号是否已被作废（注销 / 封禁），鉴权过滤器每次解析访问令牌后都要问一次。 */
+    public boolean isAccountRevoked(Long accountId) {
+        return accountRevocationStore.isRevoked(accountId);
     }
 
     public List<RefreshTokenRecord> listSessionRecords(Long identityId) {

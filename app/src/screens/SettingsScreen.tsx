@@ -7,7 +7,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { ApiError } from '../api/client';
 import type { IdentityView } from '../api/types';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
+import { askPermission } from '../components/permission';
 import { useAppScheme, useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
+import { LEGAL_DOCS, OPERATOR_NAME, APP_VERSION, type LegalDoc } from '../domain/legal';
 import { absoluteMediaUrl } from '../domain/media';
 
 /**
@@ -19,8 +21,13 @@ import { absoluteMediaUrl } from '../domain/media';
  */
 export function SettingsScreen({
   onOpenFeedback,
+  onOpenLegal,
+  onOpenDeletion,
 }: {
   onOpenFeedback: () => void;
+  /** 打开隐私政策 / 用户协议 / 儿童声明 / 双清单（规范 §四「隐私政策常驻入口」） */
+  onOpenLegal: (doc: LegalDoc) => void;
+  onOpenDeletion: () => void;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -56,9 +63,8 @@ export function SettingsScreen({
    */
   const pickAvatar = async () => {
     setAvatarError(null);
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setAvatarError('需要相册权限才能更换头像');
+    // 先说明用途再申请系统权限，拒绝后只是不换头像（规范 §四「频繁、过度索取权限」）
+    if (!(await askPermission('photo'))) {
       return;
     }
     const picked = await ImagePicker.launchImageLibraryAsync({
@@ -190,16 +196,79 @@ export function SettingsScreen({
         </ListGroup>
       </View>
 
+      {/*
+        隐私与合规常驻入口（规范 §四）：主界面 →「我的」→ 这一组 → 具体条文，共 3 步，
+        满足「从主界面到隐私政策常驻入口不得超过 4 步」。
+        这些页面都是 WebView 打开服务端同一份文本，因此与商店后台提交的链接逐字一致。
+      */}
+      <View style={{ marginBottom: theme.spacing.lg }}>
+        <SectionHeader title="隐私与合规" />
+        <ListGroup>
+          <ListRow
+            leading={<RowIcon name="document-text-outline" />}
+            title={LEGAL_DOCS['privacy-policy'].title}
+            subtitle="我们收集什么、怎么用、怎么删"
+            onPress={() => onOpenLegal('privacy-policy')}
+            trailing={<Chevron />}
+          />
+          <ListSeparator inset={52} />
+          <ListRow
+            leading={<RowIcon name="reader-outline" />}
+            title={LEGAL_DOCS['user-agreement'].title}
+            onPress={() => onOpenLegal('user-agreement')}
+            trailing={<Chevron />}
+          />
+          <ListSeparator inset={52} />
+          <ListRow
+            leading={<RowIcon name="shield-checkmark-outline" />}
+            title={LEGAL_DOCS['children-privacy'].title}
+            onPress={() => onOpenLegal('children-privacy')}
+            trailing={<Chevron />}
+          />
+          <ListSeparator inset={52} />
+          <ListRow
+            leading={<RowIcon name="list-outline" />}
+            title={LEGAL_DOCS['personal-info-collected'].title}
+            subtitle="我们实际收集到的每一项信息"
+            onPress={() => onOpenLegal('personal-info-collected')}
+            trailing={<Chevron />}
+          />
+          <ListSeparator inset={52} />
+          <ListRow
+            leading={<RowIcon name="share-social-outline" />}
+            title={LEGAL_DOCS['shared-info-with-third-parties'].title}
+            subtitle="高德地图、短信服务"
+            onPress={() => onOpenLegal('shared-info-with-third-parties')}
+            trailing={<Chevron />}
+          />
+          <ListSeparator inset={52} />
+          <ListRow
+            leading={<RowIcon name="trash-outline" tone="danger" />}
+            title="账号注销"
+            subtitle="删除个人信息并停用账号"
+            tone="danger"
+            onPress={onOpenDeletion}
+            trailing={<Chevron />}
+          />
+        </ListGroup>
+      </View>
+
       <View style={{ marginBottom: theme.spacing.lg }}>
         <SectionHeader title="关于" />
         <ListGroup>
+          <ListRow
+            leading={<RowIcon name="business-outline" />}
+            title="运营主体"
+            subtitle={OPERATOR_NAME}
+          />
+          <ListSeparator inset={52} />
           <ListRow
             leading={<RowIcon name="link-outline" />}
             title="接口地址"
             subtitle={baseUrl}
           />
           <ListSeparator inset={52} />
-          <ListRow leading={<RowIcon name="information-circle-outline" />} title="版本" subtitle="0.1.0" />
+          <ListRow leading={<RowIcon name="information-circle-outline" />} title="版本" subtitle={APP_VERSION} />
         </ListGroup>
       </View>
 

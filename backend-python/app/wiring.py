@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .db import get_session
 from .services.accounts import AccountService
 from .services.auth import AuthService
-from .store import RefreshTokenStore, VerificationCodeStore, create_redis
+from .store import AccountRevocationStore, RefreshTokenStore, VerificationCodeStore, create_redis
 
 
 @lru_cache(maxsize=1)
@@ -29,6 +29,11 @@ def _refresh_store() -> RefreshTokenStore:
     return RefreshTokenStore(_redis_client())
 
 
+@lru_cache(maxsize=1)
+def _revocation_store() -> AccountRevocationStore:
+    return AccountRevocationStore(_redis_client())
+
+
 def get_code_store() -> VerificationCodeStore:
     return _code_store()
 
@@ -37,9 +42,13 @@ def get_refresh_store() -> RefreshTokenStore:
     return _refresh_store()
 
 
+def get_revocation_store() -> AccountRevocationStore:
+    return _revocation_store()
+
+
 def get_auth_service(session: Session = Depends(get_session)) -> AuthService:
     return AuthService(session, _code_store(), _refresh_store())
 
 
 def get_account_service(session: Session = Depends(get_session)) -> AccountService:
-    return AccountService(session, _refresh_store())
+    return AccountService(session, _refresh_store(), _revocation_store())

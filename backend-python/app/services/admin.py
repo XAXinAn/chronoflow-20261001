@@ -340,11 +340,15 @@ class AdminService:
             raise ApiError(ErrorCode.PARAM_INVALID, "账号不存在")
         self._session.commit()
         if status == "DISABLED":
-            from .auth import AuthService
-            from ..wiring import _refresh_store
+            from ..wiring import _refresh_store, _revocation_store
 
             for record in _refresh_store().list_for_account(account_id):
                 _refresh_store().delete(record.token_id)
+            # 光吊销刷新令牌只断掉续期：已签发的 access token 还能用到过期为止。
+            # 封禁必须「立即生效」，所以再加一条作废标记（spec §3.7.3③）。
+            from ..config import settings
+
+            _revocation_store().revoke(account_id, settings.access_token_ttl)
         self.record_audit(principal, "ACCOUNT_STATUS_CHANGE", "ACCOUNT", account_id, {"status": status})
         return self.search_accounts(row["phone"], None, 1)[0]
 

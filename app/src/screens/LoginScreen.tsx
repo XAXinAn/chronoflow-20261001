@@ -3,8 +3,10 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '../api/client';
 import type { TokenResponse } from '../api/types';
-import { Card, PrimaryButton, Screen } from '../components/ui';
+import { Card, Checkbox, PrimaryButton, Screen } from '../components/ui';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
+import { canRequestCode, canSubmitLogin } from '../domain/consent';
+import { LEGAL_DOCS, type LegalDoc } from '../domain/legal';
 import {
   SMS_COOLDOWN_SECONDS,
   nextCooldown,
@@ -17,13 +19,25 @@ import {
  * 不再有「选身份」这一步——组织账号是在登录后、在组织 tab 的「账户管理」里
  * 用「组织唯一 ID + 成员唯一识别 ID」认领的。
  */
-export function LoginScreen() {
+export function LoginScreen({
+  onOpenLegal,
+}: {
+  /** 打开《用户服务协议》/《隐私政策》——登录页必须能点开原文（规范 §四） */
+  onOpenLegal: (doc: LegalDoc) => void;
+}) {
   const theme = useAppTheme();
   const { api, deviceId } = useRuntime();
   const { applyTokenResponse } = useAppSessionState();
 
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
+  /**
+   * 是否已主动勾选同意协议与隐私政策。
+   *
+   * **初值必须是 false**：审核规范明确把「用勾选框形式但默认勾选」与
+   * 「注册或登录即默认同意」都列为违规。判定逻辑抽在 domain/consent.ts，由单测盯着。
+   */
+  const [acceptedPolicy, setAcceptedPolicy] = useState(false);
   const [debugCode, setDebugCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /** 发码后的倒计时秒数（spec §3.6：同手机号 60 秒 1 条） */
@@ -63,6 +77,10 @@ export function LoginScreen() {
   };
 
   const submit = async () => {
+    if (!canSubmitLogin({ phone, code, acceptedPolicy })) {
+      setError('请先阅读并勾选同意《用户服务协议》与《隐私政策》');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -91,8 +109,7 @@ export function LoginScreen() {
     }
   };
 
-  const phoneReady = phone.trim().length === 11;
-  const codeReady = code.trim().length === 6;
+  const loginReady = canSubmitLogin({ phone, code, acceptedPolicy });
 
   return (
     <Screen style={styles.container}>
@@ -140,7 +157,7 @@ export function LoginScreen() {
               onPress={() => void sendCode()}
               loading={busy && cooldown === 0}
               // 冷却中也禁用：点不动比点了报错更省事
-              disabled={!phoneReady || cooldown > 0}
+              disabled={!canRequestCode(phone, cooldown, acceptedPolicy)}
             />
           </View>
         </View>
@@ -160,19 +177,49 @@ export function LoginScreen() {
           title="登录 / 注册"
           onPress={() => void submit()}
           loading={busy}
-          disabled={!phoneReady || !codeReady}
+          disabled={!loginReady}
         />
 
-        <Text
-          style={{
-            color: theme.color.textTertiary,
-            fontSize: 12,
-            marginTop: theme.spacing.md,
-            textAlign: 'center',
-          }}
-        >
-          登录即表示同意用户协议与隐私政策
-        </Text>
+        {/*
+          合规要点（规范 §四「默认同意」）：
+          1. 用**勾选框**、且默认不勾选；
+          2. 协议名要能点开原文，而不是只写一行小字；
+          3. 未勾选时登录按钮不可点，也不再出现「登录即表示同意」这种替代同意的写法。
+        */}
+        <View style={{ marginTop: theme.spacing.md }}>
+          <Checkbox
+            value={acceptedPolicy}
+            onToggle={setAcceptedPolicy}
+            accessibilityLabel="我已阅读并同意用户服务协议与隐私政策"
+          >
+            <Text style={{ color: theme.color.textSecondary, fontSize: 13, lineHeight: 20 }}>
+              我已阅读并同意
+              <Text onPress={() => onOpenLegal('user-agreement')} style={{ color: theme.color.accent }}>
+                {LEGAL_DOCS['user-agreement'].label}
+              </Text>
+              与
+              <Text onPress={() => onOpenLegal('privacy-policy')} style={{ color: theme.color.accent }}>
+                {LEGAL_DOCS['privacy-policy'].label}
+              </Text>
+            </Text>
+          </Checkbox>
+          <Text
+            style={{
+              color: theme.color.textTertiary,
+              fontSize: 12,
+              marginTop: 6,
+              lineHeight: 18,
+            }}
+          >
+            未满 18 周岁请在监护人陪同下阅读；
+            <Text
+              onPress={() => onOpenLegal('children-privacy')}
+              style={{ color: theme.color.accent }}
+            >
+              {LEGAL_DOCS['children-privacy'].label}
+            </Text>
+          </Text>
+        </View>
       </Card>
     </Screen>
   );

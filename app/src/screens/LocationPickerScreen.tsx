@@ -8,6 +8,7 @@ import type { GeoPlace, GeoStatus } from '../api/types';
 import { ApiError } from '../api/client';
 import { Card, PrimaryButton, Screen } from '../components/ui';
 import { FormInput } from '../components/form';
+import { askPermission } from '../components/permission';
 import {
   MapPicker,
   type MapFocus,
@@ -215,8 +216,9 @@ export function LocationPickerScreen({
     setLocating(true);
     setError(null);
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
+      // 先说明用途再申请系统权限。自动定位（进页面就试一次）时解释得更轻，
+      // 但**绝不允许**因为没给定位就退出页面——规范 §四把「拒绝权限后强制退出」列为违规。
+      if (!(await askPermission('location', { quiet: auto }))) {
         setError(auto ? '未授权定位，已打开默认位置；可点右下角图标重新定位' : '未授予定位权限，无法定位到当前位置');
         return false;
       }

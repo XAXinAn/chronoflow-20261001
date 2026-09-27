@@ -7,6 +7,7 @@ import { ApiError } from '../api/client';
 import type { FeedbackCategory, FeedbackItem } from '../api/types';
 import { EditorHeader, FormTextArea } from '../components/form';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
+import { askPermission } from '../components/permission';
 import { Card, EmptyState, Pill, Screen } from '../components/ui';
 import { useAppTheme, useRuntime } from '../context/AppContext';
 import {
@@ -57,9 +58,8 @@ export function FeedbackScreen({ onBack }: { onBack: () => void }) {
       setError(`最多添加 ${FEEDBACK_MAX_IMAGES} 张图片`);
       return;
     }
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError('需要相册权限才能添加图片');
+    // 先说明用途再申请系统权限，拒绝只是不能加图片，反馈本身照常能提交
+    if (!(await askPermission('photo'))) {
       return;
     }
     const picked = await ImagePicker.launchImageLibraryAsync({

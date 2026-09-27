@@ -79,6 +79,11 @@ def databases() -> Iterator[dict[str, str]]:
     data_dir = tempfile.mkdtemp(prefix="xa-pg-")
     # 用 unix socket 目录而不是 TCP 端口，避免与机器上其他服务抢占端口
     socket_dir = data_dir
+    # 光把 socket 目录换掉还不够：PostgreSQL 默认仍然会监听 127.0.0.1:5432，
+    # 而开发机上正好跑着一个 5432（AGENTS §0 的常驻环境），于是测试库直接起不来——
+    # 报错是 "could not bind IPv4 address 127.0.0.1: Address already in use"。
+    # listen_addresses='' 让它**只**听 unix socket，与「用 socket 目录」的初衷一致。
+    pg_options = f"-k {socket_dir} -c listen_addresses=''"
 
     subprocess.run(
         [f"{pg_bin}/initdb", "-D", data_dir, "-U", "postgres", "--auth=trust", "-E", "UTF8"],
@@ -91,7 +96,7 @@ def databases() -> Iterator[dict[str, str]]:
             "-D",
             data_dir,
             "-o",
-            f"-k {socket_dir}",
+            pg_options,
             "-l",
             f"{data_dir}/pg.log",
             "-w",
@@ -121,6 +126,10 @@ def databases() -> Iterator[dict[str, str]]:
         _wait_for_redis(redis_port)
 
         # 环境变量必须在导入 app 之前设置：app.config 在导入时就读取环境
+        # ⚠️ 推论：**测试模块的顶层不许 `from app.xxx import ...`**。
+        #    收集阶段先于本 fixture 执行，顶层导入会把 settings 冻在「本地默认值」上
+        #    （指向开发机的 PostgreSQL/Redis），症状是无关用例成片报「验证码发送过于频繁」。
+        #    需要 app 内的东西时，在函数体里 import。
         os.environ["DATABASE_URL"] = "postgresql+psycopg://" + dsn.split("://", 1)[1]
         os.environ["REDIS_URL"] = f"redis://127.0.0.1:{redis_port}/0"
         os.environ["EXPOSE_SMS_CODE"] = "true"

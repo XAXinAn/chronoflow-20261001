@@ -161,5 +161,25 @@ class RefreshTokenStore:
         return self._redis.get(SUCCESSOR_KEY + previous_token_id)
 
 
+class AccountRevocationStore:
+    """「这个账号的访问令牌全部作废」的标记（与 Java 版 `AccountRevocationStore` 对应）。
+
+    访问令牌是无状态 JWT，签发后 2 小时内一直有效——只看刷新令牌的话，
+    「账号刚注销却还能再写两条日程」。注销 / 封禁时在这里打一个带 TTL 的标记，
+    `deps.current_identity` 每次解析完令牌再问一次。
+    """
+
+    KEY_PREFIX = "revoked:acct:"
+
+    def __init__(self, client: redis.Redis):
+        self._redis = client
+
+    def revoke(self, account_id: int, ttl: int) -> None:
+        self._redis.set(self.KEY_PREFIX + str(account_id), "1", ex=ttl)
+
+    def is_revoked(self, account_id: int) -> bool:
+        return self._redis.exists(self.KEY_PREFIX + str(account_id)) > 0
+
+
 def now_seconds() -> float:
     return time.time()

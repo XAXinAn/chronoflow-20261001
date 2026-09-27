@@ -130,6 +130,14 @@ export function createEndpoints(client: ApiClient) {
     updateMe: (payload: { nickname?: string; avatarUrl?: string | null; timezone?: string }) =>
       client.patch<IdentityView>('/api/v1/me', payload),
 
+    /**
+     * 自助注销账号（商店规范 §2.7：App 内必须有对应的注销功能按钮）。
+     *
+     * 服务端会立即吊销全部令牌并删除/匿名化个人信息，因此调用方拿到成功响应后
+     * **必须**清掉本地会话（见 AccountDeletionScreen）。
+     */
+    deleteAccount: () => client.post<void>('/api/v1/me/deletion', {}),
+
     // ----------------------------------------------------------- 个人日历
     calendars: () => client.get<CalendarSummary[]>('/api/v1/calendars'),
     eventsInRange: (start: string, end: string) =>

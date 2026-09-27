@@ -101,6 +101,9 @@ public class AdminAccountService {
         accountMapper.updateById(account);
         if ("DISABLED".equals(status)) {
             tokenService.revokeAllForAccount(accountId);
+            // 光吊销刷新令牌只断掉续期：已签发的 access token 还能用到过期为止。
+            // 封禁必须「立即生效」，所以再加一条作废标记（spec §3.7.3③）。
+            tokenService.revokeAccountAccessTokens(accountId);
         }
         auditLogService.record(principal, "ACCOUNT_STATUS_CHANGE", "ACCOUNT", accountId,
                 Map.of("status", status));

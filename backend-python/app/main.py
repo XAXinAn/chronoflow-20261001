@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .errors import ApiError, ErrorCode, envelope, set_trace_id
-from .routers import admin, ai, auth, geo, me, org, org_accounts, personal, support, system
+from .routers import admin, ai, auth, geo, legal, me, org, org_accounts, personal, support, system
 from .config import settings
 from .services import holiday_sync
 
@@ -121,6 +121,7 @@ async def handle_unexpected(_: Request, exc: Exception) -> JSONResponse:
 
 
 app.include_router(system.router)
+app.include_router(legal.router)
 app.include_router(auth.router)
 app.include_router(me.router)
 app.include_router(personal.router)

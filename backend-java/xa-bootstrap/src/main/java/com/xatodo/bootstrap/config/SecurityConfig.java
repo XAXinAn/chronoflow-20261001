@@ -66,6 +66,10 @@ public class SecurityConfig {
                         // 上传目录：<Image> 直接按 URL 取图，同样带不了 Authorization（spec §5.10）。
                         // 代价是这里不能放任何私有内容——只有头像与反馈图片走这条路
                         .requestMatchers("/uploads/**").permitAll()
+                        // 合规文本（隐私政策 / 用户协议 / 儿童声明 / 双清单）：
+                        // 商店的自动化检测要能**不登录直接抓**，应用内也是 WebView 按 URL 打开，
+                        // 因此必须公开。页面里没有脚本、也没有任何用户数据（docs/legal/*.md）。
+                        .requestMatchers("/api/v1/legal/**").permitAll()
                         // 登录链路的入口接口自身校验受限令牌（注册令牌 / 选择身份令牌 / 刷新令牌）
                         .requestMatchers(
                                 "/api/v1/auth/sms/**",

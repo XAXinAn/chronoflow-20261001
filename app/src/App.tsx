@@ -3,34 +3,42 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppProvider, useAppSessionState, useAppTheme, useRuntimeState } from './context/AppContext';
 import { createRuntime } from './runtime';
+import { buildConsentRecord, hasAcceptedPolicy } from './domain/consent';
+import { createSecureConsentStore, type ConsentStore } from './auth/consentStore';
 import { AgendaScreen } from './screens/AgendaScreen';
+import { AccountDeletionScreen } from './screens/AccountDeletionScreen';
 import { EventEditorScreen, type PlaceSelection } from './screens/EventEditorScreen';
 import { EventPickerScreen, type PickedEvent } from './screens/EventPickerScreen';
 import { FeedbackScreen } from './screens/FeedbackScreen';
 import { AgentChatScreen } from './screens/AgentChatScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { LocationPickerScreen } from './screens/LocationPickerScreen';
+import { LegalScreen } from './screens/LegalScreen';
 import { OrgAccountsScreen } from './screens/OrgAccountsScreen';
 import { OrgEventEditorScreen } from './screens/OrgEventEditorScreen';
 import { OrgRecipientPickerScreen } from './screens/OrgRecipientPickerScreen';
 import { OrgTabScreen } from './screens/OrgTabScreen';
+import { PrivacyConsentScreen } from './screens/PrivacyConsentScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { TaskEditorScreen } from './screens/TaskEditorScreen';
 import { TasksScreen } from './screens/TasksScreen';
 import { localDateKey } from './domain/agenda';
 import { APP_TIMEZONE } from './domain/calendar';
+import type { LegalDoc } from './domain/legal';
 import type { RecognizedEventDraft } from './domain/vision';
 import type { OrgEvent } from './api/types';
 import { RecognizedEventsScreen } from './screens/RecognizedEventsScreen';
 
 type AuthStackParamList = {
   Login: undefined;
+  /** 登录页要能点开《用户服务协议》《隐私政策》原文（规范 §四） */
+  Legal: { doc: LegalDoc };
 };
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -64,7 +72,16 @@ function AuthFlow() {
   return (
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
       {/* 只登录个人账号（spec §3.2）：组织账号在组织 tab 的「账户管理」里认领 */}
-      <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen name="Login">
+        {({ navigation }) => (
+          <LoginScreen onOpenLegal={(doc) => navigation.navigate('Legal', { doc })} />
+        )}
+      </AuthStack.Screen>
+      <AuthStack.Screen name="Legal">
+        {({ navigation, route }) => (
+          <LegalScreen doc={route.params.doc} onBack={() => navigation.goBack()} />
+        )}
+      </AuthStack.Screen>
     </AuthStack.Navigator>
   );
 }
@@ -95,6 +112,10 @@ type MainTabsProps = {
     deviceFallbackReason: string | null;
   }) => void;
   onOpenFeedback: () => void;
+  /** 打开合规文本（隐私政策 / 用户协议 / 儿童声明 / 双清单） */
+  onOpenLegal: (doc: LegalDoc) => void;
+  /** 账号注销（规范 §2.7 要求 App 内必须有对应按钮） */
+  onOpenDeletion: () => void;
 };
 
 function MainTabs({
@@ -109,6 +130,8 @@ function MainTabs({
   onOpenOrgEvent,
   onOpenRecognized,
   onOpenFeedback,
+  onOpenLegal,
+  onOpenDeletion,
 }: MainTabsProps) {
   const theme = useAppTheme();
   const { session } = useAppSessionState();
@@ -163,7 +186,13 @@ function MainTabs({
         {() => <AgentChatScreen />}
       </Tabs.Screen>
       <Tabs.Screen name="Settings" options={{ title: '我的', tabBarIcon: tabIcon('Settings') }}>
-        {() => <SettingsScreen onOpenFeedback={onOpenFeedback} />}
+        {() => (
+          <SettingsScreen
+            onOpenFeedback={onOpenFeedback}
+            onOpenLegal={onOpenLegal}
+            onOpenDeletion={onOpenDeletion}
+          />
+        )}
       </Tabs.Screen>
     </Tabs.Navigator>
   );
@@ -179,6 +208,8 @@ type AppStackParamList = {
   EventPicker: undefined;
   Feedback: undefined;
   OrgAccounts: undefined;
+  Legal: { doc: LegalDoc };
+  AccountDeletion: undefined;
   RecognizedEvents: {
     drafts: RecognizedEventDraft[];
     photoUri: string;
@@ -268,7 +299,25 @@ function MainStack() {
               navigation.navigate('Main', { screen: 'OrgEvents' });
             }}
             onOpenFeedback={() => navigation.navigate('Feedback')}
+            onOpenLegal={(doc) => navigation.navigate('Legal', { doc })}
+            onOpenDeletion={() => navigation.navigate('AccountDeletion')}
             onOpenRecognized={(payload) => navigation.navigate('RecognizedEvents', payload)}
+          />
+        )}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="Legal">
+        {({ navigation, route }) => (
+          <LegalScreen doc={route.params.doc} onBack={() => navigation.goBack()} />
+        )}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="AccountDeletion">
+        {({ navigation }) => (
+          <AccountDeletionScreen
+            onBack={() => navigation.goBack()}
+            // 注销页里也要能翻到隐私政策原文（它引用了第七章的注销条款）
+            onOpenLegal={(doc) => navigation.navigate('Legal', { doc })}
           />
         )}
       </AppStack.Screen>
@@ -411,6 +460,47 @@ function Root() {
   const { runtime, setRuntime } = useRuntimeState();
   const { session, setSession } = useAppSessionState();
   const [booting, setBooting] = useState(true);
+  /**
+   * 首启隐私政策同意（规范 §四 D1/D3）。
+   *
+   * 这一层刻意放在**登录之前、网络请求之前**：
+   * 未同意时连会话都不恢复，App 不会发出任何携带个人信息的请求。
+   */
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [needsConsent, setNeedsConsent] = useState(true);
+  const consentStoreRef = useRef<ConsentStore | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const store = await createSecureConsentStore();
+        if (cancelled) {
+          return;
+        }
+        consentStoreRef.current = store;
+        setNeedsConsent(!hasAcceptedPolicy(await store.read()));
+      } catch {
+        // 安全存储不可用（例如 Web 预览）：按「没同意过」处理，宁可多弹一次
+        if (!cancelled) {
+          setNeedsConsent(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setConsentChecked(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const acceptConsent = () => {
+    const record = buildConsentRecord();
+    setNeedsConsent(false);
+    void consentStoreRef.current?.write(record);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -436,13 +526,17 @@ function Root() {
     };
   }, [setRuntime, setSession]);
 
-  if (booting || !runtime) {
+  if (booting || !runtime || !consentChecked) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.bg }}>
         <ActivityIndicator color={theme.color.accent} />
-        <Text style={{ color: theme.color.textTertiary, marginTop: 12 }}>正在恢复登录状态…</Text>
+        <Text style={{ color: theme.color.textTertiary, marginTop: 12 }}>正在准备…</Text>
       </View>
     );
+  }
+
+  if (needsConsent) {
+    return <PrivacyConsentScreen onAgree={acceptConsent} onDecline={() => undefined} />;
   }
 
   return session ? <MainStack /> : <AuthFlow />;

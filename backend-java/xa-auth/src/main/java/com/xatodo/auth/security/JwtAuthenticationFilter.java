@@ -56,10 +56,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = header.substring(BEARER_PREFIX.length()).trim();
             try {
                 IdentityPrincipal principal = tokenService.parseAccessToken(token);
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                principal, null, List.of(new SimpleGrantedAuthority("ROLE_IDENTITY")));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                if (tokenService.isAccountRevoked(principal.accountId())) {
+                    /**
+                     * 账号已注销 / 已封禁：JWT 本身还没过期（最长 2 小时），但必须当场拒绝。
+                     *
+                     * <p>否则会出现「刚注销完，用同一张令牌还能再写两条日程」——
+                     * 与隐私政策里承诺的「注销立即生效」直接冲突，spec §3.7.3③ 也把
+                     * 「账号被平台停用 / 封禁（20008）」列为必须要求重新登录的情形。
+                     */
+                    request.setAttribute(AuthAttributes.AUTH_ERROR_CODE, ErrorCode.ACCOUNT_DISABLED);
+                } else {
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    principal, null, List.of(new SimpleGrantedAuthority("ROLE_IDENTITY")));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                }
             } catch (ExpiredJwtException ex) {
                 request.setAttribute(AuthAttributes.AUTH_ERROR_CODE, ErrorCode.TOKEN_EXPIRED);
             } catch (JwtException | IllegalArgumentException ex) {

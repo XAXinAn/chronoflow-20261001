@@ -2,9 +2,51 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-09-26（第三轮收尾）
+> 最后更新：2026-09-27（第四轮：上架合规）
 
 ---
+
+## 0.0 本次交接摘要（2026-09-27，第四轮：应用商店上架合规）
+
+**这一轮做了什么**：按应用宝《隐私政策提交内容及审核规范》把上架必备的那几条补齐。
+需求与逐条对照写在 **spec §12**，人读的清单在 **`docs/legal/compliance-checklist.md`**，
+机器门禁是 **`python3 scripts/check_compliance.py`**（CI 里会跑）。
+
+1. **合规文本只有一份**：`docs/legal/*.md`（隐私政策 / 用户协议 / 儿童隐私声明 /
+   已收集个人信息清单 / 与第三方共享个人信息清单）。Maven 打包时复制进 jar 的 `classpath:/legal/`，
+   后端渲染成**纯静态 HTML** 挂在 `GET /api/v1/legal/{doc}`（免登录、无脚本、白名单 slug）。
+   **App 用 WebView 打开同一个地址**——「App 内与链接内容完全一致」是结构上成立的，改文案不用发版。
+   ⚠️ 不要为了「离线也能看」把正文抄进 App：`check_compliance.py` 的 `legal-single-source` 会拦。
+2. **首启隐私政策弹窗**（`PrivacyConsentScreen`）：挂在根导航上，**在恢复会话与任何网络请求之前**；
+   同意/不同意两个显式选项；同意记录存安全存储，隐私政策升版会自动重新弹。
+3. **登录页改成主动勾选**：默认未勾选，未勾选时「登录 / 注册」与「获取验证码」都不可点；
+   原来的「登录即表示同意…」已删（那正是审核点名的违规写法）。
+4. **账号注销**：`POST /api/v1/me/deletion`，App 路径「我的 → 隐私与合规 → 账号注销」。
+   立即生效：删个人数据、匿名化账号（释放手机号）、解绑组织、吊销令牌。
+   **特别注意「访问令牌作废标记」**（见 §3.6 最后一条）：无名 JWT 光吊销刷新令牌是不够的。
+5. **权限前说明**：相机 / 相册 / 定位统一走 `components/permission.ts` 的 `askPermission()`
+   （先解释用途 → 再弹系统窗 → 拒绝只提示并可跳系统设置，**绝不退出 App**）。
+6. **「我的」页新增「隐私与合规」分组**：五个文本入口 + 账号注销，主界面到隐私政策 3 步
+   （规范要求 ≤ 4 步）。
+
+**新增/改动的文件**：`docs/legal/*`、`scripts/check_compliance.py`、
+`app/src/domain/{consent,permissions,legal}.ts`、`app/src/components/permission.ts`、
+`app/src/auth/consentStore.ts`、`app/src/screens/{PrivacyConsent,Legal,AccountDeletion}Screen.tsx`、
+`backend-java/xa-support/.../legal/*`、`backend-java/xa-auth/.../spi/AccountDataPurger.java`、
+`backend-java/xa-bootstrap/.../compliance/JdbcAccountDataPurger.java`、
+`backend-python/app/{routers,services}/legal.py`、两版的 `AccountRevocationStore`。
+
+**测试基线**：Java **96**（含契约门禁 + 新增 `ComplianceTest` 3 项）、Python **54**（含 3 项）、
+App **116** + typecheck、web-admin 18；`check_compliance.py` 19 项自动检查全绿。
+
+**下一轮建议**：
+
+1. 把 `docs/legal/*.md` 里剩下的 `【待替换：请填写客服邮箱/电话】` 换成真实联系方式
+   （`python3 scripts/check_compliance.py --strict` 会报出来），并把应用宝后台的
+   「运营者 / 开发者」填成 **舟山市时纪云人工智能应用软件开发有限公司**；
+2. 部署到 8.136.20.182 后，把 `https://<域名>/api/v1/legal/privacy-policy`
+   填进应用宝后台的「隐私政策 URL」，并在无痕窗口确认不用登录就能打开；
+3. 剩下的产品项：拍照识别（端侧模型，排最后，见 §3.4）、web-admin 组织日历的 `canEdit`。
 
 ## 0.0 本次交接摘要（2026-09-26，第三轮）
 
@@ -133,7 +175,7 @@ XaTodo（心安待办），智能日程与待办 App。项目代号 `xa-todo`。
 | 部分 | 状态 | 测试 |
 | --- | --- | --- |
 | spec.md | 完成（v1.2） | — |
-| 跨语言契约 | `contract/api-contract.json`，**101 个端点** | Java 与 Python 各自校验 |
+| 跨语言契约 | `contract/api-contract.json`，**103 个端点** | Java 与 Python 各自校验 |
 | backend-java（7 模块，含新增 `xa-support`） | 完成 | **90 项集成测试全绿** |
 | backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **51 项全绿** |
 | packages/design-tokens | 完成 | 8 个用例（1 个测试文件；`node --test` 汇总会显示 1） |
@@ -284,6 +326,15 @@ App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File
 - **同一条权限规则不要抄两遍**：Python 的 `receipt_summary` 里原本照抄了一份「组织管理员 / 部门范围」的判断，
   这次加「发起人也能看回执」时它没跟着改，表现成「发起人看不了自己下发的回执」。现在两版都收敛到
   `can_view_dispatch_stats` / `require_is_initiator` 这两个函数，改规则只改一处。
+- **吊销刷新令牌 ≠ 让访问令牌失效**（第四轮踩到）：访问令牌是无状态 JWT，有效期 2 小时。
+  只吊销刷新令牌只断掉「续期」，**已经签发出去的 access token 在此期间照样能用**——
+  于是刚注销的账号还能再写两条日程，和隐私政策里承诺的「注销立即生效」直接冲突。
+  现在注销 / 封禁时额外在 Redis 打 `revoked:acct:{id}`（TTL = 访问令牌有效期），
+  Java 在 `JwtAuthenticationFilter`、Python 在 `deps.current_identity` 里解析完令牌再看一眼，
+  命中即 `20008`。**新增任何「让账号立刻不可用」的路径时，这两步都要做。**
+- **合规文本不要抄进 App**：`docs/legal/*.md` 是唯一事实来源，后端同源渲染成 HTML，
+  App 用 WebView 打开同一地址。抄一份到 App 里，下一次改文案就必然一半新一半旧，
+  而「App 内与商店链接内容必须完全一致」是硬性审核项。
 
 ### 3.7 演示数据集（2026-09-26 第三轮换成了两个真实形态的组织）
 
@@ -464,12 +515,12 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 | 后台进程随会话消失 | 上一轮被中断后 PG/Redis/后端全没了 | 一律 `setsid nohup ... & disown` |
 | 日志文件被覆盖 | 重启后端复用同一路径，旧日志丢了 | 重启前先 `rm -f` 或换文件名 |
 | `mvn -pl xa-bootstrap spring-boot:run` | 报找不到 `com.xatodo:xa-common` | 要么先 `mvn install`，要么直接跑 fat jar |
-| Python 测试起不来（`pg_ctl ... returned non-zero`） | 嵌入式 PG 要绑 **5432**，与开发库抢端口；`pg.log` 里是 `Address already in use` | 跑 pytest 前先 `pg_ctl -D ~/.cache/xa-todo/pgdata -m fast -w stop`，跑完再 start |
+| Python 测试起不来（`pg_ctl ... returned non-zero`） | 嵌入式 PG 除了 unix socket 之外**还会绑 127.0.0.1:5432**，与开发库抢端口；`pg.log` 里是 `Address already in use` | 已修：`tests/conftest.py` 启动参数加了 `-c listen_addresses=''`（只监听 socket）。**不需要再停开发库** |
 | Java 测试报 `SocketException: Operation not permitted` | 沙箱不允许绑监听端口，嵌入式 PG/Redis 起不来（表现为 `ApplicationContext failure`，看 surefire 报告里真正的 `Caused by`） | `mvn -B clean verify` 要提权；开发库不用停（zonky 用随机端口） |
 | 关键词检索里的 `%` / `_` | 不转义就成了通配符：搜「50%」命中所有日程，即「搜什么都灵」 | SQL 写 `ILIKE :pattern ESCAPE '\'`，Java/Python 两边都要把 `\ % _` 转义；行为有测试守着 |
 | Python 套件里无关用例报「验证码发送次数已达上限」 | 按 **IP** 的日限额在测试里没有意义（TestClient 的 client_ip 恒为 `testclient`，**整个套件共用一个计数器**），用例一多就随机变红 | `tests/conftest.py` 已把 `SMS_DAILY_LIMIT_PER_IP` 放开；手机号维度限额保持不变 |
-| **Java 测试类里手机号必须全类唯一** | 同一个号被两个用例注册 → 第二次撞 60 秒发送频控（`20005`），报的却是「发送过于频繁」，看不出是自己重号 | 新增用例前先 `grep -c "1380000xxxx"` 数一遍；Java 侧同时也把按 IP 的日限额在 surefire 里放开了（`xatodo.auth.sms-daily-limit-per-ip=100000`） |
-| Python 测试在**导入期**就 `import` 了 app 模块 | `app.config` 会在 conftest 设 `DATABASE_URL` 之前读进内存 → 整套用例跑去连开发库（报 `role "xatodo" does not exist`） | 测试里**在用例函数内部**导入 `app.services.*`（`tests/test_vision.py` 顶部就是这么注释的） |
+| **测试里手机号必须全套件唯一（Java 与 Python 都是）** | 同一个号被两个用例注册（或同一用例发两次码）→ 撞 60 秒发送频控（`20005`），报的却是「发送过于频繁」，看不出是自己重号/重复发码。Redis 的 `sms:lock:{phone}` 是**跨用例共享**的 | 新增用例前先 `grep -rhoE '1[0-9]{10}' backend-python/tests/*.py \| sort -u`（Java 同理）数一遍；同一用例内要二次登录就直接往 Redis 里灌验证码，别再发一条 |
+| Python 测试在**导入期**就 `import` 了 app 模块 | 收集阶段早于 conftest 的 `databases` fixture，`app.config` 会把 `DATABASE_URL`/`REDIS_URL` 冻在本地默认值上 → 整套用例跑去连**开发机那台真库**。症状有两个：`role "xatodo" does not exist`，或者（更隐蔽）**成片无关用例报 20005「验证码发送过于频繁」**——因为它们在打开发机的 Redis | 测试里**在用例函数内部**导入 `app.services.*` / `app.db` / `app.wiring`；conftest 里也写了醒目的注释 |
 | 断言「空字段会消失」 | `non_null` 序列化只对 **null** 生效；空数组仍会返回 `[]`，我按 `isMissingNode()` 断言就红了 | 清空类断言写「返回空数组」而不是「字段不存在」 |
 | **沙箱内 `curl localhost:8080` 连不上** | 服务其实好好的（`ss -ltnp` 能看到 `*:8080` 在监听），只有沙箱里的 curl 连不上，很容易误判成「后端挂了」 | 判断服务在不在，一律**提权**跑 `ss -ltnp` / `pgrep -af`；别用沙箱内的 curl 下结论 |
 | `multipart` 请求漏了 `file` 部件 | 返回 **90001**（服务内部错误），看着像后端炸了，其实只是参数没给 | 已修：`GlobalExceptionHandler` 现在把 `MissingServletRequestPartException` 映射成 400 / `10001`；Python 侧 FastAPI 的 `RequestValidationError` 处理器本来就有 |
@@ -542,7 +593,7 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 
 ### 6.2 跨语言契约（`contract/api-contract.json`）
 
-Java 与 Python 两版后端**读同一份契约**做校验，共 **101 个端点**。改动等于改契约，必须两版同步。
+Java 与 Python 两版后端**读同一份契约**做校验，共 **103 个端点**。改动等于改契约，必须两版同步。
 
 > 组织管理端的 6 个端点（`GET /org-admin/departments`、`GET /org-admin/events`、`GET|PATCH /org-admin/settings`、
 > `GET /org-admin/logs`、`GET /org-admin/imports/{id}/failures`）是 2026-09-26 补上的：
@@ -612,6 +663,23 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 | 账号 | 超管 `admin` / 见 `/opt/xatodo/.env` 的 `ADMIN_PASSWORD`；组织管理端 `leodigital_admin` / `leodigital123`、`zjou_admin` / `zjou123456`；App `18006569106` + 短信验证码 |
 | 短信 | 复用同机 ChronoFlow 的阿里云短信凭据与模板（`.env` 里的 `ALIYUN_SMS_*`），已实测能收到；接了 aliyun 之后接口**不再回显验证码** |
 | 演示数据 | 利欧数字 45 部门/117 人、浙江海洋大学 52 部门/260 人；两个组织各有一个可认领的拥有者成员（工号 `1145141919810` / 学号 `2023210704127`） |
+| **合规文本（提交应用商店的隐私政策 URL）** | `http://8.136.20.182:8088/api/v1/legal/privacy-policy`（换成域名后同路径即可）。已实测：免登录 200、`text/html`、无 `<script>`；`user-agreement` / `children-privacy` / `personal-info-collected` / `shared-info-with-third-parties` 同前缀，未知 slug 返回 404 |
+
+后端升级流程（只换 jar，DB / Redis 不动）：
+
+```bash
+# 本机
+cd backend-java && JAVA_HOME=/home/jiang/tools/jdk-21.0.12.1+1 \
+  /home/jiang/tools/apache-maven-3.9.16/bin/mvn -o -q -DskipTests package
+ssh -i ~/develop/workspace/XAXINAN.pem root@8.136.20.182 \
+  'cp -a /opt/xatodo/backend/xa-bootstrap-0.1.0-SNAPSHOT.jar /opt/xatodo/backend/jar.bak'
+scp -i ~/develop/workspace/XAXINAN.pem \
+  backend-java/xa-bootstrap/target/xa-bootstrap-0.1.0-SNAPSHOT.jar \
+  root@8.136.20.182:/opt/xatodo/backend/
+# 远端（注意：这台机器只有 docker-compose v1，没有 `docker compose` 子命令）
+ssh -i ~/develop/workspace/XAXINAN.pem root@8.136.20.182 \
+  'cd /opt/xatodo && docker-compose build backend && docker-compose up -d backend'
+```
 
 **两个坑**（都实际卡过）：①公网打不通要先看**阿里云安全组**，再看机器自己的 **ufw**——
 这台机的 ufw 只放行了 22/80/443/8888 等，8088 需要 `ufw allow 8088/tcp`，只加安全组不够；

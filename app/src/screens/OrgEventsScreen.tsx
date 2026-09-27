@@ -18,6 +18,7 @@ import type { OrgCurrent, OrgEvent } from '../api/types';
 import type { Endpoints } from '../api/endpoints';
 import { ApiError } from '../api/client';
 import { MonthCalendar } from '../components/MonthCalendar';
+import { askPermission } from '../components/permission';
 import { Card, EmptyState, Screen } from '../components/ui';
 import { WheelDatePicker } from '../components/WheelDatePicker';
 import { useAppTheme } from '../context/AppContext';
@@ -185,12 +186,9 @@ export function OrgEventsScreen({
   };
 
   const pickPhoto = async (from: 'camera' | 'library') => {
-    if (from === 'camera') {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        setError('需要相机权限才能拍照');
-        return;
-      }
+    // 相机/相册都先说明用途再申请系统权限；拒绝只是不拍照，页面照常可用
+    if (!(await askPermission(from === 'camera' ? 'camera' : 'photo'))) {
+      return;
     }
     const picked = from === 'camera'
       ? await ImagePicker.launchCameraAsync({ quality: 0.8 })

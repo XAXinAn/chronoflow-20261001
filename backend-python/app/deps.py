@@ -6,6 +6,7 @@ from fastapi import Depends, Header, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .errors import ApiError, ErrorCode
+from .wiring import get_revocation_store
 from .security import (
     AdminPrincipal,
     IdentityPrincipal,
@@ -22,10 +23,15 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 def current_identity(
     credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+    revocations=Depends(get_revocation_store),
 ) -> IdentityPrincipal:
     if credentials is None or not credentials.credentials:
         raise ApiError(ErrorCode.UNAUTHENTICATED, http_status=401)
-    return parse_access_token(credentials.credentials)
+    principal = parse_access_token(credentials.credentials)
+    if revocations.is_revoked(principal.account_id):
+        # 账号已注销 / 已封禁：JWT 本身还没过期，但必须当场拒绝（spec §3.7.3③）
+        raise ApiError(ErrorCode.ACCOUNT_DISABLED, http_status=401)
+    return principal
 
 
 def authorization_header(authorization: str | None = Header(default=None)) -> str:

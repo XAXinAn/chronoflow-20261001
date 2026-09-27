@@ -105,6 +105,22 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- 默认资源目录（配置、Flyway 迁移） -->
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!--
+                合规文本的唯一事实来源在仓库根的 docs/legal/，这里在打包时复制进 jar 的
+                classpath:/legal/：LegalController 直接读它，因此**改文案不用改代码**，
+                也保证线上链接与应用内 WebView 看到的是同一份文件。
+            -->
+            <resource>
+                <directory>${project.basedir}/../../docs/legal</directory>
+                <targetPath>legal</targetPath>
+                <filtering>false</filtering>
+            </resource>
+        </resources>
         <testResources>
             <testResource>
                 <directory>src/test/resources</directory>

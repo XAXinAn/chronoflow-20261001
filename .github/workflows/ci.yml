@@ -94,3 +94,20 @@ jobs:
       - name: 运行测试
         run: python -m pytest
         working-directory: backend-python
+
+  compliance:
+    name: 上架合规门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 依据应用宝《隐私政策提交内容及审核规范》（spec §12 / docs/legal/compliance-checklist.md）。
+      # 每个版本都要过：合规文本是否齐全且同源、首启弹窗、非默认勾选、注销入口、
+      # 契约与两版后端是否真的实现了 /legal 与 /me/deletion。
+      # 不加 --strict：仓库本身允许保留【待替换：联系方式】占位，提交审核前再本地跑 --strict。
+      - name: 检查合规
+        run: python3 scripts/check_compliance.py
