@@ -25,9 +25,12 @@ import { OrgEventEditorScreen } from './screens/OrgEventEditorScreen';
 import { OrgRecipientPickerScreen } from './screens/OrgRecipientPickerScreen';
 import { OrgTabScreen } from './screens/OrgTabScreen';
 import { PrivacyConsentScreen } from './screens/PrivacyConsentScreen';
+import { RecurrencePickerScreen } from './screens/RecurrencePickerScreen';
+import { ReminderPickerScreen } from './screens/ReminderPickerScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { TaskEditorScreen } from './screens/TaskEditorScreen';
 import { TasksScreen } from './screens/TasksScreen';
+import type { Recurrence } from './domain/recurrence';
 import { localDateKey } from './domain/agenda';
 import { APP_TIMEZONE } from './domain/calendar';
 import type { LegalDoc } from './domain/legal';
@@ -185,6 +188,8 @@ type AppStackParamList = {
   OrgEventEditor: { dateKey: string; event?: OrgEvent };
   OrgRecipientPicker: undefined;
   LocationPicker: undefined;
+  RecurrencePicker: { startDateKey: string; initial: Recurrence };
+  ReminderPicker: { initial: number[] };
   EventPicker: undefined;
   Feedback: undefined;
   OrgAccounts: undefined;
@@ -205,6 +210,15 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
  */
 function MainStack() {
   const [placeSelection, setPlaceSelection] = useState<PlaceSelection>({ version: 0, place: null });
+  // 重复规则 / 提醒的回传，和其他二级页一样用 version 表达「又选了一次」
+  const [recurrenceSelection, setRecurrenceSelection] = useState<{
+    version: number;
+    recurrence: Recurrence | null;
+  }>({ version: 0, recurrence: null });
+  const [reminderSelection, setReminderSelection] = useState<{ version: number; minutes: number[] }>({
+    version: 0,
+    minutes: [],
+  });
   // 待办关联日程的回传，和地点一样用 version 表达「又选了一次」
   const [eventSelection, setEventSelection] = useState<{ version: number; event: PickedEvent | null }>({
     version: 0,
@@ -229,13 +243,18 @@ function MainStack() {
         {({ navigation }) => (
           <MainTabs
             onCreateEvent={(dateKey) => {
-              // 每次从列表进编辑页都重置地点，避免上一次的选择串到下一次
+              // 每次从列表进编辑页都重置二级页的回传，避免上一次的选择串到下一次
               setPlaceSelection({ version: 0, place: null });
+              setRecurrenceSelection({ version: 0, recurrence: null });
+              setReminderSelection({ version: 0, minutes: [] });
               navigation.navigate('EventEditor', { dateKey });
             }}
             onOpenEvent={(eventId, dateKey, occurrenceDate) => {
               // 编辑已有日程同样要重置地点；否则会把上一次「新建」时选的地点带进来
               setPlaceSelection({ version: 0, place: null });
+              // 重复 / 提醒也一样：编辑页自己会把已有值拉回来预填
+              setRecurrenceSelection({ version: 0, recurrence: null });
+              setReminderSelection({ version: 0, minutes: [] });
               navigation.navigate('EventEditor', { dateKey, eventId, occurrenceDate });
             }}
             onCreateTask={() => {
@@ -290,9 +309,16 @@ function MainStack() {
             eventId={route.params.eventId}
             occurrenceDate={route.params.occurrenceDate ?? null}
             placeSelection={placeSelection}
+            recurrenceSelection={recurrenceSelection}
+            reminderSelection={reminderSelection}
             onPickLocation={() => {
               navigation.navigate('LocationPicker');
             }}
+            // 把「当前值」当参数传给二级页：编辑页才知道自己这份草稿是什么
+            onPickRecurrence={(current, startDateKey) =>
+              navigation.navigate('RecurrencePicker', { startDateKey, initial: current })
+            }
+            onPickReminder={(current) => navigation.navigate('ReminderPicker', { initial: current })}
             onCancel={() => navigation.goBack()}
             onSaved={() => navigation.goBack()}
           />
@@ -362,6 +388,34 @@ function MainStack() {
             onCancel={() => navigation.goBack()}
             onPick={(place) => {
               setPlaceSelection((current) => ({ version: current.version + 1, place }));
+              navigation.goBack();
+            }}
+          />
+        )}
+      </AppStack.Screen>
+
+      {/* 重复规则的二级页（spec §4.1.5：重复、提醒各带自己的返回栈） */}
+      <AppStack.Screen name="RecurrencePicker">
+        {({ navigation, route }) => (
+          <RecurrencePickerScreen
+            startDateKey={route.params.startDateKey}
+            initial={route.params.initial}
+            onCancel={() => navigation.goBack()}
+            onConfirm={(recurrence) => {
+              setRecurrenceSelection((current) => ({ version: current.version + 1, recurrence }));
+              navigation.goBack();
+            }}
+          />
+        )}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="ReminderPicker">
+        {({ navigation, route }) => (
+          <ReminderPickerScreen
+            initial={route.params.initial}
+            onCancel={() => navigation.goBack()}
+            onConfirm={(minutes) => {
+              setReminderSelection((current) => ({ version: current.version + 1, minutes }));
               navigation.goBack();
             }}
           />

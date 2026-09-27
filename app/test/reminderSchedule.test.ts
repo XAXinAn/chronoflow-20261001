@@ -2,9 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MAX_SCHEDULED_REMINDERS,
+  MAX_CUSTOM_MINUTES,
+  describeReminders,
   formatMinutesBefore,
+  normalizeReminders,
+  parseCustomMinutes,
   planReminders,
   reminderBase,
+  reminderNotificationBody,
+  sameReminderSet,
+  toggleReminder,
   zonedTimeToUtc,
   zoneOffsetMinutes,
 } from '../src/domain/reminderSchedule';
@@ -90,5 +97,59 @@ describe('提醒排期', () => {
     expect(formatMinutesBefore(15)).toBe('提前 15 分钟');
     expect(formatMinutesBefore(60)).toBe('提前 1 小时');
     expect(formatMinutesBefore(1440)).toBe('提前 1 天');
+  });
+});
+
+/**
+ * 提醒的界面值（编辑页那一行 + 提醒页的多选）。
+ *
+ * 盯三件事：**提交前归一**（`PUT /reminders` 是整体覆盖，顺序不同不该被当成改过）、
+ * **勾选可来回**、**自定义输入不静默改值**（用户输了 0 必须报错，而不是悄悄变成「到点」）。
+ */
+describe('提醒的界面值', () => {
+  it('归一：去重 + 升序', () => {
+    expect(normalizeReminders([60, 0, 15, 60])).toEqual([0, 15, 60]);
+    expect(normalizeReminders([])).toEqual([]);
+  });
+
+  it('勾选与取消', () => {
+    expect(toggleReminder([], 15)).toEqual([15]);
+    expect(toggleReminder([15], 15)).toEqual([]);
+    // 后加的更早，也要排到前面
+    expect(toggleReminder([1440], 5)).toEqual([5, 1440]);
+  });
+
+  it('等价判断不看顺序与重复（否则「没改过」也会多发一次 PUT）', () => {
+    expect(sameReminderSet([15, 0], [0, 15])).toBe(true);
+    expect(sameReminderSet([15, 15], [15])).toBe(true);
+    expect(sameReminderSet([15], [30])).toBe(false);
+    expect(sameReminderSet([], [0])).toBe(false);
+  });
+
+  it('列表上的一句话', () => {
+    expect(describeReminders([])).toBe('不提醒');
+    expect(describeReminders([0])).toBe('到点');
+    expect(describeReminders([1440, 15])).toBe('提前 15 分钟、提前 1 天');
+  });
+
+  it('自定义：只收 1-10080 的整数分钟', () => {
+    expect(parseCustomMinutes('45')).toEqual({ ok: true, minutes: 45 });
+    expect(parseCustomMinutes(' 90 ')).toEqual({ ok: true, minutes: 90 });
+    expect(parseCustomMinutes(String(MAX_CUSTOM_MINUTES))).toEqual({ ok: true, minutes: MAX_CUSTOM_MINUTES });
+    expect(parseCustomMinutes('')).toMatchObject({ ok: false });
+    expect(parseCustomMinutes('5 分钟')).toMatchObject({ ok: false });
+    expect(parseCustomMinutes('-5')).toMatchObject({ ok: false });
+    // 0 是预置项「到点」，自定义里输 0 必须报错而不是静默当成 0
+    expect(parseCustomMinutes('0')).toMatchObject({ ok: false });
+    expect(parseCustomMinutes(String(MAX_CUSTOM_MINUTES + 1))).toMatchObject({ ok: false });
+  });
+
+  it('通知正文说清「几点、在哪」（通知里看不到日程卡片）', () => {
+    expect(reminderNotificationBody({ allDay: false, startTime: '10:00', location: '会议室 A' }))
+      .toBe('10:00 开始 · 会议室 A');
+    expect(reminderNotificationBody({ allDay: false, startTime: '10:00', location: null }))
+      .toBe('10:00 开始');
+    // 全天日程没有时刻可写，写「全天」而不是 00:00
+    expect(reminderNotificationBody({ allDay: true, startTime: '09:00' })).toBe('全天');
   });
 });

@@ -28,6 +28,49 @@ export interface Recurrence {
 
 export const DEFAULT_COUNT = 10;
 
+/** 次数上限：再多的「次数」用户其实该用「永不」，而且服务端展开时也要有界。 */
+export const MAX_COUNT = 999;
+
+/** 界面上可选的重复频率（spec §4.1.2：每天 / 每周 / 每月 / 每年 + 结束条件）。 */
+export const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
+  { value: 'NONE', label: '不重复' },
+  { value: 'DAILY', label: '每天' },
+  { value: 'WEEKLY', label: '每周' },
+  { value: 'MONTHLY', label: '每月' },
+  { value: 'YEARLY', label: '每年' },
+];
+
+/** 重复的结束条件：永不 / 指定日期 / 次数。 */
+export const END_OPTIONS: { value: EndKind; label: string }[] = [
+  { value: 'NEVER', label: '永不' },
+  { value: 'UNTIL', label: '指定日期' },
+  { value: 'COUNT', label: '次数' },
+];
+
+const WEEKDAY_LABEL: Record<Weekday, string> = {
+  MO: '周一', TU: '周二', WE: '周三', TH: '周四', FR: '周五', SA: '周六', SU: '周日',
+};
+
+/** 星期几的勾选项，顺序固定为周一到周日（与服务端 BYDAY 的书写顺序一致）。 */
+export const WEEKDAY_OPTIONS: { value: Weekday; label: string }[] = WEEKDAY_CODES.map((code) => ({
+  value: code,
+  label: WEEKDAY_LABEL[code],
+}));
+
+/**
+ * 勾选 / 取消一个星期几，输出始终按周一到周日排序。
+ *
+ * 排序不是为了好看：`buildRrule` 按 `WEEKDAY_CODES` 过滤，顺序本来就稳定，
+ * 但界面状态如果乱序，`describeRecurrence` 的「每周一、三」就会变成「每周三、一」——
+ * 同一份规则在不同入口显示出不同的样子，是最容易被当成 bug 报上来的。
+ */
+export function toggleWeekday(byWeekday: Weekday[], code: Weekday): Weekday[] {
+  const next = byWeekday.includes(code)
+    ? byWeekday.filter((item) => item !== code)
+    : [...byWeekday, code];
+  return WEEKDAY_CODES.filter((item) => next.includes(item)) as Weekday[];
+}
+
 /** `YYYY-MM-DD` → 该日期是周几（Mon..Sun）。用 UTC 解析避免被设备时区带偏。 */
 export function weekdayOf(dateKey: string): Weekday {
   const [year, month, day] = dateKey.split('-').map(Number) as [number, number, number];
@@ -124,10 +167,6 @@ export function parseRrule(rrule: string | null, startDateKey: string): Recurren
   }
   return { frequency, byWeekday, endKind, untilDateKey, count: parsedCount };
 }
-
-const WEEKDAY_LABEL: Record<Weekday, string> = {
-  MO: '周一', TU: '周二', WE: '周三', TH: '周四', FR: '周五', SA: '周六', SU: '周日',
-};
 
 /** 列表上显示的一句话，例如「每周一、三 · 共 5 次」。 */
 export function describeRecurrence(recurrence: Recurrence): string {

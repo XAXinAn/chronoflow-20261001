@@ -163,7 +163,11 @@ export function createEndpoints(client: ApiClient) {
      * 创建日程。字段对齐主流系统日历（spec §4.1.4）：
      * 地点是结构化的，坐标由服务端统一标注为 GCJ-02，客户端不传坐标系。
      */
-    createEvent: (payload: EventWritePayload) => client.post<unknown>('/api/v1/events', payload),
+    /**
+     * 创建日程。返回的就是日程详情（POST 与 GET /events/{id} 同一个 `EventResponse`），
+     * 所以拿得到 `id` —— 紧接着要按这个 id 存提醒（`PUT /reminders`）。
+     */
+    createEvent: (payload: EventWritePayload) => client.post<EventDetail>('/api/v1/events', payload),
     eventDetail: (eventId: number) => client.get<EventDetail>(`/api/v1/events/${eventId}`),
     updateEvent: (eventId: number, payload: EventWritePayload) =>
       client.patch<EventDetail>(`/api/v1/events/${eventId}`, payload),

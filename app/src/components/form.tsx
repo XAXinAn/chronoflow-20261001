@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -115,6 +116,46 @@ export function FormRow({
     </Pressable>
   ) : (
     body
+  );
+}
+
+/**
+ * 选项行（单选 / 多选都用它）。
+ *
+ * 用于「重复频率 / 结束条件 / 提醒提前量」这类**选项列表**：段控件最多 4 段，
+ * 重复有 5 个频率、提醒有 6 个预置，挤进段控件后点击目标小到点不准（spec §7.6.7）。
+ *
+ * 选中态用右侧对勾而不是颜色填充：这两个页面里「已选」和「当前项」要能一眼分清，
+ * 而且深色模式下纯色块的对比度不稳定。
+ */
+export function CheckRow({
+  label,
+  selected,
+  onPress,
+  last = false,
+  role = 'button',
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  last?: boolean;
+  role?: 'button' | 'radio' | 'checkbox';
+}) {
+  const theme = useAppTheme();
+  return (
+    <Pressable
+      accessibilityRole={role}
+      accessibilityLabel={label}
+      accessibilityState={role === 'radio' ? { selected } : { checked: selected }}
+      onPress={onPress}
+      style={[
+        styles.row,
+        !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.color.border },
+      ]}
+    >
+      <Text style={{ color: theme.color.textPrimary, fontSize: 15, flex: 1 }}>{label}</Text>
+      {selected ? <Ionicons name="checkmark" size={18} color={theme.color.accent} /> : null}
+    </Pressable>
   );
 }
 

@@ -30,7 +30,7 @@
 
 - **线上**：`http://8.136.20.182:8088` 跑的是新版（`prod` profile、V17 已应用、生产配置自检通过）。
   `ping` / 合规文本 200，未登录调 `/me/push-devices` 401。
-- **测试基线**：Java **102**、Python **55**、App **131 + typecheck**、web-admin 18、合规门禁 19 项，全绿。
+- **测试基线**：Java **102**、Python **55**、App **147 + typecheck**、web-admin 18、合规门禁 19 项，全绿。
 - **凭证**：极光 AppKey 写在 `app.json` 的插件配置里（会编进 APK，本身公开）；
   **Master Secret 只在** `本地 .env.local` 与 `服务器 /opt/xatodo/.env`，两处都被 gitignore，
   compose 已透传 `JPUSH_APPKEY/JPUSH_MASTER_SECRET/JPUSH_APNS_PRODUCTION`。仓库里搜不到明文。
@@ -38,8 +38,11 @@
 
 ### 下一步（从第一条开始，细节在 `docs/plan-2026-09-27.md`）
 
-1. **App 编辑页加「重复」与「提醒」两行** —— 逻辑层已就位（`domain/recurrence.ts`、`domain/reminderSchedule.ts`），
-   只差界面与提交；提醒还要接 `expo-notifications` 排期 + 编辑/删除时取消（需维护「通知 id ↔ 业务对象」映射）。
+1. ~~App 编辑页加「重复」与「提醒」两行~~ ✅ 已完成：`screens/RecurrencePickerScreen.tsx`、`screens/ReminderPickerScreen.tsx`；
+   保存时写 `PUT /reminders` 并在本机排期（`notifications/scheduler.ts`：先撤旧再排新、删除时取消，
+   映射表 `notifications/reminderStore.ts` 存安全存储）。**提醒链路还差尾巴**：重复日程只排了最近一次实例
+   （30 天窗口 `horizonEnd` 还没有调用方，缺「启动时重排/换设备重排」）、通知点击的路由监听、
+   「我的 → 通知」开关，以及**真机验证**（本机无模拟器，只做了单测 + typecheck）。
 2. **推送的 App 侧**：Dev Client（`expo-dev-client` + `eas.json`）→ `jpush-react-native` →
    registrationId 上报 `POST /me/push-devices` → 通知点击统一路由。
    ⚠️ `app/plugins/withJpush.js` **还没经过真实 `expo prebuild` 验证**（注入正则在真模板上是否命中要跑一次才知道）。

@@ -121,3 +121,83 @@ export function formatMinutesBefore(minutes: number): string {
   }
   return `提前 ${minutes} 分钟`;
 }
+
+/** 自定义提前量的上限：7 天。比这更早的提醒，用户其实是在排另一件事。 */
+export const MAX_CUSTOM_MINUTES = 7 * 24 * 60;
+
+/**
+ * 界面上的提醒多选值：去重 + 升序。
+ *
+ * 提交（`PUT /reminders` 是整体覆盖）、比较（「没改过就不要再发一次」）、回显三处
+ * 必须用同一个口径，否则同一个选择会因为顺序不同被判定成「改过了」。
+ */
+export function normalizeReminders(minutes: number[]): number[] {
+  return [...new Set(minutes.filter((value) => Number.isFinite(value) && value >= 0))]
+    .sort((left, right) => left - right);
+}
+
+/** 勾选 / 取消一个提前量（多选）。 */
+export function toggleReminder(minutes: number[], value: number): number[] {
+  const next = minutes.includes(value)
+    ? minutes.filter((item) => item !== value)
+    : [...minutes, value];
+  return normalizeReminders(next);
+}
+
+/** 两组提醒是否等价（顺序与重复不影响）。 */
+export function sameReminderSet(left: number[], right: number[]): boolean {
+  const a = normalizeReminders(left);
+  const b = normalizeReminders(right);
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+/** 列表上显示的一句话，例如「提前 15 分钟、提前 1 小时」。 */
+export function describeReminders(minutes: number[]): string {
+  const normalized = normalizeReminders(minutes);
+  if (normalized.length === 0) {
+    return '不提醒';
+  }
+  return normalized.map(formatMinutesBefore).join('、');
+}
+
+/**
+ * 本地通知的正文：**几点的事 + 在哪**。
+ *
+ * 通知中心里看不到日程卡片，只说「提醒」等于什么都没说；而写「提前 15 分钟」
+ * 又是重复信息——用户看到通知的时刻就已经知道提前量了，
+ * 他需要判断的是「这是哪件事、什么时候、要不要现在动身」。
+ */
+export function reminderNotificationBody(input: {
+  allDay: boolean;
+  startTime: string;
+  location?: string | null;
+}): string {
+  const when = input.allDay ? '全天' : `${input.startTime} 开始`;
+  return input.location ? `${when} · ${input.location}` : when;
+}
+
+/**
+ * 「自定义」输入框 → 分钟数。
+ *
+ * 只收正整数分钟：0 已经在预置项里（「到点」），负数和 0 一律当输入错误 ——
+ * 静默改成 0 会让用户以为自己输的那个提前量生效了。
+ */
+export function parseCustomMinutes(
+  text: string,
+): { ok: true; minutes: number } | { ok: false; message: string } {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { ok: false, message: '请输入分钟数' };
+  }
+  if (!/^\d{1,5}$/.test(trimmed)) {
+    return { ok: false, message: `请输入 1-${MAX_CUSTOM_MINUTES} 之间的整数分钟` };
+  }
+  const minutes = Number(trimmed);
+  if (minutes < 1) {
+    return { ok: false, message: '自定义至少提前 1 分钟（「到点」选上面的选项）' };
+  }
+  if (minutes > MAX_CUSTOM_MINUTES) {
+    return { ok: false, message: `最多提前 ${MAX_CUSTOM_MINUTES} 分钟（7 天）` };
+  }
+  return { ok: true, minutes };
+}

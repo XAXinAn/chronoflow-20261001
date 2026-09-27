@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  END_OPTIONS,
+  FREQUENCY_OPTIONS,
+  WEEKDAY_OPTIONS,
   buildRrule,
   defaultRecurrence,
   describeRecurrence,
   parseRrule,
+  toggleWeekday,
   weekdayOf,
   type Recurrence,
 } from '../src/domain/recurrence';
@@ -97,5 +101,29 @@ describe('重复规则', () => {
     expect(describeRecurrence(parseRrule('FREQ=MONTHLY;UNTIL=20261231', '2026-09-28')))
       .toBe('每月 · 直到 2026-12-31');
     expect(describeRecurrence(parseRrule(null, '2026-09-28'))).toBe('不重复');
+  });
+
+  it('界面上的选项：频率五种、结束三种、星期固定周一到周日', () => {
+    expect(FREQUENCY_OPTIONS.map((option) => option.value))
+      .toEqual(['NONE', 'DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY']);
+    expect(END_OPTIONS.map((option) => option.value)).toEqual(['NEVER', 'UNTIL', 'COUNT']);
+    expect(WEEKDAY_OPTIONS.map((option) => option.value))
+      .toEqual(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']);
+    expect(WEEKDAY_OPTIONS[0]!.label).toBe('周一');
+  });
+
+  it('星期勾选：可来回，且始终按周一到周日排序', () => {
+    // 先勾周日再勾周三，界面上的顺序仍要是「一、三、日」这种稳定顺序
+    expect(toggleWeekday([], 'SU')).toEqual(['SU']);
+    expect(toggleWeekday(['SU'], 'WE')).toEqual(['WE', 'SU']);
+    expect(toggleWeekday(['WE', 'SU'], 'WE')).toEqual(['SU']);
+    // 勾选顺序不影响结果，`describeRecurrence` 才不会被带乱
+    expect(describeRecurrence({
+      frequency: 'WEEKLY',
+      byWeekday: toggleWeekday(['SU'], 'WE'),
+      endKind: 'NEVER',
+      untilDateKey: null,
+      count: 10,
+    })).toBe('每周三、日');
   });
 });
