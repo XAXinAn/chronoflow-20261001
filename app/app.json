@@ -47,6 +47,13 @@
           "cameraPermission": false,
           "microphonePermission": false
         }
+      ],
+      [
+        "./plugins/withJpush",
+        {
+          "appKey": "e45cb28aabd482c0dcc6ab42",
+          "channel": "default_developer"
+        }
       ]
     ],
     "extra": {
