@@ -21,6 +21,13 @@ export interface TaskDraft {
   /** 关联的日程（spec §4.1.6）。标题一并留着，编辑页不必再查一次 */
   eventId: number | null;
   eventTitle: string | null;
+  /**
+   * 重复规则（RRULE，spec §4.1.2）：待办也能重复，如「每周五交周报」。
+   * 与日程一样存 RRULE 字符串本身，生成/解析都在 domain/recurrence.ts。
+   */
+  rrule: string;
+  /** 本地提醒的提前量（分钟）；服务端也存一份（PUT /reminders），用于换设备后重排 */
+  reminders: number[];
 }
 
 export const TASK_PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
@@ -41,6 +48,8 @@ export function emptyTaskDraft(todayKey: string): TaskDraft {
     allDay: false,
     eventId: null,
     eventTitle: null,
+    rrule: '',
+    reminders: [],
   };
 }
 
@@ -72,6 +81,8 @@ export function buildCreateTaskPayload(draft: TaskDraft) {
     allDay: draft.hasDue ? draft.allDay : false,
     priority: draft.priority,
     eventId: draft.eventId,
+    // 空串表示「不重复」：服务端把空白一律归一成 null，PATCH 里 null 才是「不修改」
+    rrule: draft.rrule.trim(),
   };
 }
 
@@ -92,6 +103,9 @@ export function draftFromTask(task: Task, todayKey: string): TaskDraft {
       // 必须在这里归一到 null，否则界面上「是否已关联」的判断会被 undefined 带偏。
       eventId: task.eventId ?? null,
       eventTitle: task.eventTitle ?? null,
+      rrule: task.rrule ?? '',
+      // 提醒由 PUT /reminders 单独维护，编辑页加载后另行拉取回填
+      reminders: [],
     };
   }
   return {
@@ -104,6 +118,8 @@ export function draftFromTask(task: Task, todayKey: string): TaskDraft {
     allDay: task.allDay,
     eventId: task.eventId ?? null,
     eventTitle: task.eventTitle ?? null,
+    rrule: task.rrule ?? '',
+    reminders: [],
   };
 }
 
@@ -120,6 +136,7 @@ export function buildUpdateTaskPayload(draft: TaskDraft) {
     eventId: base.eventId,
     // 解绑必须显式表达：null 在 PATCH 里是「不修改」
     clearEvent: draft.eventId === null,
+    rrule: base.rrule,
   };
 }
 

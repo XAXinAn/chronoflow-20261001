@@ -108,6 +108,8 @@ class TaskUpdate(BaseModel):
     priority: str | None = None
     status: str | None = None
     images: list[str] | None = None
+    # 重复规则（RRULE）。null = 不修改；空串 = 清空（回到「不重复」），与日程同一套语义
+    rrule: str | None = None
     sortOrder: int | None = None
 
 
@@ -332,6 +334,17 @@ def list_reminders(
     service=Depends(_service),
 ) -> dict:
     return envelope(service.list_reminders(principal.identity_id, targetType, targetId))
+
+
+@router.get("/reminders/schedule")
+def reminder_schedule(
+    start: datetime = Query(...),
+    end: datetime = Query(...),
+    principal: IdentityPrincipal = Depends(current_identity),
+    service=Depends(_service),
+) -> dict:
+    """未来一段时间内所有要响的提醒（含重复日程展开后的每一次实例）。"""
+    return envelope(service.upcoming_reminders(principal.identity_id, start, end))
 
 
 @router.get("/search")

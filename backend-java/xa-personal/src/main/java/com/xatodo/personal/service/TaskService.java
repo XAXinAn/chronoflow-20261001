@@ -14,6 +14,7 @@ import com.xatodo.personal.entity.Event;
 import com.xatodo.personal.entity.Task;
 import com.xatodo.personal.mapper.EventMapper;
 import com.xatodo.personal.mapper.TaskMapper;
+import com.xatodo.personal.recurrence.RecurrenceExpander;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -41,15 +42,32 @@ public class TaskService {
     private final CalendarService calendarService;
     private final EventMapper eventMapper;
     private final ObjectMapper objectMapper;
+    private final RecurrenceExpander recurrenceExpander;
 
     public TaskService(TaskMapper taskMapper,
                        CalendarService calendarService,
                        EventMapper eventMapper,
-                       ObjectMapper objectMapper) {
+                       ObjectMapper objectMapper,
+                       RecurrenceExpander recurrenceExpander) {
         this.taskMapper = taskMapper;
         this.calendarService = calendarService;
         this.eventMapper = eventMapper;
         this.objectMapper = objectMapper;
+        this.recurrenceExpander = recurrenceExpander;
+    }
+
+    /**
+     * 校验并归一 RRULE：空白一律存 null（不重复）。
+     *
+     * <p>待办此前只在创建时写 rrule、且从不校验，编辑也无入口；现在两头的语义要和日程一致，
+     * 否则「规则写错了却存进去了」会在展开时才炸，排查起来只能靠日志。
+     */
+    private String normalizeRrule(String rrule) {
+        if (!StringUtils.hasText(rrule)) {
+            return null;
+        }
+        recurrenceExpander.validate(rrule);
+        return rrule;
     }
 
     /** 待办的图片附件（jsonb → 列表）。脏数据不该让整个列表接口 500。 */
@@ -162,7 +180,7 @@ public class TaskService {
         task.setStatus(Task.STATUS_TODO);
         task.setPriority(priority);
         task.setImages(writeImages(request.images()));
-        task.setRrule(request.rrule());
+        task.setRrule(normalizeRrule(request.rrule()));
         task.setSortOrder(0);
         taskMapper.insert(task);
         return task;
@@ -212,6 +230,10 @@ public class TaskService {
         // 图片：null = 不修改（与其它字段一致）；传空数组才是「删光所有图片」
         if (request.images() != null) {
             task.setImages(writeImages(request.images()));
+        }
+        // 重复规则与日程同一套语义：null = 不修改，空串 = 清空（spec §4.1.2）
+        if (request.rrule() != null) {
+            task.setRrule(normalizeRrule(request.rrule()));
         }
         if (request.sortOrder() != null) {
             task.setSortOrder(request.sortOrder());

@@ -335,6 +335,100 @@ class PersonalModuleTest {
     }
 
     @Test
+    @DisplayName("未来提醒：重复日程按每次实例展开，待办一起排，非法区间被拒")
+    void upcomingRemindersExpandEveryOccurrence() throws Exception {
+        String token = registerAccount("13800000223");
+        long eventId = createWeeklyStandup(token);
+        putJson("/api/v1/reminders", token,
+                "{\"targetType\":\"EVENT\",\"targetId\":" + eventId
+                        + ",\"items\":[{\"minutesBefore\":15},{\"minutesBefore\":0}]}");
+
+        long taskId = postJson("/api/v1/tasks", token,
+                "{\"title\":\"交周报\",\"dueAt\":\"2026-10-06T18:00:00+08:00\",\"allDay\":false}")
+                .path("data").path("id").asLong();
+        putJson("/api/v1/reminders", token,
+                "{\"targetType\":\"TASK\",\"targetId\":" + taskId + ",\"items\":[{\"minutesBefore\":60}]}");
+
+        JsonNode schedule = getJson(get("/api/v1/reminders/schedule")
+                .param("start", "2026-10-05T00:00:00+08:00")
+                .param("end", "2026-10-12T00:00:00+08:00")
+                .header("Authorization", "Bearer " + token)).path("data");
+
+        // 周一 / 周三 / 周五 三次实例 + 一条待办，按开始时刻升序
+        assertThat(schedule).hasSize(4);
+        assertThat(schedule.get(0).path("targetType").asText()).isEqualTo("EVENT");
+        assertThat(schedule.get(0).path("targetId").asLong()).isEqualTo(eventId);
+        assertThat(schedule.get(0).path("occurrenceDate").asText()).isEqualTo("2026-10-05");
+        assertThat(Instant.parse(schedule.get(0).path("startAt").asText()))
+                .isEqualTo(local("2026-10-05T09:00"));
+        assertThat(schedule.get(0).path("title").asText()).isEqualTo("站会");
+        // 提前量升序返回：客户端按顺序排通知，读起来才不会「先到点、再提前」
+        assertThat(schedule.get(0).path("minutesBefore").get(0).asInt()).isZero();
+        assertThat(schedule.get(0).path("minutesBefore").get(1).asInt()).isEqualTo(15);
+
+        JsonNode taskEntry = schedule.get(1);
+        assertThat(taskEntry.path("targetType").asText()).isEqualTo("TASK");
+        assertThat(taskEntry.path("targetId").asLong()).isEqualTo(taskId);
+        assertThat(taskEntry.path("title").asText()).isEqualTo("交周报");
+        assertThat(taskEntry.path("timezone").asText()).isEqualTo("Asia/Shanghai");
+        assertThat(taskEntry.path("minutesBefore").get(0).asInt()).isEqualTo(60);
+        // 非重复目标没有「哪一次出现」
+        JsonNode occurrenceDate = taskEntry.path("occurrenceDate");
+        assertThat(occurrenceDate.isMissingNode() || occurrenceDate.isNull()).isTrue();
+
+        assertThat(schedule.get(2).path("occurrenceDate").asText()).isEqualTo("2026-10-07");
+        assertThat(schedule.get(3).path("occurrenceDate").asText()).isEqualTo("2026-10-09");
+
+        // 别人的提醒不会混进来
+        String other = registerAccount("13800000224");
+        JsonNode otherSchedule = getJson(get("/api/v1/reminders/schedule")
+                .param("start", "2026-10-05T00:00:00+08:00")
+                .param("end", "2026-10-12T00:00:00+08:00")
+                .header("Authorization", "Bearer " + other)).path("data");
+        assertThat(otherSchedule).isEmpty();
+
+        // 区间非法：结束早于开始
+        mockMvc.perform(get("/api/v1/reminders/schedule")
+                        .param("start", "2026-10-12T00:00:00+08:00")
+                        .param("end", "2026-10-05T00:00:00+08:00")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(30001));
+    }
+
+    @Test
+    @DisplayName("待办的重复规则：创建、改、清空，非法规则直接拒")
+    void taskRruleRoundTrip() throws Exception {
+        String token = registerAccount("13800000225");
+        JsonNode created = postJson("/api/v1/tasks", token,
+                "{\"title\":\"交周报\",\"dueAt\":\"2026-10-09T18:00:00+08:00\","
+                        + "\"rrule\":\"FREQ=WEEKLY;BYDAY=FR\"}");
+        long taskId = created.path("data").path("id").asLong();
+        assertThat(created.path("data").path("rrule").asText()).isEqualTo("FREQ=WEEKLY;BYDAY=FR");
+
+        // 只改标题：规则不该被动到
+        JsonNode renamed = patchJson("/api/v1/tasks/" + taskId, token, "{\"title\":\"交月报\"}");
+        assertThat(renamed.path("data").path("rrule").asText()).isEqualTo("FREQ=WEEKLY;BYDAY=FR");
+
+        JsonNode edited = patchJson("/api/v1/tasks/" + taskId, token, "{\"rrule\":\"FREQ=DAILY\"}");
+        assertThat(edited.path("data").path("rrule").asText()).isEqualTo("FREQ=DAILY");
+
+        // 空串 = 清空（与日程 rrule 同一套语义）
+        JsonNode cleared = patchJson("/api/v1/tasks/" + taskId, token, "{\"rrule\":\"\"}");
+        // 响应体不输出 null 字段（application.yml 配了 non_null），所以既可能是缺失、也可能是 null
+        JsonNode clearedRrule = cleared.path("data").path("rrule");
+        assertThat(clearedRrule.isMissingNode() || clearedRrule.isNull()).isTrue();
+
+        // 非法规则：写进去就会在展开时才炸，所以在写入处就拒
+        mockMvc.perform(post("/api/v1/tasks")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"坏规则\",\"rrule\":\"FREQ=NOT_A_RULE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(30002));
+    }
+
+    @Test
     @DisplayName("日程与待办可互转，来源标记取消")
     void convertBetweenEventAndTask() throws Exception {
         String token = registerAccount("13800000222");

@@ -4,8 +4,12 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Te
 import { ApiError } from '../api/client';
 import { Card, Screen } from '../components/ui';
 import { EditorHeader, FormInput, FormRow, FormRowText, FormTextArea, SegmentedControl } from '../components/form';
-import { useAppTheme, useRuntime } from '../context/AppContext';
+import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import type { PickedEvent } from './EventPickerScreen';
+import { buildRrule, describeRecurrence, parseRrule, type Recurrence } from '../domain/recurrence';
+import { describeReminders, normalizeReminders } from '../domain/reminderSchedule';
+import { persistReminderSettings, refreshLocalReminders } from '../notifications/actions';
+import type { RecurrenceSelection, ReminderSelection } from './editorSelection';
 import {
   TASK_PRIORITY_OPTIONS,
   buildCreateTaskPayload,
@@ -27,7 +31,11 @@ export function TaskEditorScreen({
   todayKey,
   taskId,
   eventSelection,
+  recurrenceSelection,
+  reminderSelection,
   onPickEvent,
+  onPickRecurrence,
+  onPickReminder,
   onCancel,
   onSaved,
 }: {
@@ -36,15 +44,23 @@ export function TaskEditorScreen({
   taskId?: number;
   /** 从「选择日程」页回传的关联结果 */
   eventSelection: { version: number; event: PickedEvent | null };
+  recurrenceSelection: RecurrenceSelection;
+  reminderSelection: ReminderSelection;
   onPickEvent: () => void;
+  /** 第二个参数是待办的截止日期，用来算「每周默认勾哪天」 */
+  onPickRecurrence: (current: Recurrence, startDateKey: string) => void;
+  onPickReminder: (current: number[]) => void;
   onCancel: () => void;
   onSaved: () => void;
 }) {
   const theme = useAppTheme();
-  const { api } = useRuntime();
+  const { api, reminders } = useRuntime();
+  const { notificationEnabled } = useAppSessionState();
   const isEdit = typeof taskId === 'number';
 
   const [draft, setDraft] = useState<TaskDraft>(() => emptyTaskDraft(todayKey));
+  /** 打开编辑页时服务端上的提醒设置（用于「没改过就不多发一次 PUT」） */
+  const [initialReminders, setInitialReminders] = useState<number[]>([]);
   const [loading, setLoading] = useState(isEdit);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -59,6 +75,20 @@ export function TaskEditorScreen({
         const task = await api.taskDetail(taskId);
         if (!cancelled) {
           setDraft(draftFromTask(task, todayKey));
+        }
+        /**
+         * 提醒不在 task 行上（spec §4.5 的分工）：`draftFromTask` 只能给空数组，
+         * 真正的值要单独拉一次 `GET /reminders`。拉失败就当没设提醒，不打断编辑。
+         */
+        try {
+          const loaded = await api.reminders('TASK', taskId);
+          if (!cancelled) {
+            const minutes = normalizeReminders(loaded.map((item) => item.minutesBefore));
+            setInitialReminders(minutes);
+            setDraft((current) => ({ ...current, reminders: minutes }));
+          }
+        } catch {
+          // 提醒读不到就当没有
         }
       } catch (cause) {
         if (!cancelled) {
@@ -89,6 +119,26 @@ export function TaskEditorScreen({
     }));
   }, [eventSelection.version, eventSelection.event]);
 
+  // 从「重复」页返回（同样只在按下「完成」时才生效）
+  useEffect(() => {
+    if (recurrenceSelection.version === 0 || !recurrenceSelection.recurrence) {
+      return;
+    }
+    // 不重复要提交空串而不是 null：PATCH 里 null 是「不修改」
+    const rrule = buildRrule(recurrenceSelection.recurrence) ?? '';
+    setDraft((current) => ({ ...current, rrule }));
+  }, [recurrenceSelection.version, recurrenceSelection.recurrence]);
+
+  // 从「提醒」页返回
+  useEffect(() => {
+    if (reminderSelection.version === 0) {
+      return;
+    }
+    setDraft((current) => ({ ...current, reminders: normalizeReminders(reminderSelection.minutes) }));
+  }, [reminderSelection.version, reminderSelection.minutes]);
+
+  const recurrence = parseRrule(draft.rrule, draft.dueDate);
+
   const save = async () => {
     const validation = validateTaskDraft(draft);
     if (!validation.ok) {
@@ -98,10 +148,36 @@ export function TaskEditorScreen({
     setSaving(true);
     setError(null);
     try {
+      let savedId: number;
       if (taskId === undefined) {
-        await api.createTask(buildCreateTaskPayload(draft));
+        const created = await api.createTask(buildCreateTaskPayload(draft));
+        savedId = created.id;
       } else {
         await api.updateTask(taskId, buildUpdateTaskPayload(draft));
+        savedId = taskId;
+      }
+      try {
+        await persistReminderSettings({
+          api,
+          targetType: 'TASK',
+          targetId: savedId,
+          minutes: draft.reminders,
+          initialMinutes: initialReminders,
+        });
+        setInitialReminders(normalizeReminders(draft.reminders));
+      } catch (cause) {
+        setError(
+          `待办已保存，但提醒没有存上：${cause instanceof ApiError ? cause.message : '请稍后重试'}`,
+        );
+        return;
+      }
+      const local = await refreshLocalReminders({
+        api,
+        scheduler: reminders,
+        enabled: notificationEnabled,
+      });
+      if (local.permissionDenied && draft.reminders.length > 0) {
+        Alert.alert('提醒不会响', '系统还没允许本应用发送通知，请在系统设置里打开通知权限。');
       }
       onSaved();
     } catch (cause) {
@@ -126,6 +202,8 @@ export function TaskEditorScreen({
             setError(null);
             try {
               await api.deleteTask(taskId);
+              // 本机那条排期要跟着消失：重排一次，服务端已经不再返回它
+              await refreshLocalReminders({ api, scheduler: reminders, enabled: notificationEnabled });
               onSaved();
             } catch (cause) {
               setError(cause instanceof ApiError ? cause.message : '删除失败');
@@ -233,6 +311,55 @@ export function TaskEditorScreen({
               </Text>
               <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
             </FormRow>
+
+            {/*
+              重复与提醒只在「有截止时间」时出现：没有时间点的待办是「待安排」，
+              「每周五」这种规则与「提前十分钟」都没有可依附的时刻。
+              与其给两个点了没用（甚至会被服务端当成无效规则）的入口，不如不显示。
+            */}
+            {draft.hasDue ? (
+              <>
+                <FormRow
+                  label="重复"
+                  onPress={() => onPickRecurrence(parseRrule(draft.rrule, draft.dueDate), draft.dueDate)}
+                >
+                  <Text
+                    style={{
+                      color:
+                        recurrence.frequency === 'NONE'
+                          ? theme.color.textTertiary
+                          : theme.color.textPrimary,
+                      fontSize: 15,
+                      flex: 1,
+                      textAlign: 'right',
+                    }}
+                  >
+                    {describeRecurrence(recurrence)}
+                  </Text>
+                  <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+                </FormRow>
+
+                <FormRow
+                  label="提醒"
+                  onPress={() => onPickReminder(normalizeReminders(draft.reminders))}
+                >
+                  <Text
+                    style={{
+                      color:
+                        draft.reminders.length > 0
+                          ? theme.color.textPrimary
+                          : theme.color.textTertiary,
+                      fontSize: 15,
+                      flex: 1,
+                      textAlign: 'right',
+                    }}
+                  >
+                    {describeReminders(draft.reminders)}
+                  </Text>
+                  <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+                </FormRow>
+              </>
+            ) : null}
 
             <FormRow label="优先级" last>
               <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>

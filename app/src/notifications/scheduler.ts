@@ -1,4 +1,9 @@
-import { planReminders } from '../domain/reminderSchedule';
+import { timeInZone } from '../domain/eventDraft';
+import {
+  planOccurrenceReminders,
+  reminderNotificationBody,
+  type ReminderOccurrenceInput,
+} from '../domain/reminderSchedule';
 import { reminderTargetKey, type ReminderIdStore, type ReminderTargetType } from './reminderStore';
 
 /** 交给原生层的一条本地通知。 */
@@ -29,12 +34,10 @@ export interface ReminderRequest {
   targetId: number;
   /** 通知标题（就是日程标题：通知中心里一眼看到「哪件事」） */
   title: string;
-  /** 通知正文（几点开始、在哪） */
-  body: string;
-  /** 日程开始时刻（ISO 8601 带时区） */
-  startAt: string;
-  allDay: boolean;
-  timezone: string;
+  /** 正文里的地点（可空）：通知里看不到日程卡片，「在哪」要写出来 */
+  location?: string | null;
+  /** 时间范围内的每一次出现（重复日程会有多次） */
+  occurrences: ReminderOccurrenceInput[];
   minutesBefore: number[];
 }
 
@@ -50,6 +53,13 @@ export interface ReminderSyncResult {
 export interface ReminderScheduler {
   /** 让本机排期与「这条日程当前的提醒设置」一致 */
   sync: (request: ReminderRequest, now?: Date) => Promise<ReminderSyncResult>;
+  /**
+   * 与一批请求对齐：这批里的目标按新计划重排，没出现在这批里的目标全部取消。
+   *
+   * 用在「App 启动 / 回到前台」的重排：用户在别处删了提醒、或把日程挪出了窗口，
+   * 本机那份排期必须跟着消失，否则会出现「日程早没了，通知还在响」。
+   */
+  reconcile: (requests: ReminderRequest[], now?: Date) => Promise<ReminderSyncResult>;
   /** 日程/待办被删除时调用 */
   cancel: (targetType: ReminderTargetType, targetId: number) => Promise<void>;
 }
@@ -67,8 +77,7 @@ export function createReminderScheduler({
   gateway: NotificationGateway;
   store: ReminderIdStore;
 }): ReminderScheduler {
-  return {
-    async sync(request, now = new Date()) {
+  const sync = async (request: ReminderRequest, now = new Date()): Promise<ReminderSyncResult> => {
       const key = reminderTargetKey(request.targetType, request.targetId);
       const map = await store.read();
 
@@ -81,10 +90,8 @@ export function createReminderScheduler({
       delete map[key];
 
       const result: ReminderSyncResult = { scheduled: 0, permissionDenied: false, failed: false };
-      const planned = planReminders({
-        startAt: request.startAt,
-        allDay: request.allDay,
-        timezone: request.timezone,
+      const planned = planOccurrenceReminders({
+        occurrences: request.occurrences,
         minutesBefore: request.minutesBefore,
         now,
       });
@@ -107,11 +114,17 @@ export function createReminderScheduler({
                 await gateway.schedule({
                   at: reminder.at,
                   title: request.title,
-                  body: request.body,
+                  body: reminderNotificationBody({
+                    allDay: reminder.allDay,
+                    startTime: timeInZone(reminder.startAt, reminder.timezone),
+                    location: request.location ?? null,
+                  }),
                   data: {
                     targetType: request.targetType,
                     targetId: request.targetId,
                     minutesBefore: reminder.minutesBefore,
+                    // 点击通知后要跳到「那一次」而不是整条序列
+                    occurrenceDate: reminder.occurrenceDate,
                   },
                 }),
               );
@@ -132,9 +145,46 @@ export function createReminderScheduler({
       }
       result.scheduled = ids.length;
       return result;
-    },
+  };
 
-    async cancel(targetType, targetId) {
+  const reconcile = async (
+    requests: ReminderRequest[],
+    now = new Date(),
+  ): Promise<ReminderSyncResult> => {
+      const wanted = new Set(
+        requests.map((request) => reminderTargetKey(request.targetType, request.targetId)),
+      );
+      const map = await store.read();
+      // 先清掉「这批里没有」的目标：用户可能在别的设备上把提醒删了
+      for (const key of Object.keys(map)) {
+        if (wanted.has(key)) {
+          continue;
+        }
+        try {
+          await gateway.cancelAll(map[key] ?? []);
+        } catch {
+          // 取消失败不影响后面的重排；这条记录继续留着，下次还会再试一次
+          continue;
+        }
+        delete map[key];
+      }
+      // 先把「被清掉的」落盘再排新的：sync 会自己读写同一份映射表，
+      // 不先写回的话它会读到还没删干净的旧表，把刚取消掉的记录又写回去
+      await store.write(map);
+
+      let scheduled = 0;
+      let permissionDenied = false;
+      let failed = false;
+      for (const request of requests) {
+        const result = await sync(request, now);
+        scheduled += result.scheduled;
+        permissionDenied = permissionDenied || result.permissionDenied;
+        failed = failed || result.failed;
+      }
+      return { scheduled, permissionDenied, failed };
+  };
+
+  const cancel = async (targetType: ReminderTargetType, targetId: number): Promise<void> => {
       const key = reminderTargetKey(targetType, targetId);
       const map = await store.read();
       const ids = map[key];
@@ -145,14 +195,18 @@ export function createReminderScheduler({
       await gateway.cancelAll(ids);
       delete map[key];
       await store.write(map);
-    },
   };
+
+  return { sync, reconcile, cancel };
 }
 
 /** 本机没有通知模块（Web 预览 / 缺原生模块的构建）时的降级：主流程照常，只是排不了提醒。 */
 export function createNoopReminderScheduler(): ReminderScheduler {
   return {
     async sync() {
+      return { scheduled: 0, permissionDenied: false, failed: true };
+    },
+    async reconcile() {
       return { scheduled: 0, permissionDenied: false, failed: true };
     },
     async cancel() {

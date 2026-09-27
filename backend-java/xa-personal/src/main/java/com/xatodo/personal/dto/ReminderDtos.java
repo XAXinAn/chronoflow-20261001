@@ -37,4 +37,26 @@ public final class ReminderDtos {
                                    String channel,
                                    Boolean enabled) {
     }
+
+    /**
+     * 未来提醒的一条排期（`GET /reminders/schedule`）。
+     *
+     * <p>App 的到点提醒走**本地通知**（spec §4.5），所以它需要知道「未来这段时间里，
+     * 哪些日程/待办要在什么时刻响几声」——重复日程必须按**展开后的每一次实例**给，
+     * 否则「每周五交周报」在客户端只排得到第一次。
+     *
+     * <p>业务对象的时间信息一并返回（标题 / 地点 / 开始时刻 / 全天 / 时区），
+     * 这样 App 一次请求就能把通知排完，不必再逐条去查日程详情。
+     */
+    public record ReminderScheduleEntry(String targetType,
+                                        Long targetId,
+                                        /** 重复日程的该次出现日期；非重复日程为 null */
+                                        LocalDate occurrenceDate,
+                                        String title,
+                                        String locationName,
+                                        java.time.Instant startAt,
+                                        boolean allDay,
+                                        String timezone,
+                                        java.util.List<Integer> minutesBefore) {
+    }
 }

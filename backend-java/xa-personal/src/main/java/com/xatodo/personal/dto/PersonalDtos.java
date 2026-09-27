@@ -176,6 +176,11 @@ public final class PersonalDtos {
             String priority,
             String status,
             java.util.List<String> images,
+            /**
+             * 重复规则（RRULE）。null = 不修改；**空串 = 清空**（回到「不重复」）——
+             * 与日程的 rrule 同一套语义，客户端不必再为「清空」发明第二个开关。
+             */
+            @Size(max = 512) String rrule,
             Integer sortOrder) {
     }
 
@@ -196,6 +201,8 @@ public final class PersonalDtos {
                                OffsetDateTime completedAt,
                                String priority,
                                java.util.List<String> images,
+                               /** 重复规则（RRULE）：待办同样支持重复，如「每周五交周报」（spec §4.1.2） */
+                               String rrule,
                                Integer sortOrder) {
 
         /**
@@ -212,6 +219,7 @@ public final class PersonalDtos {
                     task.getEventId(), eventTitle,
                     task.getTitle(), task.getDescription(), task.getDueAt(), task.getAllDay(),
                     task.getStatus(), task.getCompletedAt(), task.getPriority(), images,
+                    task.getRrule(),
                     task.getSortOrder());
         }
     }

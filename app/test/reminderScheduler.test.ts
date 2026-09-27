@@ -44,10 +44,15 @@ const request: ReminderRequest = {
   targetType: 'EVENT',
   targetId: 12,
   title: '周会',
-  body: '10:00 开始 · 会议室 A',
-  startAt: '2026-09-28T10:00:00+08:00',
-  allDay: false,
-  timezone: 'Asia/Shanghai',
+  location: '会议室 A',
+  occurrences: [
+    {
+      startAt: '2026-09-28T10:00:00+08:00',
+      allDay: false,
+      timezone: 'Asia/Shanghai',
+      occurrenceDate: null,
+    },
+  ],
   minutesBefore: [15, 0],
 };
 
@@ -67,7 +72,53 @@ describe('本地提醒排期', () => {
     ]);
     expect(scheduled[0]!.title).toBe('周会');
     expect(scheduled[0]!.data).toMatchObject({ targetType: 'EVENT', targetId: 12, minutesBefore: 15 });
+    // 正文里要写清「几点、在哪」：通知中心里看不到日程卡片
+    expect(scheduled[0]!.body).toBe('10:00 开始 · 会议室 A');
     expect(await store.read()).toEqual({ 'EVENT:12': ['notif-1', 'notif-2'] });
+  });
+
+  it('重复日程：一次出现一条通知，跨出现按时刻升序（通知中心的顺序与日历一致）', async () => {
+    const { gateway, scheduled } = createFakeGateway();
+    const store = createMemoryReminderIdStore();
+    const scheduler = createReminderScheduler({ gateway, store });
+
+    const result = await scheduler.sync(
+      {
+        ...request,
+        occurrences: [
+          { startAt: '2026-09-28T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-09-28' },
+          { startAt: '2026-09-30T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-09-30' },
+        ],
+        minutesBefore: [0],
+      },
+      NOW,
+    );
+
+    expect(result.scheduled).toBe(2);
+    expect(scheduled.map((item) => item.at.toISOString())).toEqual([
+      '2026-09-28T02:00:00.000Z',
+      '2026-09-30T02:00:00.000Z',
+    ]);
+    // 点击通知要跳到「那一次」，不是整条序列
+    expect(scheduled[1]!.data).toMatchObject({ occurrenceDate: '2026-09-30' });
+  });
+
+  it('对齐（reconcile）：这批里没有的目标会被取消，出现在这批里的重排', async () => {
+    const { gateway, cancelled } = createFakeGateway();
+    const store = createMemoryReminderIdStore();
+    const scheduler = createReminderScheduler({ gateway, store });
+
+    await scheduler.sync(request, NOW);
+    await scheduler.sync({ ...request, targetType: 'TASK', targetId: 7 }, NOW);
+    expect(Object.keys(await store.read()).sort()).toEqual(['EVENT:12', 'TASK:7']);
+
+    // 服务端只返回了 TASK:7（用户把日程的提醒删了 / 日程挪出了窗口）
+    const result = await scheduler.reconcile([{ ...request, targetType: 'TASK', targetId: 7 }], NOW);
+
+    expect(result.scheduled).toBe(2);
+    // 第一次取消是 TASK:7 自己的重排，第二次是 EVENT:12 被清掉
+    expect(cancelled).toContainEqual(['notif-1', 'notif-2']);
+    expect(Object.keys(await store.read())).toEqual(['TASK:7']);
   });
 
   it('改了时间重排：先撤旧的再排新的，账本里不留旧 id', async () => {
@@ -77,7 +128,20 @@ describe('本地提醒排期', () => {
 
     await scheduler.sync(request, NOW);
     // 用户把日程改到下午 15:00，提前量没变
-    await scheduler.sync({ ...request, startAt: '2026-09-28T15:00:00+08:00' }, NOW);
+    await scheduler.sync(
+      {
+        ...request,
+        occurrences: [
+          {
+            startAt: '2026-09-28T15:00:00+08:00',
+            allDay: false,
+            timezone: 'Asia/Shanghai',
+            occurrenceDate: null,
+          },
+        ],
+      },
+      NOW,
+    );
 
     // 第二次是带着上一次的 id 去取消的 —— 少了这一步，中午还会按老时间响一次
     expect(cancelled[1]).toEqual(['notif-1', 'notif-2']);

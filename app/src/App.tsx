@@ -1,13 +1,20 @@
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createNavigationContainerRef } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { AppProvider, useAppSessionState, useAppTheme, useRuntimeState } from './context/AppContext';
+import {
+  AppProvider,
+  useAppSessionState,
+  useAppTheme,
+  useRuntime,
+  useRuntimeState,
+} from './context/AppContext';
 import { createRuntime } from './runtime';
 import { buildConsentRecord, hasAcceptedPolicy } from './domain/consent';
 import { createSecureConsentStore, type ConsentStore } from './auth/consentStore';
@@ -35,6 +42,9 @@ import { localDateKey } from './domain/agenda';
 import { APP_TIMEZONE } from './domain/calendar';
 import type { LegalDoc } from './domain/legal';
 import type { OrgEvent } from './api/types';
+import { refreshLocalReminders } from './notifications/actions';
+import { subscribeNotificationResponses } from './notifications/listener';
+import type { NotificationRoute } from './notifications/route';
 
 type AuthStackParamList = {
   Login: undefined;
@@ -200,6 +210,15 @@ type AppStackParamList = {
 const AppStack = createNativeStackNavigator<AppStackParamList>();
 
 /**
+ * 通知点击后的跳转走这个 ref 而不是 `useNavigation`：
+ * 监听通知的组件不在任何 Screen 里（它在整棵导航树之外），拿不到 navigation 对象。
+ */
+const navigationRef = createNavigationContainerRef<AppStackParamList>();
+
+/** 回到前台时重排本地提醒的最小间隔：切来切去不该每次都打一次接口。 */
+const REMINDER_RESYNC_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
  * 登录后的导航：Tab（日历 / 待办 / 组织 / 我的）+ 若干独立编辑页。
  *
  * 编辑页做成栈里的整页而不是弹窗（spec §4.1.5）：字段量已到系统日历级别，
@@ -235,7 +254,83 @@ function MainStack() {
     memberIds: [],
   });
   const today = useMemo(() => localDateKey(new Date().toISOString(), APP_TIMEZONE), []);
-  const { setActiveOrgIdentityId, setOrgFocusDateKey } = useAppSessionState();
+  const { setActiveOrgIdentityId, setOrgFocusDateKey, notificationEnabled } = useAppSessionState();
+  const { api, reminders } = useRuntime();
+
+  /**
+   * 本机提醒的定期重排（spec §4.5）。
+   *
+   * 只排一次不够：重复日程只排得出最近的若干次、别的设备改了提醒、用户把通知开关关掉
+   * —— 这些都不会体现在本机的排期里。冷启动 + 回到前台各对齐一次，把差异收掉。
+   */
+  useEffect(() => {
+    let lastRun = 0;
+    const run = (force: boolean) => {
+      const now = Date.now();
+      if (!force && now - lastRun < REMINDER_RESYNC_INTERVAL_MS) {
+        return;
+      }
+      lastRun = now;
+      void refreshLocalReminders({ api, scheduler: reminders, enabled: notificationEnabled });
+    };
+    run(true);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        run(false);
+      }
+    });
+    return () => subscription.remove();
+  }, [api, reminders, notificationEnabled]);
+
+  /**
+   * 点通知进 App：跳到对应的编辑页（spec §4.5）。
+   *
+   * 冷启动的那一次点击由 `subscribeNotificationResponses` 补捞；未登录时这棵树还没挂上，
+   * 登录后本函数会重新订阅，所以待处理的点击不会丢。
+   */
+  const [pendingRoute, setPendingRoute] = useState<NotificationRoute | null>(null);
+  useEffect(() => {
+    let dispose: (() => void) | undefined;
+    let cancelled = false;
+    void subscribeNotificationResponses((route) => {
+      if (!cancelled) {
+        setPendingRoute(route);
+      }
+    })
+      .then((off) => {
+        dispose = off;
+      })
+      .catch(() => {
+        // 没有通知模块（Web 预览）：忽略，不影响其它功能
+      });
+    return () => {
+      cancelled = true;
+      dispose?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingRoute || !navigationRef.isReady()) {
+      return;
+    }
+    if (pendingRoute.kind === 'EVENT') {
+      // 与从列表进编辑页一样：先清掉二级页的回传，避免上一条日程的选择串进来
+      setPlaceSelection({ version: 0, place: null });
+      setRecurrenceSelection({ version: 0, recurrence: null });
+      setReminderSelection({ version: 0, minutes: [] });
+      navigationRef.navigate('EventEditor', {
+        dateKey: pendingRoute.occurrenceDate ?? today,
+        eventId: pendingRoute.eventId,
+        occurrenceDate: pendingRoute.occurrenceDate,
+      });
+    } else {
+      setEventSelection({ version: 0, event: null });
+      setRecurrenceSelection({ version: 0, recurrence: null });
+      setReminderSelection({ version: 0, minutes: [] });
+      navigationRef.navigate('TaskEditor', { taskId: pendingRoute.taskId });
+    }
+    setPendingRoute(null);
+  }, [pendingRoute, today]);
 
   return (
     <AppStack.Navigator screenOptions={{ headerShown: false }}>
@@ -259,10 +354,15 @@ function MainStack() {
             }}
             onCreateTask={() => {
               setEventSelection({ version: 0, event: null });
+              // 待办编辑页也复用「重复 / 提醒」两个二级页，同样要重置回传
+              setRecurrenceSelection({ version: 0, recurrence: null });
+              setReminderSelection({ version: 0, minutes: [] });
               navigation.navigate('TaskEditor');
             }}
             onOpenTask={(taskId) => {
               setEventSelection({ version: 0, event: null });
+              setRecurrenceSelection({ version: 0, recurrence: null });
+              setReminderSelection({ version: 0, minutes: [] });
               navigation.navigate('TaskEditor', { taskId });
             }}
             onOpenOrgAccounts={() => navigation.navigate('OrgAccounts')}
@@ -331,7 +431,13 @@ function MainStack() {
             todayKey={today}
             taskId={route.params?.taskId}
             eventSelection={eventSelection}
+            recurrenceSelection={recurrenceSelection}
+            reminderSelection={reminderSelection}
             onPickEvent={() => navigation.navigate('EventPicker')}
+            onPickRecurrence={(current, startDateKey) =>
+              navigation.navigate('RecurrencePicker', { startDateKey, initial: current })
+            }
+            onPickReminder={(current) => navigation.navigate('ReminderPicker', { initial: current })}
             onCancel={() => navigation.goBack()}
             onSaved={() => navigation.goBack()}
           />
@@ -534,7 +640,7 @@ function ThemedRoot() {
   return (
     <>
       <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
-      <NavigationContainer theme={navTheme}>
+      <NavigationContainer theme={navTheme} ref={navigationRef}>
         <Root />
       </NavigationContainer>
     </>

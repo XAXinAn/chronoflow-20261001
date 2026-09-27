@@ -1,7 +1,58 @@
 import { describe, expect, it } from 'vitest';
 
 import { isValidDateKey } from '../src/domain/calendar';
-import { buildCreateTaskPayload, emptyTaskDraft, validateTaskDraft } from '../src/domain/taskDraft';
+import {
+  buildCreateTaskPayload,
+  buildUpdateTaskPayload,
+  draftFromTask,
+  emptyTaskDraft,
+  validateTaskDraft,
+} from '../src/domain/taskDraft';
+import type { Task } from '../src/api/types';
+
+/**
+ * 待办的重复规则与提醒（spec §4.1.2）。
+ *
+ * 与日程同一套语义：**空串 = 不重复**（PATCH 里 null 是「不修改」），
+ * 而提醒不走 task 行，编辑页要单独拉一次 `GET /reminders`。
+ */
+describe('待办的重复与提醒', () => {
+  const task: Task = {
+    id: 7,
+    calendarId: 1,
+    parentTaskId: null,
+    eventId: null,
+    eventTitle: null,
+    title: '交周报',
+    description: null,
+    dueAt: '2026-10-09T10:00:00Z',
+    allDay: false,
+    status: 'TODO',
+    completedAt: null,
+    priority: 'NORMAL',
+    rrule: 'FREQ=WEEKLY;BYDAY=FR',
+    sortOrder: 0,
+  };
+
+  it('回填：服务端的 rrule 能还原到草稿，编辑一次不会把它抹掉', () => {
+    const draft = draftFromTask(task, '2026-10-05');
+    expect(draft.rrule).toBe('FREQ=WEEKLY;BYDAY=FR');
+    // 提醒不在 task 行上，由编辑页另行拉取
+    expect(draft.reminders).toEqual([]);
+    expect(buildUpdateTaskPayload(draft).rrule).toBe('FREQ=WEEKLY;BYDAY=FR');
+  });
+
+  it('改回「不重复」提交的是空串（null 在 PATCH 里是「不修改」）', () => {
+    const draft = { ...draftFromTask(task, '2026-10-05'), rrule: '' };
+    expect(buildUpdateTaskPayload(draft).rrule).toBe('');
+    expect(buildCreateTaskPayload({ ...draft, title: '交周报' }).rrule).toBe('');
+  });
+
+  it('没设过 rrule 的待办（字段缺失）按「不重复」处理', () => {
+    const draft = draftFromTask({ ...task, rrule: undefined }, '2026-10-05');
+    expect(draft.rrule).toBe('');
+  });
+});
 
 describe('新建待办草稿', () => {
   it('默认不设截止时间，归入「待安排」', () => {

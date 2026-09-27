@@ -12,7 +12,7 @@ import {
   FormTextArea,
   SegmentedControl,
 } from '../components/form';
-import { useAppTheme, useRuntime } from '../context/AppContext';
+import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import {
   AVAILABILITY_OPTIONS,
   PRIORITY_OPTIONS,
@@ -25,34 +25,25 @@ import {
   eventDateKey,
   validateDraft,
   type EventDraft,
-  type EventPlace,
 } from '../domain/eventDraft';
 import { buildRrule, describeRecurrence, parseRrule, type Recurrence } from '../domain/recurrence';
-import { APP_TIMEZONE } from '../domain/calendar';
-import {
-  describeReminders,
-  normalizeReminders,
-  reminderNotificationBody,
-  sameReminderSet,
-} from '../domain/reminderSchedule';
+import { describeReminders, normalizeReminders } from '../domain/reminderSchedule';
+import { persistReminderSettings, refreshLocalReminders } from '../notifications/actions';
+import type {
+  PlaceSelection,
+  RecurrenceSelection,
+  ReminderSelection,
+} from './editorSelection';
 
-/** 地点选择的回传：用 version 区分「重新选了同一个地点」与「选了不设地点」。 */
-export interface PlaceSelection {
-  version: number;
-  place: EventPlace | null;
-}
-
-/** 重复规则选择的回传。同样是 version 语义：只有「按了完成」才会 +1。 */
-export interface RecurrenceSelection {
-  version: number;
-  recurrence: Recurrence | null;
-}
-
-/** 提醒选择的回传（多选，分钟数组）。 */
-export interface ReminderSelection {
-  version: number;
-  minutes: number[];
-}
+/**
+ * 二级页回传（地点 / 重复 / 提醒）由 `editorSelection.ts` 统一定义：
+ * 日程与待办两个编辑页共用同一套「version 变了才算改过」的语义。
+ */
+export type {
+  PlaceSelection,
+  RecurrenceSelection,
+  ReminderSelection,
+} from './editorSelection';
 
 /**
  * 新建 / 编辑日程：**独立整页**，不是弹窗（spec §4.1.5 / §7.6.7）。
@@ -93,12 +84,11 @@ export function EventEditorScreen({
 }) {
   const theme = useAppTheme();
   const { api, reminders } = useRuntime();
+  const { notificationEnabled } = useAppSessionState();
   const isEdit = typeof eventId === 'number';
 
   const [draft, setDraft] = useState<EventDraft>(emptyDraft);
   const [dateKey, setDateKey] = useState(initialDateKey);
-  /** 日程自己的时区：全天日程的「当地 09:00」要按它算（spec §7.3） */
-  const [timezone, setTimezone] = useState(APP_TIMEZONE);
   const [detail, setDetail] = useState<EventDetail | null>(null);
   /**
    * 打开编辑页时服务端上的提醒设置。
@@ -127,7 +117,6 @@ export function EventEditorScreen({
         setDraft(draftFromEvent(loaded));
         // 日程自己的日期，而不是列表页选中的那天——编辑时两者可能不同
         setDateKey(eventDateKey(loaded));
-        setTimezone(loaded.timezone || APP_TIMEZONE);
         /**
          * 提醒不在 event 行上（spec §4.5 的分工）：`draftFromEvent` 只能给空数组，
          * 真正的值要单独拉一次 `GET /reminders`。
@@ -217,42 +206,33 @@ export function EventEditorScreen({
        * 提醒是整体覆盖（`PUT /reminders`）。只在真的改过时才发：
        * 没改也发一遍虽然结果一样，但会让「保存」这个动作多一次没必要的写。
        */
-      if (!sameReminderSet(draft.reminders, initialReminders)) {
-        try {
-          await api.setReminders({
-            targetType: 'EVENT',
-            targetId: savedId,
-            reminders: normalizeReminders(draft.reminders).map((minutesBefore) => ({ minutesBefore })),
-          });
-          setInitialReminders(normalizeReminders(draft.reminders));
-        } catch (cause) {
-          // 日程已经存下了。这里**不能**当作「保存失败」整条回滚口吻提示，
-          // 也不能直接返回列表（用户看不到问题、更没法重试）
-          setError(
-            `日程已保存，但提醒没有存上：${cause instanceof ApiError ? cause.message : '请稍后重试'}`,
-          );
-          return;
-        }
+      try {
+        await persistReminderSettings({
+          api,
+          targetType: 'EVENT',
+          targetId: savedId,
+          minutes: draft.reminders,
+          initialMinutes: initialReminders,
+        });
+        setInitialReminders(normalizeReminders(draft.reminders));
+      } catch (cause) {
+        // 日程已经存下了。这里**不能**当作「保存失败」整条回滚口吻提示，
+        // 也不能直接返回列表（用户看不到问题、更没法重试）
+        setError(
+          `日程已保存，但提醒没有存上：${cause instanceof ApiError ? cause.message : '请稍后重试'}`,
+        );
+        return;
       }
       /**
        * 本机排期跟着走。
        *
-       * 与上面的服务端写入不同，这一步**每次保存都要做**：用户可能只改了时间，
-       * 而提醒的提前量没变——那时服务端不用重写，但本机必须按新时刻重排。
+       * 不做「本地推算这次改了什么」：重复日程的展开在服务端，删除 / 跨设备改动
+       * 也在服务端，本地推算总有漏掉的路径。统一拉一次未来排期再对齐。
        */
-      const local = await reminders.sync({
-        targetType: 'EVENT',
-        targetId: savedId,
-        title: draft.title.trim(),
-        body: reminderNotificationBody({
-          allDay: draft.allDay,
-          startTime: draft.startTime,
-          location: draft.place?.name ?? null,
-        }),
-        startAt: timeRange.startAt,
-        allDay: draft.allDay,
-        timezone,
-        minutesBefore: draft.reminders,
+      const local = await refreshLocalReminders({
+        api,
+        scheduler: reminders,
+        enabled: notificationEnabled,
       });
       if (local.permissionDenied && draft.reminders.length > 0) {
         // 设置存下了、但通知响不了，必须说清楚，否则用户会以为「提醒坏了」
@@ -294,16 +274,10 @@ export function EventEditorScreen({
       try {
         await api.deleteEvent(eventId, scope, scope === 'THIS' ? occurrenceDate ?? undefined : undefined);
         /**
-         * 删除的日程不能留着提醒在系统里响（用户会以为是幽灵通知）。
-         *
-         * 失败也不打断删除流程：日程已经删了，「本机还有条待触发通知」是次要问题，
-         * 下次对同一个 id 重排时还会再取消一次。
+         * 删除的日程不能留着提醒在系统里响（用户会以为是幽灵通知）：
+         * 重排一次即可 —— 服务端已经不再返回它，对齐时本机那条会被取消。
          */
-        try {
-          await reminders.cancel('EVENT', eventId);
-        } catch {
-          // 忽略：见上
-        }
+        await refreshLocalReminders({ api, scheduler: reminders, enabled: notificationEnabled });
         onSaved();
       } catch (cause) {
         setError(cause instanceof ApiError ? cause.message : '删除失败');

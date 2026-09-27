@@ -60,6 +60,7 @@
 
     { "method": "PUT", "path": "/api/v1/reminders", "auth": "access" },
     { "method": "GET", "path": "/api/v1/reminders", "auth": "access" },
+    { "method": "GET", "path": "/api/v1/reminders/schedule", "auth": "access" },
 
     { "method": "GET", "path": "/api/v1/holidays", "auth": "access" },
     { "method": "GET", "path": "/api/v1/search", "auth": "access" },

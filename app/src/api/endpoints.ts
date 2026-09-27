@@ -16,6 +16,7 @@ import type {
   OrgDispatchRequest,
   OrgEvent,
   OrgMemberItem,
+  ReminderScheduleEntry,
   SearchResultItem,
   SmsLoginResponse,
   Task,
@@ -77,6 +78,8 @@ export interface TaskWritePayload {
   allDay?: boolean;
   priority?: string;
   status?: string;
+  /** 重复规则 RRULE；空串表示「不重复」（服务端把空白一律存成 null） */
+  rrule?: string | null;
 }
 
 export function createEndpoints(client: ApiClient) {
@@ -154,6 +157,15 @@ export function createEndpoints(client: ApiClient) {
         targetType,
         targetId: String(targetId),
       }),
+
+    /**
+     * 未来一段时间内所有要响的提醒（含重复日程展开后的每一次出现）。
+     *
+     * App 冷启动 / 回到前台时用它把本机通知重排一遍：重复日程在客户端只拿得到 RRULE 字符串，
+     * 展开留给服务端做（spec §4.5）。
+     */
+    reminderSchedule: (start: string, end: string) =>
+      client.get<ReminderScheduleEntry[]>('/api/v1/reminders/schedule', { start, end }),
 
     // ----------------------------------------------------------- 个人日历
     calendars: () => client.get<CalendarSummary[]>('/api/v1/calendars'),

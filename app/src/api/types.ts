@@ -156,7 +156,28 @@ export interface Task {
   status: 'TODO' | 'DONE' | 'CANCELLED';
   completedAt: string | null;
   priority: Priority;
+  /** 重复规则（RRULE）：待办同样支持重复，如「每周五交周报」（spec §4.1.2） */
+  rrule?: string | null;
   sortOrder: number;
+}
+
+/**
+ * 未来提醒的一条排期（GET /reminders/schedule）。
+ *
+ * 服务端把重复日程**展开后的每一次出现**都列出来：客户端不自己展开 RRULE，
+ * 避免两版展开规则不一致时出现「某条重复日程在这台手机上不响」。
+ */
+export interface ReminderScheduleEntry {
+  targetType: 'EVENT' | 'TASK';
+  targetId: number;
+  /** 重复日程的该次日期；非重复为 null */
+  occurrenceDate: string | null;
+  title: string;
+  locationName: string | null;
+  startAt: string;
+  allDay: boolean;
+  timezone: string;
+  minutesBefore: number[];
 }
 
 /**

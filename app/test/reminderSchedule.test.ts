@@ -6,6 +6,7 @@ import {
   describeReminders,
   formatMinutesBefore,
   normalizeReminders,
+  planOccurrenceReminders,
   parseCustomMinutes,
   planReminders,
   reminderBase,
@@ -151,5 +152,36 @@ describe('提醒的界面值', () => {
       .toBe('10:00 开始');
     // 全天日程没有时刻可写，写「全天」而不是 00:00
     expect(reminderNotificationBody({ allDay: true, startTime: '09:00' })).toBe('全天');
+  });
+
+  it('重复日程的多次出现：跨出现按时刻升序，并按总数截断', () => {
+    const planned = planOccurrenceReminders({
+      occurrences: [
+        { startAt: '2026-10-07T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-10-07' },
+        { startAt: '2026-10-05T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-10-05' },
+      ],
+      minutesBefore: [60],
+      now: new Date('2026-10-01T00:00:00Z'),
+    });
+
+    expect(planned.map((item) => item.occurrenceDate)).toEqual(['2026-10-05', '2026-10-07']);
+    expect(planned.map((item) => item.at.toISOString())).toEqual([
+      '2026-10-05T01:00:00.000Z',
+      '2026-10-07T01:00:00.000Z',
+    ]);
+  });
+
+  it('已经过去的那些出现不排（补排历史提醒只会骚扰用户）', () => {
+    const planned = planOccurrenceReminders({
+      occurrences: [
+        { startAt: '2026-09-28T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-09-28' },
+        { startAt: '2026-10-05T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-10-05' },
+      ],
+      minutesBefore: [0],
+      now: new Date('2026-10-01T00:00:00Z'),
+    });
+
+    expect(planned).toHaveLength(1);
+    expect(planned[0]!.occurrenceDate).toBe('2026-10-05');
   });
 });

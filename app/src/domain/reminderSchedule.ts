@@ -109,6 +109,77 @@ export function horizonEnd(now: Date, days = SCHEDULE_HORIZON_DAYS): Date {
   return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
+/** 一个日程/待办的一次出现（重复日程会给出多次）。 */
+export interface ReminderOccurrenceInput {
+  /** 该次出现的开始时刻（ISO 8601） */
+  startAt: string;
+  allDay: boolean;
+  timezone: string;
+  /** 重复日程的该次日期；非重复为 null（通知点击后的路由要用它定位） */
+  occurrenceDate: string | null;
+}
+
+export interface PlannedOccurrenceReminder {
+  at: Date;
+  minutesBefore: number;
+  occurrenceDate: string | null;
+  /** 该条通知对应的那次出现的开始时刻（正文里要写「几点开始」） */
+  startAt: string;
+  allDay: boolean;
+  timezone: string;
+}
+
+/**
+ * 把一个日程/待办（可能重复）在窗口内的所有出现排成通知列表。
+ *
+ * 与单次排期（`planReminders`）有两处不同：
+ *   1. **跨出现合并后按时刻升序**：周会 10/5、10/7、10/9 的三次提醒要在同一条时间轴上排，
+ *      否则通知中心里的顺序会和日历对不上；
+ *   2. **上限是总数**：iOS 待触发通知上限 64，重复日程很容易撑爆它，
+ *      所以截断发生在合并之后，并且保留最近的那些（用户最可能先遇到）。
+ */
+export function planOccurrenceReminders(input: {
+  occurrences: ReminderOccurrenceInput[];
+  minutesBefore: number[];
+  now: Date;
+}): PlannedOccurrenceReminder[] {
+  if (input.minutesBefore.length === 0) {
+    return [];
+  }
+  const planned: PlannedOccurrenceReminder[] = [];
+  for (const occurrence of input.occurrences) {
+    for (const reminder of planReminders({
+      startAt: occurrence.startAt,
+      allDay: occurrence.allDay,
+      timezone: occurrence.timezone,
+      minutesBefore: input.minutesBefore,
+      now: input.now,
+    })) {
+      planned.push({
+        at: reminder.at,
+        minutesBefore: reminder.minutesBefore,
+        occurrenceDate: occurrence.occurrenceDate,
+        startAt: occurrence.startAt,
+        allDay: occurrence.allDay,
+        timezone: occurrence.timezone,
+      });
+    }
+  }
+  // 同一次出现 + 同一个提前量只会有一条；不同来源拼起来产生的重复项在这里收口
+  const seen = new Set<string>();
+  return planned
+    .sort((left, right) => left.at.getTime() - right.at.getTime())
+    .filter((item) => {
+      const key = `${item.at.getTime()}:${item.minutesBefore}:${item.occurrenceDate ?? ''}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, MAX_SCHEDULED_REMINDERS);
+}
+
 export function formatMinutesBefore(minutes: number): string {
   if (minutes <= 0) {
     return '到点';

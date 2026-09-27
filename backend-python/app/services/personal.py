@@ -14,6 +14,9 @@ from .storage import validate_image_urls
 
 DEFAULT_CALENDAR_NAME = "我的日程"
 
+# 待办自己没有时区列，取所在日历的时区；没有就按第一版的默认时区（spec §7.3）
+DEFAULT_TIMEZONE = "Asia/Shanghai"
+
 # 枚举取值集中在这里校验：脏值以业务错误码返回，而不是写进库后被数据库约束拒绝
 _STATUSES = {"CONFIRMED", "TENTATIVE", "CANCELLED"}
 _AVAILABILITIES = {"BUSY", "FREE"}
@@ -531,6 +534,9 @@ class PersonalService:
         event_id = payload.get("eventId")
         if event_id is not None:
             self.require_owned_event(identity_id, event_id)
+        # 待办同样支持重复（spec §4.1.2）；规则写错就在这里挡住，别等展开时才炸
+        rrule = payload.get("rrule") or None
+        recurrence.validate_rrule(rrule)
         row = self._session.execute(
             text(
                 "INSERT INTO task (calendar_id, owner_identity_id, parent_task_id, title,"
@@ -549,7 +555,7 @@ class PersonalService:
                 "due_at": payload.get("dueAt"),
                 "all_day": bool(payload.get("allDay")),
                 "priority": payload.get("priority") or "NORMAL",
-                "rrule": payload.get("rrule"),
+                "rrule": rrule,
                 # jsonb 列不能用数组适配器直接塞：显式序列化再 CAST
                 "images": json.dumps(validate_image_urls(payload.get("images")), ensure_ascii=False),
             },
@@ -560,6 +566,11 @@ class PersonalService:
     def update_task(self, identity_id: int, task_id: int, payload: dict) -> dict:
         self.require_task(identity_id, task_id)
         completed = payload.get("status") == "DONE"
+        # 重复规则：null = 不修改；空串 = 清空（回到「不重复」），与日程同一套语义
+        rrule = payload.get("rrule")
+        if rrule is not None:
+            rrule = rrule or None
+            recurrence.validate_rrule(rrule)
         # 先看「显式清空」再看赋值：否则一旦设过截止时间就再也回不到「待安排」
         clear_due = bool(payload.get("clearDueAt"))
         # 关联同理：null 在 PATCH 里是「不修改」，解绑必须靠 clearEvent 显式表达
@@ -579,6 +590,7 @@ class PersonalService:
                 " due_at = CASE WHEN :clear_due THEN NULL ELSE COALESCE(:due_at, due_at) END,"
                 " all_day = CASE WHEN :clear_due THEN false ELSE COALESCE(:all_day, all_day) END,"
                 " priority = COALESCE(:priority, priority), status = COALESCE(:status, status),"
+                " rrule = CASE WHEN :rrule_set THEN :rrule ELSE rrule END,"
                 # 图片：null = 不修改；传空数组才是「删光所有图片」
                 " images = COALESCE(CAST(:images AS jsonb), images),"
                 " completed_at = CASE WHEN :status = 'DONE' THEN now()"
@@ -597,6 +609,8 @@ class PersonalService:
                 "all_day": payload.get("allDay"),
                 "priority": payload.get("priority"),
                 "status": payload.get("status"),
+                "rrule": rrule,
+                "rrule_set": payload.get("rrule") is not None,
                 "images": json.dumps(validate_image_urls(payload.get("images")), ensure_ascii=False)
                 if payload.get("images") is not None
                 else None,
@@ -732,6 +746,94 @@ class PersonalService:
         self._session.commit()
         return self.list_reminders(identity_id, target_type, target_id)
 
+    def upcoming_reminders(self, identity_id: int, start: datetime, end: datetime) -> list[dict]:
+        """未来一段时间内所有要响的提醒（App 启动 / 回到前台时重排本地通知用，spec §4.5）。
+
+        重复日程按**展开后的每一次实例**给出：客户端只拿得到 RRULE 字符串，
+        自己展开等于把 rrule 库再实现一遍，而且两版展开规则一旦不一致，
+        「某条重复日程在这台手机上不响」这种问题几乎无法排查。展开由服务端做一次。
+        """
+        _validate_range(start, end)
+        rows = self._session.execute(
+            text(
+                "SELECT * FROM reminder WHERE identity_id = :identity AND enabled"
+                " ORDER BY minutes_before"
+            ),
+            {"identity": identity_id},
+        ).mappings().all()
+        if not rows:
+            return []
+
+        event_minutes: dict[int, list[int]] = {}
+        task_minutes: dict[int, list[int]] = {}
+        for row in rows:
+            bucket = event_minutes if row["target_type"] == "EVENT" else task_minutes
+            bucket.setdefault(row["target_id"], []).append(row["minutes_before"])
+
+        entries: list[dict] = []
+        if event_minutes:
+            for occurrence in self.list_events(identity_id, None, start, end):
+                minutes = event_minutes.get(occurrence["eventId"])
+                if minutes is None:
+                    continue
+                entries.append(
+                    {
+                        "targetType": "EVENT",
+                        "targetId": occurrence["eventId"],
+                        "occurrenceDate": occurrence["occurrenceDate"],
+                        "title": occurrence["title"],
+                        "locationName": occurrence.get("locationName"),
+                        "startAt": occurrence["startAt"],
+                        "allDay": occurrence["allDay"],
+                        "timezone": occurrence.get("timezone") or DEFAULT_TIMEZONE,
+                        "minutesBefore": sorted(set(minutes)),
+                    }
+                )
+        if task_minutes:
+            entries.extend(self._task_reminder_entries(identity_id, start, end, task_minutes))
+
+        entries.sort(key=lambda item: (item["startAt"], item["targetType"], item["targetId"]))
+        return entries
+
+    def _task_reminder_entries(
+        self, identity_id: int, start: datetime, end: datetime, task_minutes: dict[int, list[int]]
+    ) -> list[dict]:
+        """待办排期。
+
+        只取「待办中（TODO）且有截止时间」的：已完成 / 已取消的待办再到点提醒一次，
+        只会让用户觉得提醒不准（与列表里不展示它们是一个口径）。
+        时区取所在日历的时区 —— 待办自己没有时区列，而全天待办的提醒基准（当地 09:00）
+        需要一个时区才算得对。
+        """
+        rows = self._session.execute(
+            text(
+                "SELECT * FROM task WHERE owner_identity_id = :identity AND status = 'TODO'"
+                " AND deleted_at IS NULL AND id = ANY(:ids)"
+                " AND due_at > :start AND due_at <= :end"
+            ),
+            {"identity": identity_id, "ids": list(task_minutes), "start": start, "end": end},
+        ).mappings().all()
+        if not rows:
+            return []
+        zones = {
+            item["id"]: (item.get("timezone") or DEFAULT_TIMEZONE)
+            for item in self.list_calendars(identity_id)
+        }
+        return [
+            {
+                "targetType": "TASK",
+                "targetId": row["id"],
+                "occurrenceDate": None,
+                "title": row["title"],
+                "locationName": None,
+                "startAt": row["due_at"],
+                "allDay": bool(row["all_day"]),
+                "timezone": zones.get(row["calendar_id"], DEFAULT_TIMEZONE),
+                "minutesBefore": sorted(set(task_minutes[row["id"]])),
+            }
+            for row in rows
+        ]
+
     def _require_target(self, identity_id: int, target_type: str, target_id: int) -> None:
         if target_type not in ("EVENT", "TASK"):
             raise ApiError(ErrorCode.PARAM_INVALID, f"targetType 取值非法: {target_type}")
@@ -806,6 +908,8 @@ def _task_view(row) -> dict:
         "status": row["status"],
         "completedAt": row["completed_at"],
         "priority": row["priority"],
+        # 重复规则（spec §4.1.2）：待办也支持「每周五交周报」这类规则
+        "rrule": row["rrule"],
         # 图片附件的相对 URL（spec §4.1.3）
         "images": images or [],
         "sortOrder": row["sort_order"],

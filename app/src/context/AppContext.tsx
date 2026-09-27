@@ -28,6 +28,11 @@ import {
   type ThemePreferenceStore,
 } from '../theme/preference';
 import type { ColorScheme } from '@xa-todo/design-tokens';
+import {
+  createSecureNotificationPrefsStore,
+  DEFAULT_NOTIFICATION_PREFS,
+  type NotificationPrefsStore,
+} from '../notifications/prefs';
 
 interface AppContextValue {
   theme: AppTheme;
@@ -50,6 +55,9 @@ interface AppContextValue {
   unlinkOrgAccount: (identityId: number) => Promise<void>;
   /** 某个组织账号的接口客户端（自动刷新它的令牌）；账号不在本地时返回 null */
   orgApi: (identityId: number) => Endpoints | null;
+  /** 到点提醒的总开关（本机偏好，spec §4.5） */
+  notificationEnabled: boolean;
+  setNotificationEnabled: (enabled: boolean) => void;
   toggleScheme: () => void;
   setRuntime: (runtime: AppRuntime | null) => void;
   setSession: (session: StoredSession | null) => void;
@@ -77,6 +85,35 @@ export function AppProvider({
 
   const scheme = override ?? systemScheme;
   const theme = useMemo(() => createTheme(scheme), [scheme]);
+  /**
+   * 到点提醒的总开关（spec §4.5）。
+   *
+   * 默认**开启**：日程类 App 的提醒是核心功能，默认关掉会让人以为提醒坏了。
+   * 存本机而不是服务端——它是「这台手机要不要响」，换设备时新设备默认开启。
+   */
+  const [notificationEnabled, setNotificationEnabledState] = useState(
+    DEFAULT_NOTIFICATION_PREFS.enabled,
+  );
+  const notificationPrefsRef = useRef<NotificationPrefsStore | null>(null);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const store = await createSecureNotificationPrefsStore();
+        notificationPrefsRef.current = store;
+        const stored = await store.read();
+        if (active) {
+          setNotificationEnabledState(stored.enabled);
+        }
+      } catch {
+        // 存储不可用（Web 预览）：保持默认开启，本机排期仍然可用
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // 深色模式偏好要持久化：只存 React state 的话，App 一重启就回到系统配色（spec §7.6.6）
   const themeStoreRef = useRef<ThemePreferenceStore | null>(null);
   useEffect(() => {
@@ -103,6 +140,12 @@ export function AppProvider({
     setOverride(next);
     void themeStoreRef.current?.write(next);
   }, [override, systemScheme]);
+
+  /** 开关到点提醒：存本机，并立刻反映到界面（本机排期的撤销由调用方触发重排） */
+  const setNotificationEnabled = useCallback((enabled: boolean) => {
+    setNotificationEnabledState(enabled);
+    void notificationPrefsRef.current?.write({ enabled });
+  }, []);
 
   const persist = useCallback(async (next: StoredOrgAccount[]) => {
     setOrgAccounts(next);
@@ -222,6 +265,8 @@ export function AppProvider({
       claimOrgAccount,
       unlinkOrgAccount,
       orgApi,
+      notificationEnabled,
+      setNotificationEnabled,
       toggleScheme,
       setRuntime,
       setSession,
@@ -249,7 +294,8 @@ export function AppProvider({
       },
     }),
     [theme, scheme, runtime, session, orgAccounts, activeOrgIdentityId, orgFocusDateKey,
-     refreshOrgAccounts, claimOrgAccount, unlinkOrgAccount, orgApi, persist, toggleScheme],
+     refreshOrgAccounts, claimOrgAccount, unlinkOrgAccount, orgApi, notificationEnabled,
+     setNotificationEnabled, persist, toggleScheme],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
@@ -276,11 +322,13 @@ export function useAppSessionState() {
     session, setSession, toggleScheme, applyTokenResponse, signOut,
     orgAccounts, activeOrgIdentityId, setActiveOrgIdentityId, orgFocusDateKey, setOrgFocusDateKey,
     refreshOrgAccounts, claimOrgAccount, unlinkOrgAccount, orgApi,
+    notificationEnabled, setNotificationEnabled,
   } = useAppContext();
   return {
     session, setSession, toggleScheme, applyTokenResponse, signOut,
     orgAccounts, activeOrgIdentityId, setActiveOrgIdentityId, orgFocusDateKey, setOrgFocusDateKey,
     refreshOrgAccounts, claimOrgAccount, unlinkOrgAccount, orgApi,
+    notificationEnabled, setNotificationEnabled,
   };
 }
 

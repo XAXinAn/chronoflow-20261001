@@ -48,6 +48,74 @@ def create_task(client, tokens, payload: dict) -> dict:
     return response["data"]
 
 
+def set_reminders(client, tokens, target_type: str, target_id: int, minutes: list[int]) -> list[dict]:
+    response = client.put(
+        "/api/v1/reminders",
+        json={
+            "targetType": target_type,
+            "targetId": target_id,
+            "items": [{"minutesBefore": value} for value in minutes],
+        },
+        headers=auth(tokens),
+    ).json()
+    assert response["code"] == 0, response
+    return response["data"]
+
+
+def reminder_schedule(client, tokens, start: str, end: str) -> list[dict]:
+    response = client.get(
+        "/api/v1/reminders/schedule",
+        params={"start": start, "end": end},
+        headers=auth(tokens),
+    ).json()
+    assert response["code"] == 0, response
+    return response["data"]
+
+
+def test_reminder_schedule_expands_recurrence_and_includes_tasks(client) -> None:
+    """未来提醒（spec §4.5）：重复日程按每次实例展开、待办一起排、只含自己的数据。"""
+    tokens = register(client, "13900002601")
+    event = create_event(client, tokens, WEEKLY_PAYLOAD)
+    set_reminders(client, tokens, "EVENT", event["id"], [15, 0])
+
+    task = create_task(
+        client,
+        tokens,
+        {"title": "交周报", "dueAt": "2026-10-06T18:00:00+08:00", "allDay": False},
+    )
+    set_reminders(client, tokens, "TASK", task["id"], [60])
+
+    entries = reminder_schedule(
+        client, tokens, "2026-10-05T00:00:00+08:00", "2026-10-12T00:00:00+08:00"
+    )
+    # 周一 / 周三 / 周五 三次实例 + 一条待办，按开始时刻升序
+    assert [item["targetType"] for item in entries] == ["EVENT", "TASK", "EVENT", "EVENT"]
+    assert [str(item["occurrenceDate"]) for item in entries if item["targetType"] == "EVENT"] == [
+        "2026-10-05",
+        "2026-10-07",
+        "2026-10-09",
+    ]
+    assert entries[0]["title"] == "站会"
+    assert entries[0]["minutesBefore"] == [0, 15]
+    assert entries[1]["targetId"] == task["id"]
+    assert entries[1]["occurrenceDate"] is None
+    assert entries[1]["timezone"] == "Asia/Shanghai"
+
+    # 别人的提醒不会混进来
+    other = register(client, "13900002602")
+    assert reminder_schedule(
+        client, other, "2026-10-05T00:00:00+08:00", "2026-10-12T00:00:00+08:00"
+    ) == []
+
+    # 区间非法：结束早于开始
+    invalid = client.get(
+        "/api/v1/reminders/schedule",
+        params={"start": "2026-10-12T00:00:00+08:00", "end": "2026-10-05T00:00:00+08:00"},
+        headers=auth(tokens),
+    ).json()
+    assert invalid["code"] == ErrorCode.EVENT_TIME_INVALID
+
+
 def test_search_spans_events_and_tasks_in_time_desc_order(client) -> None:
     """检索跨日程与待办，按时间倒序、无时间的待办排最后（spec §4.1.7）。"""
     tokens = register(client, "13900002101")
@@ -645,6 +713,46 @@ def test_task_images_are_stored_and_validated(client) -> None:
     client.patch(f"/api/v1/tasks/{created['id']}", json={"images": []}, headers=auth(tokens))
     cleared = client.get(f"/api/v1/tasks/{created['id']}", headers=auth(tokens)).json()["data"]
     assert cleared["images"] == []
+
+
+def test_task_rrule_round_trip(client) -> None:
+    """待办也支持重复规则：创建、改、清空，非法规则直接拒（spec §4.1.2）。"""
+    tokens = register(client, "13900002701")
+    created = create_task(
+        client,
+        tokens,
+        {
+            "title": "交周报",
+            "dueAt": "2026-10-09T18:00:00+08:00",
+            "rrule": "FREQ=WEEKLY;BYDAY=FR",
+        },
+    )
+    assert created["rrule"] == "FREQ=WEEKLY;BYDAY=FR"
+
+    # 只改标题：规则不该被动到
+    renamed = client.patch(
+        f"/api/v1/tasks/{created['id']}", json={"title": "交月报"}, headers=auth(tokens)
+    ).json()["data"]
+    assert renamed["rrule"] == "FREQ=WEEKLY;BYDAY=FR"
+
+    edited = client.patch(
+        f"/api/v1/tasks/{created['id']}", json={"rrule": "FREQ=DAILY"}, headers=auth(tokens)
+    ).json()["data"]
+    assert edited["rrule"] == "FREQ=DAILY"
+
+    # 空串 = 清空（与日程 rrule 同一套语义）
+    cleared = client.patch(
+        f"/api/v1/tasks/{created['id']}", json={"rrule": ""}, headers=auth(tokens)
+    ).json()["data"]
+    assert cleared["rrule"] is None
+
+    # 非法规则：写进去就会在展开时才炸，因此在写入处就拒
+    invalid = client.post(
+        "/api/v1/tasks",
+        json={"title": "坏规则", "rrule": "FREQ=NOT_A_RULE"},
+        headers=auth(tokens),
+    ).json()
+    assert invalid["code"] == ErrorCode.RRULE_INVALID
 
 
 def test_task_delete(client) -> None:

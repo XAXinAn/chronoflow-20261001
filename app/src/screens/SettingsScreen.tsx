@@ -33,7 +33,8 @@ export function SettingsScreen({
   const insets = useSafeAreaInsets();
   const scheme = useAppScheme();
   const { api, baseUrl } = useRuntime();
-  const { session, toggleScheme, signOut } = useAppSessionState();
+  const { session, toggleScheme, signOut, notificationEnabled, setNotificationEnabled } =
+    useAppSessionState();
 
   /**
    * 当前身份信息从服务端读，而不是只在本地会话里取：
@@ -175,6 +176,25 @@ export function SettingsScreen({
                 value={scheme === 'dark'}
                 onValueChange={toggleScheme}
                 accessibilityLabel="深色模式"
+                trackColor={{ false: theme.color.border, true: theme.color.accent }}
+                thumbColor={theme.color.surfaceRaised}
+              />
+            }
+          />
+          {/*
+            到点提醒的总开关（spec §4.5）。
+            关掉时不只是「以后不排」：已排的本机通知也会被撤掉（见 refreshLocalReminders），
+            否则用户关掉之后照样被提醒，那个开关就成了摆设。
+          */}
+          <ListRow
+            leading={<RowIcon name="notifications-outline" />}
+            title="到点提醒"
+            subtitle={notificationEnabled ? '日程与待办会按时提醒' : '已关闭，到点不会提醒'}
+            trailing={
+              <Switch
+                value={notificationEnabled}
+                onValueChange={setNotificationEnabled}
+                accessibilityLabel="到点提醒"
                 trackColor={{ false: theme.color.border, true: theme.color.accent }}
                 thumbColor={theme.color.surfaceRaised}
               />
