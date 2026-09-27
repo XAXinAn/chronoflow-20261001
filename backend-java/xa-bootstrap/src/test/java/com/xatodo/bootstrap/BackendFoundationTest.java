@@ -83,7 +83,9 @@ class BackendFoundationTest {
                 // spec §5.11 节假日与调休（数据由 scripts/load_holidays.py 灌入，迁移只建表）
                 "holiday",
                 // spec §5.10 意见反馈（图片走 /uploads/** 文件存储，这里只存相对 URL）
-                "feedback");
+                "feedback",
+                // spec §4.5 推送：App 上报的推送标识（服务端触发的事件要按它找设备）
+                "push_device");
 
         List<String> actual = jdbcTemplate.queryForList(
                 "SELECT table_name FROM information_schema.tables "

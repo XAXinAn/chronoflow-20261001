@@ -141,6 +141,13 @@ xatodo:
       api-key: ${XATODO_VISION_API_KEY:}
       timeout-seconds: ${XATODO_VISION_TIMEOUT_SECONDS:60}
       timezone: Asia/Shanghai
+  # 推送（spec §4.5）：组织日程下发/变更走远程推送；日程/待办到点提醒走 App 本地通知，不经服务端。
+  # app-key 是公开的（会编进 APK），master-secret 只在服务端用；两者为空时降级为「未配置」并如实上报。
+  push:
+    app-key: ${JPUSH_APPKEY:}
+    master-secret: ${JPUSH_MASTER_SECRET:}
+    # iOS 联调期必须置 false 才收得到（走 APNs 沙箱）
+    apns-production: ${JPUSH_APNS_PRODUCTION:true}
 
 logging:
   pattern:

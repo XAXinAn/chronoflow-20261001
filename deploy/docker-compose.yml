@@ -72,6 +72,12 @@ services:
       GEO_AMAP_KEY: ${GEO_AMAP_KEY:-}
       GEO_AMAP_JS_KEY: ${GEO_AMAP_JS_KEY:-}
       GEO_AMAP_JS_SECURITY_CODE: ${GEO_AMAP_JS_SECURITY_CODE:-}
+      # 推送（spec §4.5）：app-key 是公开的（会编进 APK），master-secret 只在服务端用。
+      # 两者为空时 PushProvider 降级成「未配置」并如实上报，其余功能不受影响。
+      JPUSH_APPKEY: ${JPUSH_APPKEY:-}
+      JPUSH_MASTER_SECRET: ${JPUSH_MASTER_SECRET:-}
+      # iOS 联调期置 false（走 APNs 沙箱）才能收到
+      JPUSH_APNS_PRODUCTION: ${JPUSH_APNS_PRODUCTION:-true}
       # 节假日每天自动同步（spec §5.11）；拉不到只告警，界面用库里已有数据
       HOLIDAY_SYNC_BASE_URL: ${HOLIDAY_SYNC_BASE_URL:-https://raw.githubusercontent.com/NateScarlet/holiday-cn/master}
       TZ: Asia/Shanghai

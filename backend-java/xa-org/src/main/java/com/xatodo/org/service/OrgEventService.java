@@ -25,6 +25,7 @@ import com.xatodo.personal.mapper.CalendarMapper;
 import com.xatodo.personal.mapper.EventExceptionMapper;
 import com.xatodo.personal.mapper.EventMapper;
 import com.xatodo.personal.recurrence.RecurrenceExpander;
+import com.xatodo.support.service.PushNotifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -60,6 +61,7 @@ public class OrgEventService {
     private final EventExceptionMapper eventExceptionMapper;
     private final CalendarMapper calendarMapper;
     private final RecurrenceExpander expander;
+    private final PushNotifier pushNotifier;
 
     public OrgEventService(OrgPermissionService permission,
                            DepartmentService departmentService,
@@ -71,7 +73,8 @@ public class OrgEventService {
                            EventMapper eventMapper,
                            EventExceptionMapper eventExceptionMapper,
                            CalendarMapper calendarMapper,
-                           RecurrenceExpander expander) {
+                           RecurrenceExpander expander,
+                           PushNotifier pushNotifier) {
         this.permission = permission;
         this.departmentService = departmentService;
         this.orgMemberMapper = orgMemberMapper;
@@ -83,6 +86,7 @@ public class OrgEventService {
         this.eventExceptionMapper = eventExceptionMapper;
         this.calendarMapper = calendarMapper;
         this.expander = expander;
+        this.pushNotifier = pushNotifier;
     }
 
     // ------------------------------------------------------------------ 下发
@@ -151,7 +155,27 @@ public class OrgEventService {
             eventRecipientMapper.insert(row);
         }
 
+        // 事务提交后再推：用户没打开 App 也要能知道「有人给我发了日程」。
+        // 只有已认领（有身份）的成员能收到 —— 没认领的成员记录压根没有设备可推（spec §4.2.2 / §4.5）。
+        pushNotifier.notifyAfterCommit(
+                recipients.stream().map(OrgMember::getIdentityId).filter(java.util.Objects::nonNull).toList(),
+                PushNotifier.TYPE_ORG_EVENT,
+                event.getTitle(),
+                orgPushBody(event),
+                java.util.Map.of(
+                        "type", "ORG_EVENT",
+                        "eventId", String.valueOf(event.getId()),
+                        "orgId", String.valueOf(actor.getOrgId())));
+
         return toResponse(event, dispatch);
+    }
+
+    /** 通知正文：把时间写进去，用户不解锁就能判断要不要马上看。 */
+    private static String orgPushBody(Event event) {
+        String when = event.getStartAt()
+                .atZoneSameInstant(java.time.ZoneId.of(event.getTimezone()))
+                .format(java.time.format.DateTimeFormatter.ofPattern("M月d日 HH:mm"));
+        return "组织日程 · " + when;
     }
 
     /**
