@@ -1,6 +1,10 @@
 ## 本地开发基础设施：PostgreSQL / Redis / MinIO
 ## 用法：docker compose -f deploy/docker-compose.infra.yml up -d
 ## 后端与前端在宿主机本地运行，见 spec §9.3。
+##
+## MinIO 是 spec §5.10 / §9.1 的既定架构（对象存储），因此**保留**在这个编排里：
+## 当前后端走的是「可替换的本地目录实现」，切到对象存储时只需换掉存储实现，
+## 接口不变、业务侧不感知。所以这里不是「没人连的僵尸服务」，而是切换时现成的落点。
 
 services:
   postgres:
