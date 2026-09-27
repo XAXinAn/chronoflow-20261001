@@ -48,6 +48,34 @@ App **116** + typecheck、web-admin 18；`check_compliance.py` 19 项自动检�
    填进应用宝后台的「隐私政策 URL」，并在无痕窗口确认不用登录就能打开；
 3. 剩下的产品项：拍照识别（端侧模型，排最后，见 §3.4）、web-admin 组织日历的 `canEdit`。
 
+### 0.0.1 同一天的产品删减：第一版不做「拍照识别」（2026-09-27）
+
+**产品决定：第一版不上线拍照识别日程。** 因此把 App 侧的入口与实现整条删掉，
+而不是留一个「点了必然失败」的按钮——那既伤用户信任，也会让上架的「功能完整性」检测难做。
+
+- 删掉：日历页 / 组织页的「拍照」悬浮按钮、`RecognizedEventsScreen`、
+  `app/src/vision/*`、`app/src/domain/vision.ts` 与 `app/test/vision.test.ts`、
+  客户端的 `recognizeEvents` 接口与 `RecognizeResponse` 类型。
+  现在两个页面右下角是**两个**悬浮按钮：跳到指定日期 / 新建。
+- **相机权限一并去掉**：`app.json` 的 `expo-image-picker` 插件里设了
+  `cameraPermission: false` 与 `microphonePermission: false`
+  （该插件默认会给 iOS 加 `NSCameraUsageDescription`、给 Android 加 `RECORD_AUDIO`）。
+  `domain/permissions.ts` 的 `PermissionKind` 现在只有 `photo` / `location`。
+- **合规文本同步改了**：隐私政策 §2.7 / §9.2、用户协议 §四都去掉了相机与「拍照识别」，
+  改写成「本应用不申请相机权限，也不提供拍照识别日程功能」。
+  清单与实现必须一致，否则上架检测会判「声明与实际不符」。
+- **后端 `POST /ai/events/recognize` 保留**（契约里还在、两版都有实现与测试）。
+  将来重启该功能时，只需在 App 侧按 spec §4.1.9 原设计接回入口，不用动契约与两版后端。
+
+**顺手补掉的三个上架硬阻塞（app.json 原本都没有）**：
+
+1. **应用图标没有**：`expo.icon` / `android.adaptiveIcon.foregroundImage` 指向的文件不存在，
+   store 构建会直接失败。已生成占位图标（`app/assets/{icon,adaptive-icon,splash}.png`，
+   纯黑底 + 白色「日历 + 对勾」标记，贴合黑白极简的设计语言）——**正式发布前建议换成设计稿**。
+2. **没有 `ios.buildNumber` / `android.versionCode`**：商店要求版本号单调递增，已补 `1`。
+3. **没有配 `expo-image-picker` 插件**：iOS 的相册用途说明不会被写进 Info.plist。
+   已补中文 `photosPermission`。
+
 ## 0.0 本次交接摘要（2026-09-26，第三轮）
 
 **这一轮做了什么**（每条都有测试 + 实机证据，细节见 §3.1.1）：
@@ -280,7 +308,7 @@ abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，�
 
 | # | 事项 | 说明 |
 | --- | --- | --- |
-| 1 | **拍照 / 相册识别日程**（spec §4.1.9）：契约、约束解码、容错解析、修复重试、App 的拍照/相册入口与可编辑确认页、地点高德解析都已就绪并有测试 | **端侧模型未跑通**：端侧推理要 Dev Client 构建（原生模块 + Android NDK/CMake），本机工具链不具备（Windows SDK 无 ndk/cmake/cmdline-tools、WSL 无 gcc）。**产品要求排到最后再做**；未配模型时接口如实返回 90002 |
+| 1 | ~~拍照 / 相册识别日程~~ → **第一版不做（产品已定，见 §0.0.1）** | App 侧入口与实现已删除（含相机权限与合规文本）；**后端 `POST /ai/events/recognize` 与两版实现保留**，将来要接只需在 App 侧补入口（spec §4.1.9 留了原设计）。端侧模型仍未跑通（要 Dev Client 构建） |
 | 2 | （待产品定，非阻塞）超管建组织时**预置首位拥有者成员** | 上一轮列的「路线①」。现在**路线②已落地**（见 §0.0 第 1 条），所以这条只是可选增强：预置能让组织一建好就有一个可认领的拥有者，不必先在后台手工建。若要做：组织创建请求体加 `ownerMemberKey`/`ownerRealName`，两版后端 + 契约 + 超管建组织表单同步改 |
 | 3 | App 侧没有组织成员管理界面 | spec §4.3 把成员/部门管理划给 Web 组织管理端，App 只有组织日历（§4.2）。这是设计如此，不是遗漏；如果产品要求「拥有者在手机上也能导成员」，得先改 spec |
 | 4 | **web-admin 组织日历的「撤回 / 删除」按钮口径不对** | 后端已收紧成「只有发起人能改/撤/删」（§4.2.2），但 `GET /org-admin/events` 没告诉页面「我能不能改」，所以非发起人点下去会收到 20003（页面只弹个错）。修法：给该接口的条目加 `canEdit`（服务端按 `isInitiator` 判定），页面据此隐藏按钮——App 侧已经就是这么做的，管理端照抄即可 |

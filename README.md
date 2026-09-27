@@ -24,14 +24,15 @@ xa-todo/
 | 部分 | 状态 |
 | --- | --- |
 | 需求与规格（spec.md） | 完成 |
-| 数据库结构（V1–V15 迁移，由 Flyway 独占管理） | 完成 |
-| 后端 Java（common / auth / personal / org / admin / support） | 完成（89 项集成测试 + 契约门禁） |
-| 设计令牌 packages/design-tokens | 完成（7 项测试） |
+| 数据库结构（V1–V16 迁移，由 Flyway 独占管理） | 完成 |
+| 后端 Java（common / auth / personal / org / admin / support） | 完成（**96 项**集成测试 + 契约门禁） |
+| 设计令牌 packages/design-tokens | 完成（1 个测试文件，覆盖 35 个 CSS 变量） |
 | Web 后台 web-admin | 完成：超管端 + 组织管理端 + 意见反馈（18 项测试） |
-| App 端 app | 核心流程可用（98 项纯逻辑层测试，组件无渲染测试） |
-| 阶段二 backend-python | 完成（契约覆盖率 100%，50 项测试） |
+| App 端 app | 核心流程可用（**109 项**纯逻辑层测试，组件无渲染测试） |
+| 阶段二 backend-python | 完成（契约覆盖率 100%，**54 项**测试） |
 | CI 与 API 契约测试 | 完成（GitHub Actions） |
-| 生产部署编排（Dockerfile / Nginx） | 未开始 |
+| 上架合规（隐私政策 / 注销 / 权限告知） | 完成（spec §12，`scripts/check_compliance.py` 19 项门禁已进 CI） |
+| 生产部署编排（Dockerfile / docker-compose / Nginx） | 完成，已部署到 `http://8.136.20.182:8088` |
 
 ## API 契约
 

@@ -414,15 +414,15 @@ def check_permission_rationale() -> None:
     helper = APP_SRC / "domain" / "permissions.ts"
     require(
         helper.exists(),
-        "App 缺少 domain/permissions.ts：申请相机 / 相册 / 定位前必须说明用途（规范 §四「未及时明确告知用户"
+        "App 缺少 domain/permissions.ts：申请相册 / 定位前必须说明用途（规范 §四「未及时明确告知用户"
         "索取权限的目的和用途」）",
     )
     text = read(helper)
     require_contains(
         text,
-        ["camera", "photo", "location"],
+        ["photo", "location"],
         "domain/permissions.ts",
-        "相机 / 相册 / 定位三类权限都要有用途说明文案",
+        "相册 / 定位两类权限都要有用途说明文案（第一版不做拍照识别，因此不申请相机权限）",
     )
     for screen in [
         "AgendaScreen.tsx",

@@ -3,15 +3,18 @@
     "name": "XaTodo",
     "slug": "xa-todo",
     "version": "0.1.0",
+    "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
+      "image": "./assets/splash.png",
       "backgroundColor": "#FFFFFF",
       "resizeMode": "contain"
     },
     "ios": {
       "bundleIdentifier": "com.xatodo.app",
+      "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "用于在地图选点中定位到你的当前位置"
@@ -19,14 +22,27 @@
     },
     "android": {
       "package": "com.xatodo.app",
+      "versionCode": 1,
       "edgeToEdgeEnabled": true,
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0A0A"
+      }
     },
     "plugins": [
       [
         "expo-location",
         {
           "locationWhenInUsePermission": "用于在地图选点中定位到你的当前位置"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "用于选择头像、为待办或意见反馈添加图片",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ]
     ],

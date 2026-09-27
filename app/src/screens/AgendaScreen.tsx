@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as ImagePicker from 'expo-image-picker';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -18,7 +16,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiError } from '../api/client';
 import type { EventOccurrence, HolidayResponse, SearchResultItem } from '../api/types';
 import { MonthCalendar } from '../components/MonthCalendar';
-import { askPermission } from '../components/permission';
 import { WheelDatePicker } from '../components/WheelDatePicker';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
 import { Card, EmptyState, Pill, Screen } from '../components/ui';
@@ -27,8 +24,6 @@ import { dayHeading, formatTimeRange, localDateKey, locationLabel } from '../dom
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 import { holidayName, toHolidayMarks, yearsSpanned } from '../domain/holiday';
 import { resultBadges, resultDateKey, resultSubtitle, resultTypeLabel } from '../domain/search';
-import type { RecognizedEventDraft } from '../domain/vision';
-import { recognizePhoto, resolveDraftPlaces } from '../vision/recognizer';
 
 /** 检索防抖：每敲一个字就发一次请求既费流量，也会让结果闪。 */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -54,20 +49,12 @@ export function AgendaScreen({
   onOpenEvent,
   onOpenTask,
   onOpenOrgEvent,
-  onOpenRecognized,
 }: {
   onCreateEvent: (dateKey: string) => void;
   onOpenEvent: (eventId: number, dateKey: string, occurrenceDate: string | null) => void;
   onOpenTask: (taskId: number) => void;
   /** 组织日程结果：切到那个组织的视图并选中那天（只读，进不了个人编辑页） */
   onOpenOrgEvent: (identityId: number, dateKey: string) => void;
-  /** 拍照/相册识别完的结果确认页（spec §4.1.9） */
-  onOpenRecognized: (payload: {
-    drafts: RecognizedEventDraft[];
-    photoUri: string;
-    sourceLabel: string;
-    deviceFallbackReason: string | null;
-  }) => void;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -91,7 +78,6 @@ export function AgendaScreen({
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [jumpOpen, setJumpOpen] = useState(false);
-  const [photoBusy, setPhotoBusy] = useState(false);
   /** 滚轮里的草稿日期：滚动过程不立刻跳，点「确定」才落到日历上 */
   const [jumpDraft, setJumpDraft] = useState(selectedDateKey);
 
@@ -210,56 +196,6 @@ export function AgendaScreen({
     }
     const dateKey = resultDateKey(item) ?? selectedDateKey;
     onOpenEvent(item.id, dateKey, item.occurrenceDate ?? null);
-  };
-
-  /**
-   * 拍照 → 上传 → 交给小安（spec §11 阶段三）。
-   *
-   * <p>照片先走已经建好的上传通道存下来；识别等模型接入。
-   * 所以这里的失败提示只可能是「相机权限 / 上传失败」，不会假装识别成功。
-   */
-  const shootPhoto = async () => {
-    setError(null);
-    // 先让用户选来源：拍照还是相册（spec §4.1.9）
-    Alert.alert('识别日程', '选择图片来源', [
-      { text: '拍照', onPress: () => void pickPhoto('camera') },
-      { text: '从相册选择', onPress: () => void pickPhoto('library') },
-      { text: '取消', style: 'cancel' },
-    ]);
-  };
-
-  const pickPhoto = async (from: 'camera' | 'library') => {
-    // 相机/相册都先说明用途再申请系统权限；拒绝只是不拍照，页面照常可用
-    if (!(await askPermission(from === 'camera' ? 'camera' : 'photo'))) {
-      return;
-    }
-    const picked = from === 'camera'
-      ? await ImagePicker.launchCameraAsync({ quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
-    if (picked.canceled || picked.assets.length === 0) {
-      return;
-    }
-    setPhotoBusy(true);
-    try {
-      const result = await recognizePhoto({ uri: picked.assets[0].uri, api });
-      // 地点必须能被高德定位：匹配不到就留空，由用户在结果页手动选或不要地点
-      const drafts = await resolveDraftPlaces(result.items, api);
-      onOpenRecognized({
-        drafts,
-        photoUri: result.imageUrl ?? picked.assets[0].uri,
-        sourceLabel:
-          result.source === 'device'
-            ? `本机识别（${result.provider}）`
-            : `服务器识别（${result.provider}）`,
-        deviceFallbackReason: result.deviceFallbackReason,
-      });
-    } catch (cause) {
-      // 识别没接入时如实说明，并给「手动新建」的兜底，而不是让用户反复重拍
-      const message = cause instanceof ApiError ? cause.message : '识别失败';
-      Alert.alert('识别不可用', `${message}\n\n可以先用「＋」手动新建日程。`);
-    } finally {
-      setPhotoBusy(false);
-    }
   };
 
   const selectedHoliday = holidayName(holidays, selectedDateKey);
@@ -480,27 +416,6 @@ export function AgendaScreen({
 
       {!searchActive ? (
         <>
-          {/* 拍照：交给小安识别（模型未接入，照片先存下来） */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="拍照"
-            onPress={() => void shootPhoto()}
-            style={({ pressed }) => [
-              styles.cameraFab,
-              {
-                backgroundColor: theme.color.surfaceRaised,
-                borderColor: theme.color.border,
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            {photoBusy ? (
-              <ActivityIndicator color={theme.color.textPrimary} />
-            ) : (
-              <Ionicons name="camera-outline" size={24} color={theme.color.textPrimary} />
-            )}
-          </Pressable>
-
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="跳到指定日期"
@@ -595,18 +510,6 @@ const styles = StyleSheet.create({
     // 位于新建按钮上方，留出 12px 间隔
     bottom: 24 + 56 + 12,
     // 与新建按钮同尺寸：两个悬浮按钮一大一小会显得是没对齐的失误
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cameraFab: {
-    position: 'absolute',
-    right: 20,
-    // 再往上排一个：与「跳到指定日期」同样间隔 12px
-    bottom: 24 + (56 + 12) * 2,
     width: 56,
     height: 56,
     borderRadius: 28,

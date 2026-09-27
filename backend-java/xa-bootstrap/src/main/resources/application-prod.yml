@@ -1,0 +1,19 @@
+# 生产 profile。
+#
+# 为什么必须显式激活（`SPRING_PROFILES_ACTIVE=prod`）：
+# `application.yml` 里写了 `spring.profiles.default: dev`，而 dev profile 会
+#   ① 打开 `xatodo.auth.expose-sms-code`，② 把 `com.xatodo` 的日志级别调到 DEBUG。
+# 后者会让 MyBatis 把**每条 SQL 的参数**打进日志——手机号、日程标题、反馈正文全在里面。
+# 生产环境一旦漏设 profile，就会安静地跑成「日志含用户数据」，这是审计里很典型的一条。
+# 所以 compose 里把默认值钉成 prod，本地开发才需要手动选 dev。
+
+logging:
+  level:
+    root: INFO
+    # 关掉 MyBatis 的参数日志：那是用户数据
+    com.xatodo: INFO
+
+xatodo:
+  auth:
+    # 生产必须为 false（application.yml 的默认值也是 false，这里再钉一次防误配）
+    expose-sms-code: false

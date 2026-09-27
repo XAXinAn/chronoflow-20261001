@@ -61,13 +61,10 @@ function gatewayFor(
       reject,
     };
   }
-  const read = async () =>
-    kind === 'camera'
-      ? (await ImagePicker.getCameraPermissionsAsync()).granted
-      : (await ImagePicker.getMediaLibraryPermissionsAsync()).granted;
-  const request = async () =>
-    kind === 'camera'
-      ? (await ImagePicker.requestCameraPermissionsAsync()).granted
-      : (await ImagePicker.requestMediaLibraryPermissionsAsync()).granted;
-  return { current: read, request, explain, reject };
+  return {
+    current: async () => (await ImagePicker.getMediaLibraryPermissionsAsync()).granted,
+    request: async () => (await ImagePicker.requestMediaLibraryPermissionsAsync()).granted,
+    explain,
+    reject,
+  };
 }

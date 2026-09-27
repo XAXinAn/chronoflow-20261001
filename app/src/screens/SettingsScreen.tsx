@@ -261,12 +261,16 @@ export function SettingsScreen({
             title="运营主体"
             subtitle={OPERATOR_NAME}
           />
-          <ListSeparator inset={52} />
-          <ListRow
-            leading={<RowIcon name="link-outline" />}
-            title="接口地址"
-            subtitle={baseUrl}
-          />
+          {/*
+            接口地址只在开发构建里显示：正式包给用户看一个 IP:端口没有意义，
+            而且把后端地址摆在设置页里等于给攻击者省一步侦察。
+          */}
+          {__DEV__ ? (
+            <>
+              <ListSeparator inset={52} />
+              <ListRow leading={<RowIcon name="link-outline" />} title="接口地址" subtitle={baseUrl} />
+            </>
+          ) : null}
           <ListSeparator inset={52} />
           <ListRow leading={<RowIcon name="information-circle-outline" />} title="版本" subtitle={APP_VERSION} />
         </ListGroup>

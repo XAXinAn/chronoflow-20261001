@@ -49,6 +49,10 @@ services:
       redis:
         condition: service_healthy
     environment:
+      # 必须显式选 prod：application.yml 的默认 profile 是 dev，而 dev 会打开
+      # SMS 回显与 DEBUG 日志（MyBatis 会把 SQL 参数——手机号/日程标题——打进日志）。
+      # prod profile 下还有一道启动自检：JWT_SECRET / 超管密码仍是默认值就直接不启动。
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/xatodo
       SPRING_DATASOURCE_USERNAME: xatodo
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}

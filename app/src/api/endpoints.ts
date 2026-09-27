@@ -16,7 +16,6 @@ import type {
   OrgDispatchRequest,
   OrgEvent,
   OrgMemberItem,
-  RecognizeResponse,
   SearchResultItem,
   SmsLoginResponse,
   Task,
@@ -222,17 +221,6 @@ export function createEndpoints(client: ApiClient) {
     unlinkOrgAccount: (identityId: number) => client.del<void>(`/api/v1/org-accounts/${identityId}`),
 
     // ------------------------------------------------------------- 拍照识别
-    /**
-     * 图片 → 日程草稿（spec §4.1.9）。一张图可能返回多条，也可能一条都没有。
-     *
-     * <p>模型未配置/不可用时后端返回 90002，这里会原样抛出，由调用方如实提示。
-     */
-    recognizeEvents: (uri: string) => {
-      const form = new FormData();
-      form.append('file', new File(uri) as unknown as Blob);
-      return client.upload<RecognizeResponse>('/api/v1/ai/events/recognize', form);
-    },
-
     // --------------------------------------------------------------- 组织
     orgCurrent: () => client.get<OrgCurrent>('/api/v1/org/current'),
     /** 组织部门树（成员可见）；管理端页面对它按可管理范围过滤。 */

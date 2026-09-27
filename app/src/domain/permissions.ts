@@ -11,7 +11,13 @@
  * 纯逻辑放这里（可单测），真正弹 Alert 的适配层在 components/permission.ts。
  */
 
-export type PermissionKind = 'camera' | 'photo' | 'location';
+/**
+ * 第一版只用得到这两种权限。
+ *
+ * 「拍照识别日程」暂缓上线，因此 App **不申请相机权限**——不申请就不该在隐私政策里声明，
+ * 清单与实现必须一致（这正是上架检测会核对的东西）。
+ */
+export type PermissionKind = 'photo' | 'location';
 
 export interface PermissionRationale {
   /** 说明弹窗标题 */
@@ -23,13 +29,6 @@ export interface PermissionRationale {
 }
 
 export const PERMISSION_RATIONALE: Record<PermissionKind, PermissionRationale> = {
-  camera: {
-    title: '需要使用相机',
-    message:
-      '用于「拍照识别日程」与拍摄头像。照片只用于识别与展示，不会发送给任何第三方云端模型。\n\n'
-      + '您也可以选择「不允许」，之后仍可从相册选图或手工输入日程。',
-    deniedHint: '未获得相机权限，您可以改为从相册选择或直接手工新建日程，其他功能不受影响。',
-  },
   photo: {
     title: '需要访问相册',
     message:

@@ -31,9 +31,7 @@ import { TasksScreen } from './screens/TasksScreen';
 import { localDateKey } from './domain/agenda';
 import { APP_TIMEZONE } from './domain/calendar';
 import type { LegalDoc } from './domain/legal';
-import type { RecognizedEventDraft } from './domain/vision';
 import type { OrgEvent } from './api/types';
-import { RecognizedEventsScreen } from './screens/RecognizedEventsScreen';
 
 type AuthStackParamList = {
   Login: undefined;
@@ -94,23 +92,9 @@ type MainTabsProps = {
   onOpenOrgAccounts: () => void;
   /** 组织管理员在手机上新建并下发组织日程（spec §4.2.2） */
   onCreateOrgEvent: (dateKey: string) => void;
-  /** 组织页拍照识别出的草稿：确认页里选下发对象后批量下发 */
-  onOpenOrgRecognized: (payload: {
-    drafts: RecognizedEventDraft[];
-    photoUri: string;
-    sourceLabel: string;
-    deviceFallbackReason: string | null;
-    origin: 'ORG';
-  }) => void;
   /** 编辑自己下发的组织日程（spec §4.2.2：只有发起人能改） */
   onEditOrgEvent: (event: OrgEvent) => void;
   onOpenOrgEvent: (identityId: number, dateKey: string) => void;
-  onOpenRecognized: (payload: {
-    drafts: RecognizedEventDraft[];
-    photoUri: string;
-    sourceLabel: string;
-    deviceFallbackReason: string | null;
-  }) => void;
   onOpenFeedback: () => void;
   /** 打开合规文本（隐私政策 / 用户协议 / 儿童声明 / 双清单） */
   onOpenLegal: (doc: LegalDoc) => void;
@@ -125,10 +109,8 @@ function MainTabs({
   onOpenTask,
   onOpenOrgAccounts,
   onCreateOrgEvent,
-  onOpenOrgRecognized,
   onEditOrgEvent,
   onOpenOrgEvent,
-  onOpenRecognized,
   onOpenFeedback,
   onOpenLegal,
   onOpenDeletion,
@@ -160,7 +142,6 @@ function MainTabs({
             // 日历页的检索会跨到待办，所以这里也要能直接打开待办编辑页（spec §4.1.7）
             onOpenTask={onOpenTask}
             onOpenOrgEvent={onOpenOrgEvent}
-            onOpenRecognized={onOpenRecognized}
           />
         )}
       </Tabs.Screen>
@@ -176,7 +157,6 @@ function MainTabs({
           <OrgTabScreen
             onOpenAccounts={onOpenOrgAccounts}
             onCreateOrgEvent={onCreateOrgEvent}
-            onOpenRecognized={onOpenOrgRecognized}
             onEditOrgEvent={onEditOrgEvent}
           />
         )}
@@ -210,14 +190,6 @@ type AppStackParamList = {
   OrgAccounts: undefined;
   Legal: { doc: LegalDoc };
   AccountDeletion: undefined;
-  RecognizedEvents: {
-    drafts: RecognizedEventDraft[];
-    photoUri: string;
-    sourceLabel: string;
-    deviceFallbackReason: string | null;
-    /** 从组织页拍照识别过来的：确认页要选下发对象，并下发成组织日程（spec §4.1.9） */
-    origin?: 'PERSONAL' | 'ORG';
-  };
 };
 
 const AppStack = createNativeStackNavigator<AppStackParamList>();
@@ -233,14 +205,6 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
  */
 function MainStack() {
   const [placeSelection, setPlaceSelection] = useState<PlaceSelection>({ version: 0, place: null });
-  /** 识别结果页选地点的回传：带 index，指明是改哪一条 */
-  const [recognizedPlace, setRecognizedPlace] = useState<{
-    version: number;
-    index: number;
-    place: PlaceSelection['place'];
-  }>({ version: 0, index: -1, place: null });
-  /** 选点页是从编辑页来的还是从识别结果页来的：两者回传目标不同 */
-  const [pickerFor, setPickerFor] = useState<'editor' | 'recognized'>('editor');
   // 待办关联日程的回传，和地点一样用 version 表达「又选了一次」
   const [eventSelection, setEventSelection] = useState<{ version: number; event: PickedEvent | null }>({
     version: 0,
@@ -257,8 +221,7 @@ function MainStack() {
     memberIds: [],
   });
   const today = useMemo(() => localDateKey(new Date().toISOString(), APP_TIMEZONE), []);
-  const { setActiveOrgIdentityId, setOrgFocusDateKey, activeOrgIdentityId, orgApi } =
-    useAppSessionState();
+  const { setActiveOrgIdentityId, setOrgFocusDateKey } = useAppSessionState();
 
   return (
     <AppStack.Navigator screenOptions={{ headerShown: false }}>
@@ -291,7 +254,6 @@ function MainStack() {
                 event,
               })
             }
-            onOpenOrgRecognized={(payload) => navigation.navigate('RecognizedEvents', payload)}
             // 检索命中的组织日程：切到那个组织、定位到那天、跳到组织 tab
             onOpenOrgEvent={(identityId, dateKey) => {
               setActiveOrgIdentityId(identityId);
@@ -301,7 +263,6 @@ function MainStack() {
             onOpenFeedback={() => navigation.navigate('Feedback')}
             onOpenLegal={(doc) => navigation.navigate('Legal', { doc })}
             onOpenDeletion={() => navigation.navigate('AccountDeletion')}
-            onOpenRecognized={(payload) => navigation.navigate('RecognizedEvents', payload)}
           />
         )}
       </AppStack.Screen>
@@ -330,7 +291,6 @@ function MainStack() {
             occurrenceDate={route.params.occurrenceDate ?? null}
             placeSelection={placeSelection}
             onPickLocation={() => {
-              setPickerFor('editor');
               navigation.navigate('LocationPicker');
             }}
             onCancel={() => navigation.goBack()}
@@ -401,15 +361,7 @@ function MainStack() {
             initialLongitude={placeSelection.place?.longitude ?? null}
             onCancel={() => navigation.goBack()}
             onPick={(place) => {
-              if (pickerFor === 'recognized') {
-                setRecognizedPlace((current) => ({
-                  version: current.version + 1,
-                  index: current.index,
-                  place,
-                }));
-              } else {
-                setPlaceSelection((current) => ({ version: current.version + 1, place }));
-              }
+              setPlaceSelection((current) => ({ version: current.version + 1, place }));
               navigation.goBack();
             }}
           />
@@ -424,33 +376,6 @@ function MainStack() {
         {({ navigation }) => <OrgAccountsScreen onBack={() => navigation.goBack()} />}
       </AppStack.Screen>
 
-      <AppStack.Screen name="RecognizedEvents">
-        {({ navigation, route }) => (
-          <RecognizedEventsScreen
-            drafts={route.params.drafts}
-            photoUri={route.params.photoUri}
-            sourceLabel={route.params.sourceLabel}
-            deviceFallbackReason={route.params.deviceFallbackReason}
-            orgApi={
-              route.params.origin === 'ORG' && activeOrgIdentityId != null
-                ? orgApi(activeOrgIdentityId)
-                : null
-            }
-            selectedMemberIds={recipients.memberIds}
-            onPickRecipients={() => navigation.navigate('OrgRecipientPicker')}
-            pickedPlace={recognizedPlace}
-            onPickPlace={(index) => {
-              setPickerFor('recognized');
-              setRecognizedPlace((current) => ({ ...current, index }));
-              navigation.navigate('LocationPicker');
-            }}
-            onBack={() => navigation.goBack()}
-            onCreated={(summary) =>
-              Alert.alert('已完成', summary, [{ text: '好', onPress: () => navigation.goBack() }])
-            }
-          />
-        )}
-      </AppStack.Screen>
     </AppStack.Navigator>
   );
 }

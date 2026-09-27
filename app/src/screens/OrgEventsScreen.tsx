@@ -1,10 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
-import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -18,15 +15,12 @@ import type { OrgCurrent, OrgEvent } from '../api/types';
 import type { Endpoints } from '../api/endpoints';
 import { ApiError } from '../api/client';
 import { MonthCalendar } from '../components/MonthCalendar';
-import { askPermission } from '../components/permission';
 import { Card, EmptyState, Screen } from '../components/ui';
 import { WheelDatePicker } from '../components/WheelDatePicker';
 import { useAppTheme } from '../context/AppContext';
 import { dayHeading, formatTimeRange, localDateKey, locationLabel } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 import { canDispatch } from '../domain/orgDispatch';
-import type { RecognizedEventDraft } from '../domain/vision';
-import { recognizePhoto, resolveDraftPlaces } from '../vision/recognizer';
 
 function todayKey(): string {
   return localDateKey(new Date().toISOString(), APP_TIMEZONE);
@@ -48,7 +42,6 @@ export function OrgEventsScreen({
   orgName,
   onOpenAccounts,
   onCreateOrgEvent,
-  onOpenRecognized,
   onEditOrgEvent,
   focusDateKey,
   onFocusApplied,
@@ -59,14 +52,6 @@ export function OrgEventsScreen({
   onOpenAccounts: () => void;
   /** 新建并下发组织日程（spec §4.2.2）：整页表单里选下发对象 */
   onCreateOrgEvent: (dateKey: string) => void;
-  /** 拍照识别出的草稿：进识别确认页，在那里选下发对象后批量下发（spec §4.1.9） */
-  onOpenRecognized: (payload: {
-    drafts: RecognizedEventDraft[];
-    photoUri: string;
-    sourceLabel: string;
-    deviceFallbackReason: string | null;
-    origin: 'ORG';
-  }) => void;
   /** 发起人编辑自己下发的日程（`canEdit` 由服务端判定，spec §4.2.2） */
   onEditOrgEvent: (event: OrgEvent) => void;
   /** 从检索结果跳进来时要定位的日期（消费一次后由上层清空） */
@@ -90,7 +75,6 @@ export function OrgEventsScreen({
   const [org, setOrg] = useState<OrgCurrent | null>(null);
   const [jumpOpen, setJumpOpen] = useState(false);
   const [jumpDraft, setJumpDraft] = useState(selectedDateKey);
-  const [photoBusy, setPhotoBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -168,58 +152,6 @@ export function OrgEventsScreen({
   };
 
   const dispatcher = org ? canDispatch(org) : false;
-
-  /**
-   * 拍照 → 上传 → 识别（spec §4.1.9）。
-   *
-   * 组织日程没有图片附件字段，照片只用于识别；识别出来的条目在确认页里选好
-   * **下发对象**再批量下发。识别不可用时如实说明，并给「手动新建组织日程」的兜底——
-   * 与日历页同一条链路、同一种诚实（模型未接入时后端返回 90002）。
-   */
-  const shootPhoto = () => {
-    setError(null);
-    Alert.alert('识别日程', '选择图片来源', [
-      { text: '拍照', onPress: () => void pickPhoto('camera') },
-      { text: '从相册选择', onPress: () => void pickPhoto('library') },
-      { text: '取消', style: 'cancel' },
-    ]);
-  };
-
-  const pickPhoto = async (from: 'camera' | 'library') => {
-    // 相机/相册都先说明用途再申请系统权限；拒绝只是不拍照，页面照常可用
-    if (!(await askPermission(from === 'camera' ? 'camera' : 'photo'))) {
-      return;
-    }
-    const picked = from === 'camera'
-      ? await ImagePicker.launchCameraAsync({ quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
-    if (picked.canceled || picked.assets.length === 0) {
-      return;
-    }
-    setPhotoBusy(true);
-    try {
-      const result = await recognizePhoto({ uri: picked.assets[0].uri, api });
-      const drafts = await resolveDraftPlaces(result.items, api);
-      onOpenRecognized({
-        drafts,
-        photoUri: result.imageUrl ?? picked.assets[0].uri,
-        sourceLabel:
-          result.source === 'device'
-            ? `本机识别（${result.provider}）`
-            : `服务器识别（${result.provider}）`,
-        deviceFallbackReason: result.deviceFallbackReason,
-        origin: 'ORG',
-      });
-    } catch (cause) {
-      const message = cause instanceof ApiError ? cause.message : '识别失败';
-      Alert.alert('识别不可用', `${message}\n\n可以先用「＋」手动新建组织日程。`, [
-        { text: '手动新建', onPress: () => onCreateOrgEvent(selectedDateKey) },
-        { text: '知道了', style: 'cancel' },
-      ]);
-    } finally {
-      setPhotoBusy(false);
-    }
-  };
 
   return (
     <Screen>
@@ -347,26 +279,6 @@ export function OrgEventsScreen({
         <>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="拍照"
-            onPress={() => shootPhoto()}
-            style={({ pressed }) => [
-              styles.cameraFab,
-              {
-                backgroundColor: theme.color.surfaceRaised,
-                borderColor: theme.color.border,
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            {photoBusy ? (
-              <ActivityIndicator color={theme.color.textPrimary} />
-            ) : (
-              <Ionicons name="camera-outline" size={24} color={theme.color.textPrimary} />
-            )}
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
             accessibilityLabel="跳到指定日期"
             onPress={() =>
               setJumpOpen((current) => {
@@ -440,18 +352,6 @@ const styles = StyleSheet.create({
     right: 20,
     // 位于新建按钮上方，留出 12px 间隔
     bottom: 24 + 56 + 12,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cameraFab: {
-    position: 'absolute',
-    right: 20,
-    // 再往上排一个：与「跳到指定日期」同样间隔 12px（与日历页逐字一致）
-    bottom: 24 + (56 + 12) * 2,
     width: 56,
     height: 56,
     borderRadius: 28,
