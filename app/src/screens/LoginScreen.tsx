@@ -1,10 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '../api/client';
 import type { TokenResponse } from '../api/types';
 import { Card, PrimaryButton, Screen } from '../components/ui';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
+import {
+  SMS_COOLDOWN_SECONDS,
+  nextCooldown,
+  sendCodeLabel,
+} from '../domain/smsCooldown';
 
 /**
  * 登录页：**只登录个人账号**（spec §3.2）。
@@ -21,7 +26,18 @@ export function LoginScreen() {
   const [code, setCode] = useState('');
   const [debugCode, setDebugCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 发码后的倒计时秒数（spec §3.6：同手机号 60 秒 1 条） */
+  const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // 每秒递减；到 0 自动结束（依赖 cooldown 本身，定时器随状态重建）
+  useEffect(() => {
+    if (cooldown <= 0) {
+      return;
+    }
+    const timer = setTimeout(() => setCooldown((current) => nextCooldown(current)), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
 
   const applyToken = async (token: TokenResponse) => {
     await applyTokenResponse(token);
@@ -34,8 +50,13 @@ export function LoginScreen() {
       const result = await api.sendSmsCode(phone.trim());
       // 开发环境后端会回显验证码；生产环境该字段不存在
       setDebugCode(result.debugCode ?? null);
+      setCooldown(SMS_COOLDOWN_SECONDS);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : '验证码发送失败');
+      // 后端说「发送过于频繁」时也进入倒计时：否则用户会一直点、一直失败
+      if (cause instanceof ApiError && cause.code === 20005) {
+        setCooldown(SMS_COOLDOWN_SECONDS);
+      }
     } finally {
       setBusy(false);
     }
@@ -115,10 +136,11 @@ export function LoginScreen() {
           />
           <View style={styles.codeButton}>
             <PrimaryButton
-              title="获取验证码"
+              title={sendCodeLabel(cooldown, busy)}
               onPress={() => void sendCode()}
-              loading={busy}
-              disabled={!phoneReady}
+              loading={busy && cooldown === 0}
+              // 冷却中也禁用：点不动比点了报错更省事
+              disabled={!phoneReady || cooldown > 0}
             />
           </View>
         </View>
