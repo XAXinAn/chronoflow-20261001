@@ -8,10 +8,21 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError, ErrorCode
+from .push import TYPE_ORG_EVENT, notify_identities
 from ..security import AdminPrincipal
 from . import recurrence
 
 MAX_DEPARTMENT_LEVEL = 5
+
+
+def _push_body(event: dict) -> str:
+    """通知正文：把时间写进去，用户不解锁就能判断要不要马上看。"""
+    start = event["start_at"]
+    try:
+        local = start.astimezone(ZoneInfo(event.get("timezone") or "Asia/Shanghai"))
+        return "组织日程 · " + local.strftime("%m月%d日 %H:%M").replace(" 0", " ")
+    except Exception:  # noqa: BLE001 —— 时间格式化失败不该让通知发不出去
+        return "组织日程"
 
 
 class OrgService:
@@ -513,6 +524,18 @@ class OrgService:
                 },
             )
         self._session.commit()
+
+        # 提交之后再推（spec §4.5）：用户没打开 App 也要能知道「有人给我发了日程」。
+        # 只有已认领（有身份）的成员能收到——没认领的成员记录压根没有设备可推。
+        # notify_identities 内部吞掉所有异常：推送失败绝不能影响下发本身。
+        notify_identities(
+            self._session,
+            [recipient.get("identity_id") for recipient in recipients],
+            TYPE_ORG_EVENT,
+            event["title"],
+            _push_body(event),
+            {"type": "ORG_EVENT", "eventId": str(event["id"]), "orgId": str(member["org_id"])},
+        )
         return _org_event_view(event, dispatch, None)
 
     def _resolve_recipients(self, member: dict, payload: dict) -> list[dict]:

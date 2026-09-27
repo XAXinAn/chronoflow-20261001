@@ -43,6 +43,11 @@ class Settings:
     amap_base_url: str
     amap_timeout: float
     holiday_cache_ttl: int
+    # 推送（spec §4.5）：app_key 公开、master_secret 仅服务端；为空时降级为「未配置」
+    jpush_app_key: str
+    jpush_master_secret: str
+    jpush_base_url: str
+    jpush_apns_production: bool
     holiday_sync_enabled: bool
     holiday_sync_base_url: str
     holiday_sync_hour: int
@@ -92,6 +97,10 @@ def load_settings() -> Settings:
         amap_timeout=float(os.getenv("GEO_AMAP_TIMEOUT_SECONDS", "5")),
         # 节假日（spec §5.11）。环境变量名与 Java 版保持一致，两版可共用同一份配置。
         holiday_cache_ttl=_int("HOLIDAY_CACHE_TTL_SECONDS", 300),
+        jpush_app_key=os.getenv("JPUSH_APPKEY", ""),
+        jpush_master_secret=os.getenv("JPUSH_MASTER_SECRET", ""),
+        jpush_base_url=os.getenv("JPUSH_BASE_URL", "https://api.jpush.cn"),
+        jpush_apns_production=_bool("JPUSH_APNS_PRODUCTION", True),
         holiday_sync_enabled=_bool("HOLIDAY_SYNC_ENABLED", True),
         holiday_sync_base_url=os.getenv(
             "HOLIDAY_SYNC_BASE_URL",

@@ -33,6 +33,9 @@
     { "method": "DELETE", "path": "/api/v1/me/devices/{deviceId}", "auth": "access" },
     { "method": "PUT", "path": "/api/v1/me/notifications", "auth": "access" },
     { "method": "POST", "path": "/api/v1/me/deletion", "auth": "access" },
+    { "method": "POST", "path": "/api/v1/me/push-devices", "auth": "access" },
+    { "method": "GET", "path": "/api/v1/me/push-devices", "auth": "access" },
+    { "method": "DELETE", "path": "/api/v1/me/push-devices/{registrationId}", "auth": "access" },
 
     { "method": "GET", "path": "/api/v1/calendars", "auth": "access" },
     { "method": "POST", "path": "/api/v1/calendars", "auth": "access" },

@@ -604,6 +604,31 @@
 - 用户在「设置 - 通知」中可按类型开关；组织强制提醒不可关闭。
 - 离线兜底：App 启动时拉取未读通知。
 
+**分工（2026-09-27 定稿，别再混）**：
+
+- **日程 / 待办的到点提醒走 App 本地通知**（`expo-notifications` 在设备上排期）：不依赖网络、
+  不把设备标识交给第三方；代价是「别人发来的东西」本机不知道 —— 因此不含「组织日程下发」。
+- **服务端触发的事件走远程推送**（极光）：组织日程**下发、内容变更、撤回**由服务端发起，
+  用户没打开 App 也必须收到。
+
+**设备注册表**：远程推送要用 `registrationId`，而它只有 App 在本机初始化 SDK 之后才有，
+因此 App 上报到 `push_device`（§5.12）。查找设备时按**账号**而不是按身份 ——
+设备是「这台手机」的属性，用户可能在个人身份下上报，而组织日程要推给同一个人的组织身份。
+
+**实现约束（三条硬规则）**：
+
+1. **推送失败绝不抛出**：发不出去是常态（没装 App、被系统杀、没配通道），
+   绝不能让「下发组织日程」这种业务操作跟着失败；
+2. 尊重 `identity.notification_prefs` 里的类型开关；解析失败一律当作开启
+   （推送比静默丢消息更容易被发现和纠正）；
+3. 通道回执说某标识失效就**停用**它，否则每次推送都会重复失败。
+
+另外推送在**事务提交之后**才发：极光是外部 HTTP 调用，放事务里既占着数据库连接，
+又会出现「事务回滚了但通知已经发出去」的幻影通知。
+
+**上线节奏**：第一版只走极光自有通道；厂商通道（华为/荣耀/小米/OPPO/vivo）需要到各厂商
+开发者后台按**包名 + 签名指纹**建应用，且多数要求应用已上架/已提交审核 —— 因此排到上架之后补。
+
 ---
 
 ## 5. 数据模型
@@ -762,6 +787,12 @@ erDiagram
 | --- | --- | --- |
 | `feedback` | `id`、`account_id`、`identity_id`、`category`、`content`、`images`(jsonb)、`status`、`created_at`、`handled_at`、`handled_by_admin_id` | `content` 必填；`category` ∈ `BUG`/`SUGGESTION`/`OTHER`；`status` ∈ `OPEN`/`HANDLED`；`images` 存上传后的相对 URL 数组；`handled_by_admin_id` 记录是谁处理的（只追加，不覆盖历史） |
 
+### 5.12 推送设备（push）
+
+| 表 | 关键字段 | 约束 / 说明 |
+| --- | --- | --- |
+| `push_device` | `id`、`account_id`、`identity_id`、`provider`、`registration_id`、`platform`、`app_version`、`created_at`、`updated_at`、`disabled_at` | 一行 = 某账号在某台设备上的推送标识；唯一索引 `(provider, registration_id)`：**一个标识只属于一个账号**，换账号登录时改绑而不是新增（共用会让推送发给上一个用户，那是数据泄露）；`disabled_at` 由用户注销或通道回执置位，不再对它推送；`provider` 首版只有 `jpush` |
+
 > 反馈记 `identity_id`：用户可能是从组织身份提交的，后台需要知道是哪条身份说的，而不是只记到账号。
 
 ---
@@ -865,6 +896,9 @@ erDiagram
 | DELETE | `/me/bind/{channel}` | 解绑（需验证其它方式） |
 | PUT | `/me/notifications` | 通知偏好 |
 | GET | `/me/devices` | 活跃设备列表，可踢出 |
+| POST | `/me/push-devices` | **上报推送设备**（spec §4.5）：入参 `registrationId`（极光 SDK 给的设备标识）、可选 `platform`（`android`/`ios`）、可选 `appVersion`。按 `registrationId` 幂等：同一标识换账号登录时**改绑**，不新增行（否则推送会发给上一个用户） |
+| GET | `/me/push-devices` | 我账号名下已注册的推送设备 |
+| DELETE | `/me/push-devices/{registrationId}` | 注销该设备（软删，置 `disabled_at`）；只能注销自己账号名下的 |
 | POST | `/me/deletion` | **自助注销账号**（§12.4）。立即生效：吊销全部令牌（含**已签发未过期**的访问令牌，见 §12.4）、删除个人日历 / 日程 / 待办 / 提醒 / 反馈、匿名化账号（释放手机号）、解除组织绑定；不可恢复 |
 
 **合规文本（公开、免登录）**
