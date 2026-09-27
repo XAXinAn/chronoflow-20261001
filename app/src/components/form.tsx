@@ -153,9 +153,42 @@ export function CheckRow({
         !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.color.border },
       ]}
     >
-      <Text style={{ color: theme.color.textPrimary, fontSize: 15, flex: 1 }}>{label}</Text>
+     <Text style={{ color: theme.color.textPrimary, fontSize: 15, flex: 1 }}>{label}</Text>
       {selected ? <Ionicons name="checkmark" size={18} color={theme.color.accent} /> : null}
     </Pressable>
+  );
+}
+
+/**
+ * 可点行右侧的「当前值 + ›」。
+ *
+ * 地点、重复、提醒、时间这些行长得一模一样，之前每处都手写一遍样式与箭头，
+ * 结果很容易出现「有的行箭头是 ›、有的没箭头、有的颜色不一样」。抽成一个组件。
+ */
+export function FormRowValue({
+  text,
+  placeholder,
+}: {
+  /** 已有值时显示它；为空时显示 placeholder（用更浅的颜色） */
+  text: string | null;
+  placeholder: string;
+}) {
+  const theme = useAppTheme();
+  const filled = Boolean(text);
+  return (
+    <>
+      <Text
+        style={{
+          color: filled ? theme.color.textPrimary : theme.color.textTertiary,
+          fontSize: 15,
+          flex: 1,
+          textAlign: 'right',
+        }}
+      >
+        {filled ? text : placeholder}
+      </Text>
+      <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+    </>
   );
 }
 

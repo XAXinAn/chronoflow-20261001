@@ -3,7 +3,17 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Te
 
 import { ApiError } from '../api/client';
 import { Card, Screen } from '../components/ui';
-import { EditorHeader, FormInput, FormRow, FormRowText, FormTextArea, SegmentedControl } from '../components/form';
+import {
+  EditorHeader,
+  FormInput,
+  FormRow,
+  FormRowValue,
+  FormTextArea,
+  SegmentedControl,
+} from '../components/form';
+import { WheelDatePicker } from '../components/WheelDatePicker';
+import { WheelLayer } from '../components/WheelLayer';
+import { WheelTimePicker } from '../components/WheelTimePicker';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import type { PickedEvent } from './EventPickerScreen';
 import { buildRrule, describeRecurrence, parseRrule, type Recurrence } from '../domain/recurrence';
@@ -61,6 +71,9 @@ export function TaskEditorScreen({
   const [draft, setDraft] = useState<TaskDraft>(() => emptyTaskDraft(todayKey));
   /** 打开编辑页时服务端上的提醒设置（用于「没改过就不多发一次 PUT」） */
   const [initialReminders, setInitialReminders] = useState<number[]>([]);
+  /** 正在用滚轮改哪一栏（null = 没开选择层） */
+  const [wheelField, setWheelField] = useState<'dueDate' | 'dueTime' | null>(null);
+  const [wheelDraft, setWheelDraft] = useState('');
   const [loading, setLoading] = useState(isEdit);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -105,7 +118,24 @@ export function TaskEditorScreen({
     };
   }, [api, isEdit, taskId, todayKey]);
 
-  const patch = (next: Partial<TaskDraft>) => setDraft((current) => ({ ...current, ...next }));
+  /** 改动草稿时顺手清掉上一次的错误提示（否则改对了红字还挂着，像没改对） */
+  const patch = (next: Partial<TaskDraft>) => {
+    setDraft((current) => ({ ...current, ...next }));
+    setError(null);
+  };
+
+  const openWheel = (field: 'dueDate' | 'dueTime') => {
+    setWheelDraft(field === 'dueDate' ? draft.dueDate : draft.dueTime);
+    setWheelField(field);
+  };
+  const confirmWheel = () => {
+    if (wheelField === 'dueDate') {
+      patch({ dueDate: wheelDraft });
+    } else if (wheelField === 'dueTime') {
+      patch({ dueTime: wheelDraft });
+    }
+    setWheelField(null);
+  };
 
   // 从「选择日程」页返回时把结果并进草稿；依赖 version，因为连续两次选「不关联」时值都是 null
   useEffect(() => {
@@ -265,12 +295,9 @@ export function TaskEditorScreen({
 
             {draft.hasDue ? (
               <>
-                <FormRow label="日期">
-                  <FormRowText
-                    value={draft.dueDate}
-                    placeholder="YYYY-MM-DD"
-                    onChangeText={(dueDate) => patch({ dueDate })}
-                  />
+                {/* 日期与时间都走滚轮：手机上手打 YYYY-MM-DD / HH:mm 又慢又容易错（spec §4.1.5） */}
+                <FormRow label="日期" onPress={() => openWheel('dueDate')}>
+                  <FormRowValue text={draft.dueDate} placeholder="选择日期" />
                 </FormRow>
                 <FormRow label="全天">
                   <Switch
@@ -282,12 +309,8 @@ export function TaskEditorScreen({
                   />
                 </FormRow>
                 {!draft.allDay ? (
-                  <FormRow label="时间">
-                    <FormRowText
-                      value={draft.dueTime}
-                      placeholder="09:00"
-                      onChangeText={(dueTime) => patch({ dueTime })}
-                    />
+                  <FormRow label="时间" onPress={() => openWheel('dueTime')}>
+                    <FormRowValue text={draft.dueTime} placeholder="09:00" />
                   </FormRow>
                 ) : null}
               </>
@@ -323,40 +346,20 @@ export function TaskEditorScreen({
                   label="重复"
                   onPress={() => onPickRecurrence(parseRrule(draft.rrule, draft.dueDate), draft.dueDate)}
                 >
-                  <Text
-                    style={{
-                      color:
-                        recurrence.frequency === 'NONE'
-                          ? theme.color.textTertiary
-                          : theme.color.textPrimary,
-                      fontSize: 15,
-                      flex: 1,
-                      textAlign: 'right',
-                    }}
-                  >
-                    {describeRecurrence(recurrence)}
-                  </Text>
-                  <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+                  <FormRowValue
+                    text={recurrence.frequency === 'NONE' ? null : describeRecurrence(recurrence)}
+                    placeholder="不重复"
+                  />
                 </FormRow>
 
                 <FormRow
                   label="提醒"
                   onPress={() => onPickReminder(normalizeReminders(draft.reminders))}
                 >
-                  <Text
-                    style={{
-                      color:
-                        draft.reminders.length > 0
-                          ? theme.color.textPrimary
-                          : theme.color.textTertiary,
-                      fontSize: 15,
-                      flex: 1,
-                      textAlign: 'right',
-                    }}
-                  >
-                    {describeReminders(draft.reminders)}
-                  </Text>
-                  <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+                  <FormRowValue
+                    text={draft.reminders.length > 0 ? describeReminders(draft.reminders) : null}
+                    placeholder="不提醒"
+                  />
                 </FormRow>
               </>
             ) : null}
@@ -421,6 +424,21 @@ export function TaskEditorScreen({
           </Pressable>
         ) : null}
       </ScrollView>
+
+      {/* 日期 / 时间选择层（spec §7.6.7：日期时间选择用弹层） */}
+      {wheelField ? (
+        <WheelLayer
+          title={wheelField === 'dueDate' ? '截止日期' : '截止时间'}
+          onCancel={() => setWheelField(null)}
+          onConfirm={confirmWheel}
+        >
+          {wheelField === 'dueDate' ? (
+            <WheelDatePicker value={wheelDraft} onChange={setWheelDraft} />
+          ) : (
+            <WheelTimePicker value={wheelDraft} onChange={setWheelDraft} />
+          )}
+        </WheelLayer>
+      ) : null}
     </Screen>
   );
 }

@@ -4,10 +4,13 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Te
 import type { EventDetail } from '../api/types';
 import { ApiError } from '../api/client';
 import { Card, Screen } from '../components/ui';
+import { WheelLayer } from '../components/WheelLayer';
+import { WheelTimePicker } from '../components/WheelTimePicker';
 import {
   EditorHeader,
   FormInput,
   FormRow,
+  FormRowValue,
   FormRowText,
   FormTextArea,
   SegmentedControl,
@@ -20,6 +23,7 @@ import {
   addMinutes,
   buildCreatePayload,
   buildUpdatePayload,
+  DEFAULT_START_TIME,
   draftFromEvent,
   emptyDraft,
   eventDateKey,
@@ -97,6 +101,9 @@ export function EventEditorScreen({
    * 每次保存都发一遍虽然结果一样，但会给服务端多一次无谓的删除 + 插入。
    */
   const [initialReminders, setInitialReminders] = useState<number[]>([]);
+  /** 正在用滚轮改哪个时间（null = 没开选择层）；`draft` 是滚轮里的临时值 */
+  const [timeField, setTimeField] = useState<'start' | 'end' | null>(null);
+  const [timeDraft, setTimeDraft] = useState(DEFAULT_START_TIME);
   const [loading, setLoading] = useState(isEdit);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -177,7 +184,29 @@ export function EventEditorScreen({
     setDraft((current) => ({ ...current, reminders: normalizeReminders(reminderSelection.minutes) }));
   }, [reminderSelection.version, reminderSelection.minutes]);
 
-  const patch = (next: Partial<EventDraft>) => setDraft((current) => ({ ...current, ...next }));
+  /**
+   * 改动草稿时顺手清掉上一次的错误提示。
+   *
+   * 原先只在「保存」里 setError(null)：用户在模拟器上把时间改对了，
+   * 红字「时间格式应为 HH:mm」还挂在屏幕上，看起来像仍然没改对。
+   */
+  const patch = (next: Partial<EventDraft>) => {
+    setDraft((current) => ({ ...current, ...next }));
+    setError(null);
+  };
+  const openTimePicker = (field: 'start' | 'end') => {
+    setTimeDraft(field === 'start' ? draft.startTime : draft.endTime);
+    setTimeField(field);
+  };
+  const confirmTimePicker = () => {
+    if (timeField === 'start') {
+      // 结束时间跟随开始 +1 小时，少一次拨动（与手输时代的行为一致）
+      patch({ startTime: timeDraft, endTime: addMinutes(timeDraft, 60) });
+    } else if (timeField === 'end') {
+      patch({ endTime: timeDraft });
+    }
+    setTimeField(null);
+  };
 
   const isRecurring = Boolean(detail?.rrule);
 
@@ -354,22 +383,12 @@ export function EventEditorScreen({
 
             {!draft.allDay ? (
               <>
-                <FormRow label="开始">
-                  <FormRowText
-                    value={draft.startTime}
-                    placeholder="09:00"
-                    onChangeText={(startTime) =>
-                      // 结束时间跟随开始 +1 小时，减少一次手动输入
-                      patch({ startTime, endTime: addMinutes(startTime, 60) })
-                    }
-                  />
+                {/* 时间用滚轮选：手打 HH:mm 在手机上又慢又容易错（spec §4.1.5） */}
+                <FormRow label="开始" onPress={() => openTimePicker('start')}>
+                  <FormRowValue text={draft.startTime} placeholder="09:00" />
                 </FormRow>
-                <FormRow label="结束">
-                  <FormRowText
-                    value={draft.endTime}
-                    placeholder="10:00"
-                    onChangeText={(endTime) => patch({ endTime })}
-                  />
+                <FormRow label="结束" onPress={() => openTimePicker('end')}>
+                  <FormRowValue text={draft.endTime} placeholder="10:00" />
                 </FormRow>
               </>
             ) : null}
@@ -379,46 +398,21 @@ export function EventEditorScreen({
               label="重复"
               onPress={() => onPickRecurrence(recurrence, dateKey)}
             >
-              <Text
-                style={{
-                  color:
-                    recurrence.frequency === 'NONE' ? theme.color.textTertiary : theme.color.textPrimary,
-                  fontSize: 15,
-                  flex: 1,
-                  textAlign: 'right',
-                }}
-              >
-                {recurrenceSummary}
-              </Text>
-              <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+              <FormRowValue
+                text={recurrence.frequency === 'NONE' ? null : recurrenceSummary}
+                placeholder="不重复"
+              />
             </FormRow>
 
             <FormRow label="提醒" onPress={() => onPickReminder(normalizeReminders(draft.reminders))}>
-              <Text
-                style={{
-                  color: draft.reminders.length > 0 ? theme.color.textPrimary : theme.color.textTertiary,
-                  fontSize: 15,
-                  flex: 1,
-                  textAlign: 'right',
-                }}
-              >
-                {describeReminders(draft.reminders)}
-              </Text>
-              <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+              <FormRowValue
+                text={draft.reminders.length > 0 ? describeReminders(draft.reminders) : null}
+                placeholder="不提醒"
+              />
             </FormRow>
 
             <FormRow label="地点" onPress={onPickLocation}>
-              <Text
-                style={{
-                  color: draft.place ? theme.color.textPrimary : theme.color.textTertiary,
-                  fontSize: 15,
-                  flex: 1,
-                  textAlign: 'right',
-                }}
-              >
-                {draft.place ? draft.place.name : '添加地点'}
-              </Text>
-              <Text style={{ color: theme.color.textTertiary, fontSize: 16, marginLeft: 6 }}>›</Text>
+              <FormRowValue text={draft.place?.name ?? null} placeholder="添加地点" />
             </FormRow>
             {/* 地图常常只定位到楼，教室/门牌由用户手填（与地点都可空，spec §5.9） */}
             <FormRow label="详细地址" last>
@@ -534,6 +528,17 @@ export function EventEditorScreen({
           </Pressable>
         ) : null}
       </ScrollView>
+
+      {/* 时间选择层：贴在底部，不遮全屏，拨滚轮时还能看到上面的表单（spec §7.6.7） */}
+      {timeField ? (
+        <WheelLayer
+          title={timeField === 'start' ? '开始时间' : '结束时间'}
+          onCancel={() => setTimeField(null)}
+          onConfirm={confirmTimePicker}
+        >
+          <WheelTimePicker value={timeDraft} onChange={setTimeDraft} />
+        </WheelLayer>
+      ) : null}
     </Screen>
   );
 }

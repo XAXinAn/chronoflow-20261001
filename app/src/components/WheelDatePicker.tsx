@@ -1,22 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo } from 'react';
 
-import { useAppTheme } from '../context/AppContext';
 import {
   buildYearRange,
-  clampIndex,
   composeDateKey,
   daysOfMonth,
   months,
   parseDateKey,
   YEAR_SPAN,
 } from '../domain/wheelDate';
-
-/** 一行的高度。滚轮靠 snapToInterval 吸附到它的整数倍上。 */
-const ITEM_HEIGHT = 40;
-/** 可见行数：中间一行是选中项，上下各一行做视觉引导。 */
-const VISIBLE_ROWS = 3;
-const HEIGHT = ITEM_HEIGHT * VISIBLE_ROWS;
+import { WheelColumn, WheelRow } from './Wheel';
 
 /**
  * 滚轮式日期选择器（spec §4.1.7「跳到指定日期」）。
@@ -37,7 +29,6 @@ export function WheelDatePicker({
   minYear?: number;
   maxYear?: number;
 }) {
-  const theme = useAppTheme();
   const { year, month, day } = useMemo(() => parseDateKey(value), [value]);
   const years = useMemo(() => {
     const range = buildYearRange(year, YEAR_SPAN);
@@ -57,20 +48,7 @@ export function WheelDatePicker({
   );
 
   return (
-    <View style={styles.container}>
-      {/* 中间高亮带：告诉用户「停在谁身上就是选谁」 */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.band,
-          {
-            borderColor: theme.color.border,
-            backgroundColor: theme.color.surface,
-            top: (HEIGHT - ITEM_HEIGHT) / 2,
-          },
-        ]}
-      />
-
+    <WheelRow>
       <WheelColumn
         items={years.map((item) => ({ key: String(item), label: `${item} 年`, value: item }))}
         selectedIndex={years.indexOf(year)}
@@ -89,95 +67,6 @@ export function WheelDatePicker({
         onSelect={(index) => pick(year, month, days[index])}
         testID="wheel-day"
       />
-    </View>
+    </WheelRow>
   );
 }
-
-interface WheelItem {
-  key: string;
-  label: string;
-  value: number;
-}
-
-/**
- * 一列滚轮：滚动停止后按偏移量取整吸附到某一行。
- *
- * <p>两个回调都要接：`onScrollEndDrag` 管「慢慢拖一下就松手」（没有惯性，不会触发
- * `onMomentumScrollEnd`），`onMomentumScrollEnd` 管「甩一下让它自己滑」。
- */
-function WheelColumn({
-  items,
-  selectedIndex,
-  onSelect,
-  testID,
-}: {
-  items: WheelItem[];
-  selectedIndex: number;
-  onSelect: (index: number) => void;
-  testID?: string;
-}) {
-  const theme = useAppTheme();
-  const scrollRef = useRef<ScrollView>(null);
-  const [settledIndex, setSettledIndex] = useState(selectedIndex);
-
-  // 外部值变化（例如点「回到今天」、或月份改变导致天数变化）时把滚轮拨到对应位置
-  useEffect(() => {
-    setSettledIndex(selectedIndex);
-    scrollRef.current?.scrollTo({ y: selectedIndex * ITEM_HEIGHT, animated: true });
-  }, [selectedIndex]);
-
-  const commit = (offsetY: number) => {
-    const index = clampIndex(offsetY / ITEM_HEIGHT, items.length);
-    scrollRef.current?.scrollTo({ y: index * ITEM_HEIGHT, animated: true });
-    setSettledIndex(index);
-    onSelect(index);
-  };
-
-  return (
-    <ScrollView
-      ref={scrollRef}
-      testID={testID}
-      style={styles.column}
-      contentContainerStyle={styles.columnContent}
-      showsVerticalScrollIndicator={false}
-      snapToInterval={ITEM_HEIGHT}
-      decelerationRate="fast"
-      nestedScrollEnabled
-      onScrollEndDrag={(event) => commit(event.nativeEvent.contentOffset.y)}
-      onMomentumScrollEnd={(event) => commit(event.nativeEvent.contentOffset.y)}
-    >
-      {items.map((item, index) => {
-        const selected = index === settledIndex;
-        return (
-          <View key={item.key} style={styles.item}>
-            <Text
-              style={{
-                fontSize: selected ? 18 : 15,
-                fontWeight: selected ? '600' : '400',
-                color: selected ? theme.color.textPrimary : theme.color.textTertiary,
-              }}
-            >
-              {item.label}
-            </Text>
-          </View>
-        );
-      })}
-    </ScrollView>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flexDirection: 'row', height: HEIGHT, position: 'relative' },
-  band: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: ITEM_HEIGHT,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderRadius: 6,
-  },
-  column: { flex: 1 },
-  columnContent: { paddingVertical: (HEIGHT - ITEM_HEIGHT) / 2 },
-  item: { height: ITEM_HEIGHT, alignItems: 'center', justifyContent: 'center' },
-});
