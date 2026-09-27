@@ -21,11 +21,11 @@ export interface LegalEntry {
 }
 
 export const LEGAL_DOCS: Record<LegalDoc, LegalEntry> = {
-  'privacy-policy': { title: '隐私政策', label: '《心安待办隐私政策》' },
-  'user-agreement': { title: '用户服务协议', label: '《心安待办用户服务协议》' },
+  'privacy-policy': { title: '隐私政策', label: '《时纪流隐私政策》' },
+  'user-agreement': { title: '用户服务协议', label: '《时纪流用户服务协议》' },
   'children-privacy': {
     title: '儿童个人信息保护声明',
-    label: '《心安待办儿童个人信息保护声明》',
+    label: '《时纪流儿童个人信息保护声明》',
   },
   'personal-info-collected': { title: '已收集个人信息清单', label: '已收集个人信息清单' },
   'shared-info-with-third-parties': {

@@ -235,6 +235,33 @@ class AuthFlowTest {
     }
 
     @Test
+    @DisplayName("改密码让其他设备立即失效（spec §3.5 的吊销规则）")
+    void changingPasswordRevokesOtherSessions() throws Exception {
+        String phone = "13800000111";
+        JsonNode session = registerAccountWithPersonalIdentity(phone, "改密用户");
+        String accessToken = session.path("data").path("accessToken").asText();
+        String refreshToken = session.path("data").path("refreshToken").asText();
+
+        // 短信注册的账号初始没有密码，第一次设置不需要原密码
+        putJson("/api/v1/me/password", accessToken, "{\"newPassword\":\"newpass123456\"}");
+
+        // 旧刷新令牌当场失效：不能再换出新令牌
+        mockMvc.perform(post("/api/v1/auth/token/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + refreshToken + "\",\"deviceId\":\"device-1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(20007));
+
+        // 但账号本身没有被停用：用新密码还能立刻登录（这条是回归——曾经打成「账号作废」标记，
+        // 结果连本人都登不进来）
+        JsonNode relogin = postJson("/api/v1/auth/login/password",
+                "{\"phone\":\"" + phone + "\",\"password\":\"newpass123456\",\"deviceId\":\"device-2\"}");
+        assertThat(relogin.path("code").asInt()).isZero();
+        // 密码登录与验证码登录返回同一种结构：已有个人身份 → session
+        assertThat(relogin.path("data").path("session").path("accessToken").asText()).isNotBlank();
+    }
+
+    @Test
     @DisplayName("登出后刷新令牌立即失效")
     void logoutRevokesRefreshToken() throws Exception {
         String phone = "13800000109";
@@ -346,11 +373,12 @@ class AuthFlowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(20011));
 
-        // 设备列表包含刚登录的设备
+        // 设备列表只有「改密之后重新登录」的那一台：
+        // 改密会吊销该账号的**全部刷新令牌**（spec §3.5），而设备列表就是由刷新令牌记录拼出来的，
+        // 所以 device-1（注册）与 device-A（改密前的短信登录）都已经不在列表里了。
         JsonNode devices = getJsonWithBearer("/api/v1/me/devices", accessToken);
-        // device-1（注册时）、device-A（短信登录 + 密码登录各一次）
-        assertThat(devices.path("data")).hasSize(3);
-        assertThat(devices.path("data").get(0).path("deviceId").asText()).isNotBlank();
+        assertThat(devices.path("data")).hasSize(1);
+        assertThat(devices.path("data").get(0).path("deviceId").asText()).isEqualTo("device-A");
 
         // 踢出 device-A 后其刷新令牌立即失效
         mockMvc.perform(delete("/api/v1/me/devices/device-A")

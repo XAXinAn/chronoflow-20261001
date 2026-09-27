@@ -1,6 +1,6 @@
 # @xa-todo/app
 
-XaTodo App 端（React Native + Expo）。Expo SDK 57 / React Native 0.86 / React 19。
+时纪流（ChronoFlow）App 端（React Native + Expo）。Expo SDK 57 / React Native 0.86 / React 19。
 
 ## 开发
 

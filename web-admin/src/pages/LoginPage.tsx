@@ -48,9 +48,9 @@ export function LoginPage() {
       <div style={{ width: 360 }}>
         <div style={{ marginBottom: 'var(--xa-space-lg)' }}>
           <Typography.Title level={2} style={{ marginBottom: 4, letterSpacing: '-0.02em' }}>
-            XaTodo
+            时纪流
           </Typography.Title>
-          <Typography.Text type="secondary">心安待办 · 平台管理后台</Typography.Text>
+          <Typography.Text type="secondary">ChronoFlow · 平台管理后台</Typography.Text>
         </div>
         <Card className="xa-card" variant="borderless" styles={{ body: { padding: 0 } }}>
           <Form<LoginForm> layout="vertical" onFinish={submit} requiredMark={false} autoComplete="off">

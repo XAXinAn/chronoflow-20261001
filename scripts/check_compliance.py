@@ -103,7 +103,7 @@ def check_policy_standalone() -> None:
     require(
         "我们如何收集和使用您的个人信息" not in agreement,
         "user-agreement.md 里出现了隐私政策的正文章节；隐私政策必须单独成文，"
-        "用户协议只能引用《心安待办隐私政策》这个文件名",
+        "用户协议只能引用《时纪流隐私政策》这个文件名",
     )
     require(
         "隐私政策" in agreement,

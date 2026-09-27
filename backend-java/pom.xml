@@ -16,7 +16,7 @@
     <version>0.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>xa-todo-backend</name>
-    <description>XaTodo（心安待办）后端服务</description>
+    <description>时纪流后端服务</description>
 
     <modules>
         <module>xa-common</module>

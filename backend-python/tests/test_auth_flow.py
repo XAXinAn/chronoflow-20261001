@@ -63,6 +63,37 @@ def test_register_token_cannot_access_business_api(client) -> None:
     assert response.json()["code"] == 20001
 
 
+def test_changing_password_revokes_other_sessions(client) -> None:
+    """改密码让其他设备立即失效（spec §3.5 的吊销规则）。"""
+    phone = "13900003101"
+    tokens = register(client, phone, "改密用户")
+
+    # 短信注册的账号初始没有密码，第一次设置不需要原密码
+    changed = client.put(
+        "/api/v1/me/password",
+        json={"newPassword": "newpass123456"},
+        headers=auth(tokens),
+    ).json()
+    assert changed["code"] == 0, changed
+
+    # 旧刷新令牌当场失效
+    refreshed = client.post(
+        "/api/v1/auth/token/refresh",
+        json={"refreshToken": tokens["refreshToken"], "deviceId": "device-1"},
+    ).json()
+    assert refreshed["code"] == 20007, refreshed
+
+    # 但账号本身没有被停用：用新密码还能立刻登录（这条是回归——曾经打成「账号作废」标记，
+    # 结果连本人都登不进来）
+    relogin = client.post(
+        "/api/v1/auth/login/password",
+        json={"phone": phone, "password": "newpass123456", "deviceId": "device-2"},
+    ).json()
+    assert relogin["code"] == 0, relogin
+    # 密码登录与验证码登录返回同一种结构：已有个人身份 → session
+    assert relogin["data"]["session"]["accessToken"]
+
+
 def test_sms_send_is_rate_limited(client) -> None:
     phone = "13900001003"
     send_code(client, phone)

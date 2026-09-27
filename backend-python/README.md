@@ -1,4 +1,4 @@
-# backend-python —— XaTodo 后端（阶段二）
+# backend-python —— 时纪流后端（阶段二）
 
 FastAPI 平行重写，对外契约与 Java 版完全一致（同一份 `contract/api-contract.json`）。目标是可以与 Java 版互换部署。
 

@@ -2,7 +2,7 @@
   "name": "xa-todo",
   "version": "0.1.0",
   "private": true,
-  "description": "XaTodo（心安待办）—— 智能日程与待办",
+  "description": "时纪流（ChronoFlow）—— 智能日程与待办",
   "workspaces": [
     "packages/*",
     "web-admin",

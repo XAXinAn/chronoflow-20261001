@@ -1,7 +1,7 @@
 [project]
 name = "xa-todo-backend-python"
 version = "0.1.0"
-description = "XaTodo（心安待办）后端 —— 阶段二：FastAPI 平行重写，对外契约与 Java 版一致"
+description = "时纪流后端 —— 阶段二：FastAPI 平行重写，对外契约与 Java 版一致"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

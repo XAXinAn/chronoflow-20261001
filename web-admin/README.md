@@ -1,6 +1,6 @@
 # @xa-todo/web-admin
 
-XaTodo Web 后台：平台超管端（spec §4.4）+ 组织管理端（spec §4.3）。
+时纪流（ChronoFlow）Web 后台：平台超管端（spec §4.4）+ 组织管理端（spec §4.3）。
 React 18 + Vite + TypeScript + Ant Design 5，**菜单按登录管理员的角色渲染**。
 
 > 选 React 18 而非 19：antd 5 在 React 19 下需要额外的兼容补丁包，当前阶段没必要引入这个变数。

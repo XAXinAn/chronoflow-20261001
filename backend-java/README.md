@@ -1,4 +1,4 @@
-# backend-java —— XaTodo 后端（阶段一）
+# backend-java —— 时纪流后端（阶段一）
 
 Java 21 + Spring Boot 3 实现，对应 [spec.md](../spec.md) 阶段一。阶段二的 `backend-python` 会平行重写同一份 API。
 

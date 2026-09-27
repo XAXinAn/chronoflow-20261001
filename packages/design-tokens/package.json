@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "XaTodo 设计令牌唯一来源：黑白极简 · 高级质感 · 动态呼吸感（spec §7.6）",
+  "description": "时纪流设计令牌唯一来源：黑白极简 · 高级质感 · 动态呼吸感（spec §7.6）",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

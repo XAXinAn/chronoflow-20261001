@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "XaTodo 平台超管 Web 后台",
+  "description": "时纪流平台超管 Web 后台",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

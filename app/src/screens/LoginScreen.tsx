@@ -114,8 +114,8 @@ export function LoginScreen({
   return (
     <Screen style={styles.container}>
       <View style={{ marginBottom: theme.spacing.lg }}>
-        <Text style={[styles.title, { color: theme.color.textPrimary }]}>XaTodo</Text>
-        <Text style={{ color: theme.color.textSecondary }}>心安待办</Text>
+        <Text style={[styles.title, { color: theme.color.textPrimary }]}>时纪流</Text>
+        <Text style={{ color: theme.color.textSecondary }}>ChronoFlow</Text>
       </View>
 
       <Card>

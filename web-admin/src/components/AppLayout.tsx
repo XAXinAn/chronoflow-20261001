@@ -65,9 +65,9 @@ export function AppLayout() {
       <Sider theme={scheme} width={208} style={{ borderRight: '1px solid var(--xa-border)' }}>
         <div style={{ padding: '20px 16px 12px' }}>
           <Typography.Text strong style={{ fontSize: 16, letterSpacing: '-0.02em' }}>
-            XaTodo
+            时纪流
           </Typography.Text>
-          <div className="xa-metric-label">心安待办 · 平台后台</div>
+          <div className="xa-metric-label">时纪流 · 平台后台</div>
         </div>
         <Menu
           theme={scheme}

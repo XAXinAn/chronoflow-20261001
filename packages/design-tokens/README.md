@@ -1,6 +1,6 @@
 # @xa-todo/design-tokens
 
-XaTodo 设计令牌的**唯一来源**（spec §7.6）。Web 后台与 App 端都从这里取值，禁止在业务组件里硬编码色值。
+时纪流设计令牌的**唯一来源**（spec §7.6）。Web 后台与 App 端都从这里取值，禁止在业务组件里硬编码色值。
 
 ```bash
 npm run build -w @xa-todo/design-tokens   # 产出 dist/index.js 与 dist/tokens.css

@@ -1,5 +1,5 @@
 {
-  "$comment": "XaTodo 后端 API 契约。Java 版与阶段二的 Python 版都需满足这份清单；改动此文件等于改动跨语言契约，必须同时更新两版实现与 spec.md。",
+  "$comment": "时纪流后端 API 契约。Java 版与阶段二的 Python 版都需满足这份清单；改动此文件等于改动跨语言契约，必须同时更新两版实现与 spec.md。",
   "version": "1.0",
   "envelope": {
     "code": "int，0 表示成功，非 0 为业务错误码",

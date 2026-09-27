@@ -63,7 +63,7 @@ export function PrivacyConsentScreen({
           paddingBottom: 32,
         }}
       >
-        <Text style={[styles.title, { color: theme.color.textPrimary }]}>欢迎使用心安待办</Text>
+        <Text style={[styles.title, { color: theme.color.textPrimary }]}>欢迎使用时纪流</Text>
         <Text style={{ color: theme.color.textSecondary, fontSize: 15, marginTop: 12, lineHeight: 24 }}>
           为了保障您的个人权益，在使用本产品前，请您仔细阅读
           <Text onPress={() => setViewing('privacy-policy')} style={{ color: theme.color.accent }}>

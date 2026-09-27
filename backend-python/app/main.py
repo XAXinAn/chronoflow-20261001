@@ -74,8 +74,8 @@ async def lifespan(_: FastAPI):
                 await sync_task
 
 app = FastAPI(
-    title="XaTodo API（Python 版）",
-    description="心安待办后端。对外契约与 Java 版一致，见 contract/api-contract.json。",
+    title="时纪流 API（Python 版）",
+    description="时纪流后端。对外契约与 Java 版一致，见 contract/api-contract.json。",
     version="0.1.0",
     # 与 Java 版 springdoc 的路径保持一致，便于互换部署与统一文档入口
     openapi_url="/v3/api-docs",

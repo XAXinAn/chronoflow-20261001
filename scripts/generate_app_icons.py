@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成 XaTodo 的应用图标（黑白极简的「X」字标）。
+"""生成时纪流的应用图标（黑白极简的「X」字标）。
 
 为什么用代码画而不是让 AI 生成：
 商店对图标有硬性要求——**1024×1024、iOS 不能带 alpha 通道、Android 自适应图标要留安全区**，
@@ -154,7 +154,7 @@ def render_alpha(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="生成 XaTodo 的 X 字标图标")
+    parser = argparse.ArgumentParser(description="生成时纪流的 X 字标图标")
     parser.add_argument("--out", default="app/assets", help="输出目录（默认 app/assets）")
     parser.add_argument("--size", type=int, default=1024, help="图标边长（默认 1024）")
     parser.add_argument(

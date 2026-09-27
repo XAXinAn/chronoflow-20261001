@@ -18,11 +18,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 #: slug → 页面标题。白名单而非拼路径：路径穿越必须在一开始就不可能。
 LEGAL_DOCUMENTS: dict[str, str] = {
-    "privacy-policy": "心安待办隐私政策",
-    "user-agreement": "心安待办用户服务协议",
-    "children-privacy": "心安待办儿童个人信息保护声明",
-    "personal-info-collected": "心安待办已收集个人信息清单",
-    "shared-info-with-third-parties": "心安待办与第三方共享个人信息清单",
+    "privacy-policy": "时纪流隐私政策",
+    "user-agreement": "时纪流用户服务协议",
+    "children-privacy": "时纪流儿童个人信息保护声明",
+    "personal-info-collected": "时纪流已收集个人信息清单",
+    "shared-info-with-third-parties": "时纪流与第三方共享个人信息清单",
 }
 
 _ORDERED_ITEM = re.compile(r"^\s*\d+\.\s+(.*)$")

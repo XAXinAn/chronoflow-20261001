@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "XaTodo",
-    "slug": "xa-todo",
+    "name": "时纪流",
+    "slug": "chronoflow",
     "version": "0.1.0",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
@@ -13,7 +13,7 @@
       "resizeMode": "contain"
     },
     "ios": {
-      "bundleIdentifier": "com.xatodo.app",
+      "bundleIdentifier": "com.chronoflow.frontend",
       "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
@@ -21,10 +21,13 @@
       }
     },
     "android": {
-      "package": "com.xatodo.app",
+      "package": "com.chronoflow.frontend",
       "versionCode": 1,
       "edgeToEdgeEnabled": true,
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0A0A0A"

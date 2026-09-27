@@ -57,6 +57,12 @@ class AccountService:
         account.password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(rounds=10)).decode()
         self._session.commit()
 
+        # 改密必须让**其他设备**掉线（spec §3.5：登出/改密/停用/身份移除都吊销刷新令牌）。
+        # 这里只吊销刷新令牌、**不打「账号作废」标记**——那个标记会让旧访问令牌一律 20008，
+        # 连本人用新密码重新登录都会被挡住；已签发访问令牌最多再活 2 小时，是有意接受的窗口。
+        for record in self._refresh_tokens.list_for_account(account_id):
+            self._refresh_tokens.delete(record.token_id)
+
     def devices(self, identity_id: int) -> list[dict]:
         return [
             {"deviceId": record.device_id, "issuedAt": record.issued_at}

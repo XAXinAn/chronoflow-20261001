@@ -1,12 +1,12 @@
 # 合规文本（唯一事实来源）
 
-本目录是 XaTodo（心安待办）全部对外合规文本的**唯一事实来源**：
+本目录是时纪流（ChronoFlow）全部对外合规文本的**唯一事实来源**：
 
 | 文件 | 用途 | 对外的公开地址 |
 | --- | --- | --- |
-| `privacy-policy.md` | 《心安待办隐私政策》 | `/api/v1/legal/privacy-policy` |
-| `user-agreement.md` | 《心安待办用户服务协议》 | `/api/v1/legal/user-agreement` |
-| `children-privacy.md` | 《心安待办儿童个人信息保护声明》 | `/api/v1/legal/children-privacy` |
+| `privacy-policy.md` | 《时纪流隐私政策》 | `/api/v1/legal/privacy-policy` |
+| `user-agreement.md` | 《时纪流用户服务协议》 | `/api/v1/legal/user-agreement` |
+| `children-privacy.md` | 《时纪流儿童个人信息保护声明》 | `/api/v1/legal/children-privacy` |
 | `personal-info-collected.md` | 已收集个人信息清单 | `/api/v1/legal/personal-info-collected` |
 | `shared-info-with-third-parties.md` | 与第三方共享个人信息清单 | `/api/v1/legal/shared-info-with-third-parties` |
 

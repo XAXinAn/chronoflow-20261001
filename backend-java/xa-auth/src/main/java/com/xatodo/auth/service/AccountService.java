@@ -95,6 +95,15 @@ public class AccountService {
         }
         account.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         accountMapper.updateById(account);
+
+        // 改密必须让**其他设备**掉线（spec §3.5 的吊销规则：登出/改密/停用/身份移除都吊销刷新令牌）。
+        // 只改哈希是不够的：旧刷新令牌还能换出新令牌，于是「账号疑似被盗 → 改密码」这个
+        // 最本能的动作根本没有效果。
+        //
+        // 这里**只吊销刷新令牌**，不打「账号作废」标记：那个标记会让所有携带旧访问令牌的请求
+        // 返回 20008，连本人用新密码重新登录也会被挡住。已签发的访问令牌最多再活 2 小时，
+        // 这段时间的窗口是有意接受的取舍（spec §3.7.4）。
+        tokenService.revokeAllForAccount(accountId);
     }
 
     public List<DeviceResponse> devices(Long identityId) {

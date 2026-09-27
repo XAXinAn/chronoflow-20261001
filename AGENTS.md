@@ -1,4 +1,4 @@
-# AGENTS.md —— XaTodo 会话交接文档
+# AGENTS.md —— 时纪流（ChronoFlow）会话交接文档
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
@@ -196,7 +196,7 @@ setsid nohup /home/jiang/tools/jdk-21.0.12.1+1/bin/java -jar target/xa-bootstrap
 
 ## 1. 这个项目是什么
 
-XaTodo（心安待办），智能日程与待办 App。项目代号 `xa-todo`。
+时纪流（ChronoFlow），智能日程与待办 App。项目代号 `xa-todo`（包名/环境变量等标识符沿用）。
 
 - **App 端**：个人账号手动管理日历日程与待办；组织账号在此基础上增加组织管理员统一下发的组织日历。
 - **Web 后台**：平台超管 + 组织管理员。
@@ -702,6 +702,25 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 | 短信 | 复用同机 ChronoFlow 的阿里云短信凭据与模板（`.env` 里的 `ALIYUN_SMS_*`），已实测能收到；接了 aliyun 之后接口**不再回显验证码** |
 | 演示数据 | 利欧数字 45 部门/117 人、浙江海洋大学 52 部门/260 人；两个组织各有一个可认领的拥有者成员（工号 `1145141919810` / 学号 `2023210704127`） |
 | **合规文本（提交应用商店的隐私政策 URL）** | `http://8.136.20.182:8088/api/v1/legal/privacy-policy`（换成域名后同路径即可）。已实测：免登录 200、`text/html`、无 `<script>`；`user-agreement` / `children-privacy` / `personal-info-collected` / `shared-info-with-third-parties` 同前缀，未知 slug 返回 404 |
+
+### 上线方式：**替换**掉现在跑着的 ChronoFlow（2026-09-27 确认）
+
+本项目（中文名**时纪流**、英文名 **ChronoFlow**）是 ChronoFlow 的**新一版大迭代**。
+上线路径不是「另起一个服务」，而是：
+
+1. 新版先起来自测（本地 / staging），跑完测试与真机验收；
+2. 验收通过后，**把服务器上现在运行的 ChronoFlow 服务关掉**，由新版接管；
+3. 因此包名定为 `com.chronoflow.frontend`（ChronoFlow 的客户端身份），
+   而不是按「时纪流」拼音另起一套命名空间。
+
+替换前必须先确认的三件事（都还没定，动手前问清）：
+
+- **接管哪个入口**：现有 ChronoFlow 的域名与端口由新版承接，还是新版用 `chronocloud.top` 另开入口？
+  这决定 nginx 站点与证书怎么写。
+- **旧数据怎么办**：现有 ChronoFlow 用的是自己的 MySQL（`ChronoFlow-mysql`），
+  新版是 PostgreSQL 新 schema，两边不通用 —— 是不迁移、只保留旧库只读，还是要做一次数据搬迁？
+- **极光推送是否复用**：现有 ChronoFlow 若已注册极光应用，直接复用它的 AppKey/MasterSecret
+  最省事（但**应用里填的包名必须是 `com.chronoflow.frontend`**，包名不一致极光收不到推送）。
 
 后端升级流程（只换 jar，DB / Redis 不动）：
 
