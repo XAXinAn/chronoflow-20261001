@@ -2,9 +2,65 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-09-27（第四轮：上架合规）
+> 最后更新：2026-09-27（第五轮：品牌更名 / 推送链路 / 上线前修复）
 
 ---
+
+## 0.0 本次交接摘要（2026-09-27，第五轮）
+
+**先看这两份**：[`docs/plan-2026-09-27.md`](docs/plan-2026-09-27.md)（**执行清单**，每批要做什么 + 已定决策）
+与 [`docs/review-2026-09-27.md`](docs/review-2026-09-27.md)（review 结论，带证据）。
+
+### 这一轮做完的
+
+| # | 内容 | 提交 |
+| --- | --- | --- |
+| 1 | 上架合规（隐私政策同源 / 首启弹窗 / 非默认勾选 / 账号注销 / 权限告知） | `7d023fe` |
+| 2 | 第一版去掉拍照识别（含相机权限与合规文本同步）；app.json 补图标/版本号/相册权限；生产切 `prod` profile + 启动自检 | `c7a1277` |
+| 3 | 全量 review 结论（已修 6 项 / 待决策 20 项） | `0df7571` |
+| 4 | **更名「时纪流 / ChronoFlow」**；包名 `com.chronoflow.frontend`、slug `chronoflow`；修 **R21**（两版 `setPassword` 都不吊销刷新令牌，与 spec §3.5 冲突） | `8e47d40` |
+| 5 | 图标改用旧 ChronoFlow 的「时纪」字标（源图入库 + 派生脚本 `scripts/generate_app_icons.py`） | `32d7bac` |
+| 6 | 极光推送的 **Expo 配置插件** `app/plugins/withJpush.js` + AppKey + 文档 | `730c6a3` |
+| 7 | **服务端推送**：V17 `push_device`、`PushProvider` 极光实现、设备接口、组织下发触发 | `e47b6c9` |
+| 8 | Python 版推送 + 契约（**106** 端点）+ spec §4.5/§5.12/§6.2；**已部署，V17 生效** | `bf02e11` |
+| 9 | 执行清单落库 | `f81123c` |
+| 10 | App 端重复规则与提醒排期的**纯逻辑层**（+22 项单测）；日程草稿接 `rrule`/`reminders`；客户端补 `PUT` | `0ef9c8b`、`865cd03` |
+
+### 当前状态
+
+- **线上**：`http://8.136.20.182:8088` 跑的是新版（`prod` profile、V17 已应用、生产配置自检通过）。
+  `ping` / 合规文本 200，未登录调 `/me/push-devices` 401。
+- **测试基线**：Java **102**、Python **55**、App **131 + typecheck**、web-admin 18、合规门禁 19 项，全绿。
+- **凭证**：极光 AppKey 写在 `app.json` 的插件配置里（会编进 APK，本身公开）；
+  **Master Secret 只在** `本地 .env.local` 与 `服务器 /opt/xatodo/.env`，两处都被 gitignore，
+  compose 已透传 `JPUSH_APPKEY/JPUSH_MASTER_SECRET/JPUSH_APNS_PRODUCTION`。仓库里搜不到明文。
+- **极光后台**：应用包名已登记 `com.chronoflow.frontend`（与 `app.json` 一致）；厂商通道**尚未配置**（按计划排到上架后）。
+
+### 下一步（从第一条开始，细节在 `docs/plan-2026-09-27.md`）
+
+1. **App 编辑页加「重复」与「提醒」两行** —— 逻辑层已就位（`domain/recurrence.ts`、`domain/reminderSchedule.ts`），
+   只差界面与提交；提醒还要接 `expo-notifications` 排期 + 编辑/删除时取消（需维护「通知 id ↔ 业务对象」映射）。
+2. **推送的 App 侧**：Dev Client（`expo-dev-client` + `eas.json`）→ `jpush-react-native` →
+   registrationId 上报 `POST /me/push-devices` → 通知点击统一路由。
+   ⚠️ `app/plugins/withJpush.js` **还没经过真实 `expo prebuild` 验证**（注入正则在真模板上是否命中要跑一次才知道）。
+3. 其余：隐藏小安 tab、请求超时、分页适配 → B1 spec 对齐 → B2 后端 V18（日志/配额/分页幂等/缓存异步导出/可观测/删全局配置）
+   → B4 Web（`canEdit` + 已撤回筛选）→ B5 部署（`chronocloud.top` HTTPS + staging + **替换旧 ChronoFlow**）
+   → B6 测试（组件渲染 / Maestro / P95）。
+
+### 上架前仍需人工补的两处
+
+1. `docs/legal/*.md` 里的 `【待替换：请填写客服邮箱/电话】`（`check_compliance.py --strict` 会报出来）；
+2. 应用宝后台「基础信息 → 运营者 / 开发者」填 **舟山市时纪云人工智能应用软件开发有限公司**（与隐私政策主体一致）。
+
+### 容易踩的坑（这一轮新增）
+
+- **推送设备按账号找，不按身份找**：设备是「这台手机」的属性，用户在个人身份下上报，而组织日程要推给
+  同一个人的组织身份。按身份查会一条都命不中（实现时踩过一次，`PushModuleTest` 有断言盯着）。
+- **改密只吊销刷新令牌**：别顺手打「账号作废」标记 —— 那个标记会让旧访问令牌一律 20008，
+  连本人用新密码重新登录都被挡住（实现时踩过一次）。
+- **推送要在事务提交后发**：极光是外部 HTTP，放事务里既占连接，又会产生「事务回滚了但通知已发」的幻影通知。
+- **品牌标记沿用旧仓库**：源图 `app/assets/brand/mark-1024.png` 取自 `github.com/XAXinAn/ChronoFlow`；
+  它写的是两个字「时纪」，软件名是三个字「时纪流」——标记当图形资产沿用，改标记得先有设计稿。
 
 ## 0.0 本次交接摘要（2026-09-27，第四轮：应用商店上架合规）
 
