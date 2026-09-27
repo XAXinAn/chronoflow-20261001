@@ -44,6 +44,7 @@
     { "method": "DELETE", "path": "/api/v1/calendars/{id}", "auth": "access" },
 
     { "method": "GET", "path": "/api/v1/events", "auth": "access" },
+    { "method": "GET", "path": "/api/v1/events/all", "auth": "access" },
     { "method": "POST", "path": "/api/v1/events", "auth": "access" },
     { "method": "GET", "path": "/api/v1/events/{id}", "auth": "access" },
     { "method": "PATCH", "path": "/api/v1/events/{id}", "auth": "access" },

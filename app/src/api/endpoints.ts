@@ -179,6 +179,14 @@ export function createEndpoints(client: ApiClient) {
     eventsInRange: (start: string, end: string) =>
       client.get<EventOccurrence[]>('/api/v1/events', { start, end }),
     /**
+     * 我的**全部日程**（每个重复序列只出现一次），按开始时间倒序，可按关键字搜。
+     *
+     * 「待办 → 关联日程」的候选列表用它（spec §4.1.6）：候选不受时间窗口限制
+     * ——「上个月那个会」也可能要挂一条待办上去 —— 并且列表长了必须能搜。
+     */
+    allEvents: (keyword?: string) =>
+      client.get<EventOccurrence[]>('/api/v1/events/all', { keyword: keyword ?? undefined }),
+    /**
      * 创建日程。字段对齐主流系统日历（spec §4.1.4）：
      * 地点是结构化的，坐标由服务端统一标注为 GCJ-02，客户端不传坐标系。
      */

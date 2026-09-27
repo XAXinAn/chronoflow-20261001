@@ -10,12 +10,17 @@ from sqlalchemy.orm import Session
 
 from ..errors import ApiError, ErrorCode
 from . import recurrence
+from .search import like_pattern
 from .storage import validate_image_urls
 
 DEFAULT_CALENDAR_NAME = "我的日程"
 
 # 待办自己没有时区列，取所在日历的时区；没有就按第一版的默认时区（spec §7.3）
 DEFAULT_TIMEZONE = "Asia/Shanghai"
+
+# 「关联日程」候选列表的默认与最大条数（spec §4.1.6）
+DEFAULT_LIST_LIMIT = 200
+MAX_LIST_LIMIT = 500
 
 # 枚举取值集中在这里校验：脏值以业务错误码返回，而不是写进库后被数据库约束拒绝
 _STATUSES = {"CONFIRMED", "TENTATIVE", "CANCELLED"}
@@ -247,6 +252,56 @@ class PersonalService:
             )
         results.sort(key=lambda item: (item["startAt"], item["eventId"]))
         return results
+
+    def list_all_events(self, identity_id: int, keyword: str | None, limit: int | None) -> list[dict]:
+        """我的**全部日程**（「关联日程」候选，spec §4.1.6），按开始时间倒序，可按关键字过滤。
+
+        不复用 `list_events`：它必须给时间范围、而且会把重复日程展开成每一次实例 ——
+        拉一年就是几百条，当候选列表既慢又不准（用户要关联的是**那条日程**，
+        而 `task.event_id` 指向的也正是序列本身）。所以这里返回原始序列、不展开。
+
+        关键字与检索共用 `like_pattern`：空关键字得到 `%%`，
+        于是「列全部」与「按关键字过滤」是同一条 SQL。
+        """
+        effective_limit = DEFAULT_LIST_LIMIT if limit is None else max(1, min(int(limit), MAX_LIST_LIMIT))
+        rows = self._session.execute(
+            text(
+                "SELECT e.* FROM event e"
+                " JOIN calendar c ON c.id = e.calendar_id"
+                " WHERE c.owner_identity_id = :identity"
+                " AND e.deleted_at IS NULL"
+                " AND e.status <> 'CANCELLED'"
+                " AND (e.title ILIKE :pattern ESCAPE '\\'"
+                "      OR e.description ILIKE :pattern ESCAPE '\\'"
+                "      OR e.location_name ILIKE :pattern ESCAPE '\\')"
+                " ORDER BY e.start_at DESC"
+                " LIMIT :limit"
+            ),
+            {
+                "identity": identity_id,
+                "pattern": like_pattern("" if keyword is None else keyword.strip()),
+                "limit": effective_limit,
+            },
+        ).mappings().all()
+        return [
+            {
+                "eventId": row["id"],
+                "calendarId": row["calendar_id"],
+                "title": row["title"],
+                "locationName": row["location_name"],
+                "locationDetail": row["location_detail"],
+                "locationAddress": row["location_address"],
+                "startAt": row["start_at"],
+                "endAt": row["end_at"],
+                "allDay": bool(row["all_day"]),
+                "timezone": row["timezone"] or DEFAULT_TIMEZONE,
+                # 一条重复序列只出现一次：它不是「某一次出现」
+                "recurring": bool(row["rrule"]),
+                "occurrenceDate": None,
+                "modified": False,
+            }
+            for row in rows
+        ]
 
     def require_event(self, identity_id: int, event_id: int) -> dict:
         row = self._session.execute(

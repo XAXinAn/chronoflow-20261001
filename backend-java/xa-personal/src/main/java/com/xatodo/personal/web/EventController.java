@@ -73,6 +73,19 @@ public class EventController {
                 identityId, calendarIds, start.toInstant(), end.toInstant()));
     }
 
+    /**
+     * 我的全部日程（每个重复序列只出现一次），按开始时间倒序，可用关键字过滤。
+     *
+     * <p>给「待办 → 关联日程」用（spec §4.1.6）：候选不该被时间窗口限制，而且要能搜。
+     * 路径放在 `/{id}` 之前声明，避免 `/events/all` 被当成 id 解析。
+     */
+    @GetMapping("/all")
+    public ApiResponse<List<EventOccurrence>> listAll(@RequestParam(required = false) String keyword,
+                                                      @RequestParam(required = false) Integer limit) {
+        Long identityId = CurrentIdentity.require().identityId();
+        return ApiResponse.ok(eventService.listAll(identityId, keyword, limit));
+    }
+
     @PostMapping
     public ApiResponse<EventResponse> create(@Valid @RequestBody EventCreateRequest request) {
         Long identityId = CurrentIdentity.require().identityId();

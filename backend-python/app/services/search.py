@@ -79,7 +79,13 @@ _ORG_EVENT_SQL = text(
 )
 
 
-def _like_pattern(keyword: str) -> str:
+def like_pattern(keyword: str) -> str:
+    """关键字 → LIKE 模式串。转义 `\\`、`%`、`_`，配合 SQL 里的 `ESCAPE '\\'`。
+
+    公开出来是给「全部日程」用的：那条 SQL 与这里的检索共用同一份转义规则，
+    否则搜「50%」在一处是字面量、在另一处成了通配符，这种错是静默的。
+    空关键字得到 `%%`，配合 `title ILIKE '%%'` 就是「不过滤」。
+    """
     escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
 
@@ -130,7 +136,7 @@ class SearchService:
 
         wanted = parse_types(types)
         effective_limit = DEFAULT_LIMIT if limit is None else max(1, min(int(limit), MAX_LIMIT))
-        pattern = _like_pattern(trimmed)
+        pattern = like_pattern(trimmed)
 
         items: list[dict] = []
         if TYPE_EVENT in wanted:

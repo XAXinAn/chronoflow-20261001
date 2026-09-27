@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, Screen } from '../components/ui';
 import { CheckRow, EditorHeader, FormInput } from '../components/form';
 import { useAppTheme } from '../context/AppContext';
+import { localNotificationsAvailable } from '../notifications/availability';
 import {
   REMINDER_PRESETS,
   describeReminders,
@@ -130,7 +131,9 @@ export function ReminderPickerScreen({
         </Text>
         {/* 说清楚提醒由谁发：用户会以为「没提醒是没网」，实际是本地通知（spec §4.5） */}
         <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: 4 }}>
-          提醒由手机本地发出，不需要联网；日程改动或删除后会自动重排。
+          {localNotificationsAvailable()
+            ? '提醒由手机本地发出，不需要联网；日程改动或删除后会自动重排。'
+            : '当前在 Expo Go 里运行：设置会保存到账号，但本机不会真的响 —— 本地提醒需要开发构建。'}
         </Text>
 
         {error ? (

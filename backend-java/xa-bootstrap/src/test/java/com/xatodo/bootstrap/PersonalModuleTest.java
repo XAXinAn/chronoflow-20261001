@@ -397,6 +397,50 @@ class PersonalModuleTest {
     }
 
     @Test
+    @DisplayName("全部日程：含过去的、重复序列只出现一次、可按关键字搜")
+    void listAllEventsCoversPastAndSupportsSearch() throws Exception {
+        String token = registerAccount("13800000226");
+        // 「早上建完、晚上来关联」的那条：已经过去了，但必须在候选里
+        long past = postJson("/api/v1/events", token,
+                "{\"title\":\"上周复盘\",\"startAt\":\"2026-09-20T09:00:00+08:00\","
+                        + "\"endAt\":\"2026-09-20T10:00:00+08:00\",\"timezone\":\"Asia/Shanghai\"}")
+                .path("data").path("id").asLong();
+        // 重复日程：候选里只该出现一次（用户关联的是序列本身）
+        long weekly = createWeeklyStandup(token);
+        long future = postJson("/api/v1/events", token,
+                "{\"title\":\"季度评审\",\"startAt\":\"2026-10-20T09:00:00+08:00\","
+                        + "\"endAt\":\"2026-10-20T11:00:00+08:00\",\"timezone\":\"Asia/Shanghai\","
+                        + "\"locationName\":\"A 座报告厅\"}")
+                .path("data").path("id").asLong();
+
+        JsonNode all = getJson("/api/v1/events/all", token).path("data");
+        // 按开始时间倒序：未来 → 重复序列起点 → 过去
+        assertThat(all).hasSize(3);
+        assertThat(startInstants(all)).containsExactly(
+                local("2026-10-20T09:00"), local("2026-10-05T09:00"), local("2026-09-20T09:00"));
+        JsonNode series = all.get(1);
+        assertThat(series.path("eventId").asLong()).isEqualTo(weekly);
+        assertThat(series.path("recurring").asBoolean()).isTrue();
+        JsonNode occurrenceDate = series.path("occurrenceDate");
+        assertThat(occurrenceDate.isMissingNode() || occurrenceDate.isNull()).isTrue();
+        assertThat(all.get(0).path("eventId").asLong()).isEqualTo(future);
+        assertThat(all.get(2).path("eventId").asLong()).isEqualTo(past);
+
+        // 关键字：标题与地点都算命中
+        assertThat(getJson(get("/api/v1/events/all").param("keyword", "复盘")
+                .header("Authorization", "Bearer " + token)).path("data")).hasSize(1);
+        assertThat(getJson(get("/api/v1/events/all").param("keyword", "报告厅")
+                .header("Authorization", "Bearer " + token)).path("data")).hasSize(1);
+        // `%` 是字面量，不是通配符：不然搜一个百分号会把所有日程都搜出来
+        assertThat(getJson(get("/api/v1/events/all").param("keyword", "%")
+                .header("Authorization", "Bearer " + token)).path("data")).isEmpty();
+
+        // 别人的日程不会混进来
+        String other = registerAccount("13800000227");
+        assertThat(getJson("/api/v1/events/all", other).path("data")).isEmpty();
+    }
+
+    @Test
     @DisplayName("待办的重复规则：创建、改、清空，非法规则直接拒")
     void taskRruleRoundTrip() throws Exception {
         String token = registerAccount("13800000225");

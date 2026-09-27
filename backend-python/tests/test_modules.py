@@ -62,6 +62,56 @@ def set_reminders(client, tokens, target_type: str, target_id: int, minutes: lis
     return response["data"]
 
 
+def list_all_events(client, tokens, **params) -> list[dict]:
+    response = client.get("/api/v1/events/all", params=params, headers=auth(tokens)).json()
+    assert response["code"] == 0, response
+    return response["data"]
+
+
+def test_all_events_include_past_series_once_and_support_search(client) -> None:
+    """全部日程（spec §4.1.6）：过去的也要有、重复序列只出现一次、可按关键字搜。"""
+    tokens = register(client, "13900002801")
+    past = create_event(
+        client,
+        tokens,
+        {
+            "title": "上周复盘",
+            "startAt": "2026-09-20T09:00:00+08:00",
+            "endAt": "2026-09-20T10:00:00+08:00",
+        },
+    )
+    weekly = create_event(client, tokens, WEEKLY_PAYLOAD)
+    future = create_event(
+        client,
+        tokens,
+        {
+            "title": "季度评审",
+            "startAt": "2026-10-20T09:00:00+08:00",
+            "endAt": "2026-10-20T11:00:00+08:00",
+            "locationName": "A 座报告厅",
+        },
+    )
+
+    all_events = list_all_events(client, tokens)
+    assert [item["eventId"] for item in all_events] == [future["id"], weekly["id"], past["id"]]
+    series = all_events[1]
+    assert series["recurring"] is True
+    # 重复序列只出现一次：它不是「某一次出现」
+    assert series["occurrenceDate"] is None
+
+    # 关键字命中标题与地点
+    assert [item["eventId"] for item in list_all_events(client, tokens, keyword="复盘")] == [past["id"]]
+    assert [item["eventId"] for item in list_all_events(client, tokens, keyword="报告厅")] == [
+        future["id"]
+    ]
+    # `%` 是字面量而不是通配符
+    assert list_all_events(client, tokens, keyword="%") == []
+
+    # 别人的日程不会混进来
+    other = register(client, "13900002802")
+    assert list_all_events(client, other) == []
+
+
 def reminder_schedule(client, tokens, start: str, end: str) -> list[dict]:
     response = client.get(
         "/api/v1/reminders/schedule",

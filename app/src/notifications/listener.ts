@@ -1,4 +1,5 @@
 import { routeFromResponse, type NotificationRoute } from './route';
+import { localNotificationsAvailable } from './availability';
 
 /**
  * 监听「用户点了本地通知」（spec §4.5）。
@@ -13,6 +14,10 @@ import { routeFromResponse, type NotificationRoute } from './route';
 export async function subscribeNotificationResponses(
   handler: (route: NotificationRoute) => void,
 ): Promise<() => void> {
+  // Expo Go（Android）里连 import 都会抛（见 availability.ts）：直接当「没有通知」处理
+  if (!localNotificationsAvailable()) {
+    return () => undefined;
+  }
   const Notifications = await import('expo-notifications');
   const emit = (response: unknown) => {
     const route = routeFromResponse(response as never);

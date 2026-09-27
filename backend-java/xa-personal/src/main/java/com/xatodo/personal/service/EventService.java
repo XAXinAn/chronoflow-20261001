@@ -14,6 +14,7 @@ import com.xatodo.personal.entity.EventException;
 import com.xatodo.personal.entity.Task;
 import com.xatodo.personal.mapper.EventExceptionMapper;
 import com.xatodo.personal.mapper.EventMapper;
+import com.xatodo.personal.mapper.SearchMapper;
 import com.xatodo.personal.mapper.TaskMapper;
 import com.xatodo.personal.recurrence.RecurrenceExpander;
 import org.springframework.beans.BeanUtils;
@@ -48,6 +49,12 @@ public class EventService {
     private final CalendarService calendarService;
     private final RecurrenceExpander expander;
     private final TaskMapper taskMapper;
+    /** 「全部日程」复用它那条带 ESCAPE 的 ILIKE SQL，避免两处转义规则漂移。 */
+    private final SearchMapper searchMapper;
+
+    /** 「关联日程」候选列表的默认与最大条数（spec §4.1.6）。 */
+    private static final int DEFAULT_LIST_LIMIT = 200;
+    private static final int MAX_LIST_LIMIT = 500;
 
     private static final Set<String> STATUSES =
             Set.of(Event.STATUS_CONFIRMED, Event.STATUS_TENTATIVE, Event.STATUS_CANCELLED);
@@ -59,12 +66,14 @@ public class EventService {
                         EventExceptionMapper eventExceptionMapper,
                         CalendarService calendarService,
                         RecurrenceExpander expander,
-                        TaskMapper taskMapper) {
+                        TaskMapper taskMapper,
+                        SearchMapper searchMapper) {
         this.eventMapper = eventMapper;
         this.eventExceptionMapper = eventExceptionMapper;
         this.calendarService = calendarService;
         this.expander = expander;
         this.taskMapper = taskMapper;
+        this.searchMapper = searchMapper;
     }
 
     // ------------------------------------------------------------------ 写入
@@ -218,6 +227,47 @@ public class EventService {
         occurrences.sort(Comparator.comparing(EventOccurrence::startAt)
                 .thenComparing(EventOccurrence::eventId));
         return occurrences;
+    }
+
+    /**
+     * 我的**全部日程**（「关联日程」候选，spec §4.1.6），按开始时间倒序，可按关键字过滤。
+     *
+     * <p>为什么不复用 {@link #rangeQuery}：它必须给时间范围、而且会把重复日程展开成每一次实例 ——
+     * 拉一年就是几百条，用来当候选列表既慢又不准（用户要关联的是**那条日程**，
+     * 而 `task.event_id` 指向的也正是序列本身，不是某一次出现）。
+     *
+     * <p>关键字走的是检索那条带 {@code ESCAPE} 的 ILIKE SQL：空关键字时模式串是 `%%`，
+     * 于是「列全部」和「按关键字过滤」共用一条 SQL，转义规则只有一份。
+     */
+    public List<EventOccurrence> listAll(Long identityId, String keyword, Integer limit) {
+        int effectiveLimit = limit == null
+                ? DEFAULT_LIST_LIMIT
+                : Math.clamp(limit, 1, MAX_LIST_LIMIT);
+        return searchMapper.searchEvents(identityId, LikeQuery.pattern(keyword), effectiveLimit)
+                .stream()
+                .map(EventService::toSeriesOccurrence)
+                .toList();
+    }
+
+    /**
+     * 原始日程 → 实例视图（**不展开**）：一条重复日程只出现一次，
+     * `occurrenceDate` 为 null，时间就是序列自己的开始 / 结束时刻。
+     */
+    private static EventOccurrence toSeriesOccurrence(Event event) {
+        return new EventOccurrence(
+                event.getId(),
+                event.getCalendarId(),
+                event.getTitle(),
+                event.getLocationName(),
+                event.getLocationAddress(),
+                event.getLocationDetail(),
+                event.getStartAt().toInstant(),
+                event.getEndAt().toInstant(),
+                Boolean.TRUE.equals(event.getAllDay()),
+                StringUtils.hasText(event.getTimezone()) ? event.getTimezone() : "Asia/Shanghai",
+                StringUtils.hasText(event.getRrule()),
+                null,
+                false);
     }
 
     public Event requireOwned(Long identityId, Long eventId) {

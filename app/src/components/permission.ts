@@ -8,6 +8,7 @@ import {
   type PermissionKind,
   type PermissionGateway,
 } from '../domain/permissions';
+import { localNotificationsAvailable } from '../notifications/availability';
 
 /**
  * 权限申请的 RN 适配层：把 domain/permissions.ts 的纯逻辑接到真实的系统弹窗上。
@@ -66,6 +67,15 @@ function gatewayFor(
      * 通知走动态 import：原生通知模块在「Web 预览 / 缺原生模块的构建」里不存在，
      * 顶层 import 会让整个 App 起不来（与 notifications/expoGateway.ts 同一套写法）。
      */
+    if (!localNotificationsAvailable()) {
+      // Expo Go（Android）：import 就会抛，这里直接当作「没有权限」，由调用方提示
+      return {
+        current: async () => false,
+        request: async () => false,
+        explain,
+        reject,
+      };
+    }
     const api = () => import('expo-notifications');
     return {
       current: async () => (await (await api()).getPermissionsAsync()).granted,

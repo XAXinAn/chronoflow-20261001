@@ -255,13 +255,9 @@ public class SearchService {
         return result.isEmpty() ? ALL_TYPES : result;
     }
 
-    /** 关键字 → LIKE 模式串。转义 `\`、`%`、`_`，配合 SQL 里的 {@code ESCAPE '\'}。 */
+    /** 关键字 → LIKE 模式串（转义规则见 {@link LikeQuery}，与「全部日程」共用一份）。 */
     private static String likePattern(String keyword) {
-        String escaped = keyword
-                .replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_");
-        return "%" + escaped + "%";
+        return LikeQuery.pattern(keyword);
     }
 
     /** 事件时区非法时退回 UTC：脏数据不该让整个检索接口 500。 */

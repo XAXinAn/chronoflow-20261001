@@ -1,5 +1,4 @@
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
 
 import { createApiClient } from './api/client';
 import { createEndpoints, type Endpoints } from './api/endpoints';
@@ -7,6 +6,7 @@ import { SessionManager } from './auth/session';
 import { createSecureTokenStore, loadOrCreateDeviceId } from './auth/tokenStore';
 import { createExpoNotificationGateway } from './notifications/expoGateway';
 import { createSecureReminderIdStore } from './notifications/reminderStore';
+import { localNotificationsAvailable } from './notifications/availability';
 import {
   createNoopReminderScheduler,
   createReminderScheduler,
@@ -44,25 +44,6 @@ async function createReminderSchedulerSafe(): Promise<ReminderScheduler> {
   } catch {
     return createNoopReminderScheduler();
   }
-}
-
-/**
- * 本机能不能用 `expo-notifications`。
- *
- * **Expo Go（Android）从 SDK 53 起移除了这个模块**：只要 `import('expo-notifications')`
- * 就会在模块求值阶段抛「Android Push notifications functionality was removed from Expo Go」，
- * 而且这个错误会被 Expo 的 LogBox 当成未捕获错误弹红框（catch 住也没用，模块工厂自己报的）。
- * 所以在 Expo Go 里直接跳过：日程/待办的其它功能照常，只是本机不排提醒 —— 与
- * 「切换设备后新设备默认开启」那条降级口径一致，不骗用户。
- *
- * 想在模拟器/真机上验证**到点提醒真的会响**，必须用开发构建（`expo-dev-client` / `expo run:android`）。
- */
-function localNotificationsAvailable(): boolean {
-  if (Platform.OS !== 'android') {
-    return true;
-  }
-  // executionEnvironment: 'storeClient' = Expo Go；'standalone' / 'bare' = 独立包或开发构建
-  return Constants.executionEnvironment !== 'storeClient';
 }
 
 /**

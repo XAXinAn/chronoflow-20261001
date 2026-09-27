@@ -198,6 +198,21 @@ def list_events(
     return envelope(service.list_events(principal.identity_id, None, start, end))
 
 
+@router.get("/events/all")
+def list_all_events(
+    keyword: str | None = Query(default=None),
+    limit: int | None = Query(default=None),
+    principal: IdentityPrincipal = Depends(current_identity),
+    service=Depends(_service),
+) -> dict:
+    """我的全部日程（每个重复序列只出现一次），按开始时间倒序，可用关键字过滤。
+
+    给「待办 → 关联日程」用（spec §4.1.6）。**必须声明在 `/events/{id}` 之前**：
+    FastAPI 按声明顺序匹配，反过来的话 `/events/all` 会被当成 id 解析。
+    """
+    return envelope(service.list_all_events(principal.identity_id, keyword, limit))
+
+
 @router.post("/events")
 def create_event(
     payload: EventCreate,
