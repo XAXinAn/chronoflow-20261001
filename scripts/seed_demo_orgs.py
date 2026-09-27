@@ -17,13 +17,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
-BASE_URL = "http://localhost:8080/api/v1"
-SUPER_ADMIN = ("admin", "admin123456")
+# 默认打本机后端；部署到远端时用 XATODO_API_BASE 指过去（例如 http://127.0.0.1:18080/api/v1）
+BASE_URL = os.environ.get("XATODO_API_BASE", "http://localhost:8080/api/v1")
+# 默认是本地开发用的超管账号；部署环境用 XATODO_ADMIN_USER / XATODO_ADMIN_PASSWORD 覆盖
+SUPER_ADMIN = (
+    os.environ.get("XATODO_ADMIN_USER", "admin"),
+    os.environ.get("XATODO_ADMIN_PASSWORD", "admin123456"),
+)
 
 # 组织拥有者：先前的脚本已经把这个手机号认领成两个组织的成员，这里只做校验不重复建
 OWNER_MEMBER_KEY = "18006569106"
@@ -298,7 +304,12 @@ def ensure_tree(admin_token: str, nodes: list[Node], root_name: str = "总部") 
 
     mapping = existing_paths()
     if root_name not in mapping:
-        raise SystemExit(f"找不到根部门「{root_name}」，请先在组织里建它")
+        # 全新组织里连根部门都没有：组织管理员建根部门是允许的，顺手建掉，
+        # 否则脚本在「刚建好的组织」上第一步就卡住（部署时实测踩到）
+        created_root = ok(f"建根部门 {root_name}",
+                          call("POST", "/org-admin/departments", admin_token, {"name": root_name}))
+        mapping[root_name] = created_root["id"]
+        print(f"  根部门不存在，已创建：{root_name}")
     created = 0
     for node, parent_path, _level in flatten(nodes, root_name):
         full = f"{parent_path}/{node.name}" if parent_path else node.name

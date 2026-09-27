@@ -39,21 +39,16 @@ public class AliyunSmsSender implements SmsSender {
     private final HttpClient httpClient;
     private final Clock clock;
 
+    /**
+     * 只留**一个**构造器：两个构造器时 Spring 会不知道用哪个，直接报
+     * 「No default constructor found」——而且只在 provider=aliyun 装配这个 Bean 时才炸，
+     * 本地默认 log 通道完全看不出来（部署到线上第一次启动才发现）。
+     */
     public AliyunSmsSender(AuthProperties properties, ObjectMapper objectMapper) {
-        this(properties, objectMapper,
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(),
-                Clock.systemUTC());
-    }
-
-    /** 便于测试注入固定时钟与假 HttpClient。 */
-    AliyunSmsSender(AuthProperties properties,
-                    ObjectMapper objectMapper,
-                    HttpClient httpClient,
-                    Clock clock) {
         this.config = properties.getSms();
         this.objectMapper = objectMapper;
-        this.httpClient = httpClient;
-        this.clock = clock;
+        this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+        this.clock = Clock.systemUTC();
     }
 
     @Override
