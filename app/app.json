@@ -31,7 +31,7 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "http://10.0.2.2:8080"
+      "apiBaseUrl": "http://8.136.20.182:8088"
     }
   }
 }

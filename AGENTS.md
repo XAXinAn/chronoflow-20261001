@@ -599,6 +599,25 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 
 ## 9. 快速自检
 
+### 9.0 已部署环境（2026-09-27）
+
+线上演示环境：**http://8.136.20.182:8088**（Web 后台与 API 同源；App 的 `apiBaseUrl` 也指这里）。
+
+| 项 | 说明 |
+| --- | --- |
+| 机器 | 阿里云 ECS，Ubuntu 22.04，2C/3.4G，SSH 密钥 `~/develop/workspace/XAXINAN.pem`（权限须 600） |
+| 编排 | `/opt/xatodo/`：`docker-compose.yml` + `backend/`（fat jar + Dockerfile）+ `web/dist/` + `.env`；源文件在仓库 `deploy/` |
+| 容器 | `xatodo-db`（postgres:16-alpine）、`xatodo-redis`、`xatodo-backend`（Temurin 21，`-Xmx512m`，只绑 `127.0.0.1:18080`） |
+| 前端 | 用**宿主 nginx**（80/443 被宝塔既有站点占着，另加 8088 站点，见 `deploy/nginx-host.conf` → `/etc/nginx/conf.d/xatodo.conf`） |
+| 账号 | 超管 `admin` / 见 `/opt/xatodo/.env` 的 `ADMIN_PASSWORD`；组织管理端 `leodigital_admin` / `leodigital123`、`zjou_admin` / `zjou123456`；App `18006569106` + 短信验证码 |
+| 短信 | 复用同机 ChronoFlow 的阿里云短信凭据与模板（`.env` 里的 `ALIYUN_SMS_*`），已实测能收到；接了 aliyun 之后接口**不再回显验证码** |
+| 演示数据 | 利欧数字 45 部门/117 人、浙江海洋大学 52 部门/260 人；两个组织各有一个可认领的拥有者成员（工号 `1145141919810` / 学号 `2023210704127`） |
+
+**两个坑**（都实际卡过）：①公网打不通要先看**阿里云安全组**，再看机器自己的 **ufw**——
+这台机的 ufw 只放行了 22/80/443/8888 等，8088 需要 `ufw allow 8088/tcp`，只加安全组不够；
+②`AliyunSmsSender` 曾因**两个构造器**导致 Spring 装配失败（`No default constructor found`），
+只在 `provider=aliyun` 时暴露——本地默认 log 通道完全看不出来，是线上第一次启动才炸的。
+
 ```bash
 # 后端（测试自带嵌入式 PG/Redis，无需外部依赖）
 cd backend-java && mvn -B clean verify          # 期望 90 项全绿（需提权：沙箱不让绑端口）
