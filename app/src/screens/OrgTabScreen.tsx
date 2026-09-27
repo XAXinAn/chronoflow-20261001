@@ -83,11 +83,21 @@ export function OrgTabScreen({
   if (orgAccounts.length === 0) {
     return (
       <Screen>
-        <View style={{ padding: theme.spacing.md, paddingTop: insets.top + theme.spacing.sm }}>
+        {/* 空状态与「待办」页一致：整屏居中（贴顶会让人以为上面还有内容没加载出来） */}
+        <View
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            paddingHorizontal: theme.spacing.lg,
+            paddingBottom: insets.bottom + theme.spacing.xl,
+          }}
+        >
           <EmptyState title="还没有组织账号" hint="组织账号由所在组织统一创建，用学号/工号添加" />
-          <PrimaryButton title="添加组织账号" onPress={onOpenAccounts} />
+          <View style={{ marginTop: theme.spacing.lg }}>
+            <PrimaryButton title="添加组织账号" onPress={onOpenAccounts} />
+          </View>
           {error ? (
-            <Text style={{ color: theme.color.danger, marginTop: 12 }}>{error}</Text>
+            <Text style={{ color: theme.color.danger, marginTop: 12, textAlign: 'center' }}>{error}</Text>
           ) : null}
         </View>
       </Screen>
