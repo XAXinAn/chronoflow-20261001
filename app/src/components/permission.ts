@@ -61,6 +61,19 @@ function gatewayFor(
       reject,
     };
   }
+  if (kind === 'notification') {
+    /**
+     * 通知走动态 import：原生通知模块在「Web 预览 / 缺原生模块的构建」里不存在，
+     * 顶层 import 会让整个 App 起不来（与 notifications/expoGateway.ts 同一套写法）。
+     */
+    const api = () => import('expo-notifications');
+    return {
+      current: async () => (await (await api()).getPermissionsAsync()).granted,
+      request: async () => (await (await api()).requestPermissionsAsync()).granted,
+      explain,
+      reject,
+    };
+  }
   return {
     current: async () => (await ImagePicker.getMediaLibraryPermissionsAsync()).granted,
     request: async () => (await ImagePicker.requestMediaLibraryPermissionsAsync()).granted,

@@ -94,7 +94,7 @@ describe('合规文本入口（规范 §一）', () => {
 
 describe('权限申请（规范 §四 D6）', () => {
   it('三类权限都要有话术，且必须说清「拒绝了也能用」', () => {
-    for (const kind of ['photo', 'location'] as const) {
+    for (const kind of ['photo', 'location', 'notification'] as const) {
       const rationale = PERMISSION_RATIONALE[kind];
       expect(rationale.title.length).toBeGreaterThan(0);
       expect(rationale.message).toContain('不允许');

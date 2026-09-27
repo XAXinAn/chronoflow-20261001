@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 
+import { askPermission } from '../components/permission';
 import type { NotificationGateway, ScheduledNotification } from './scheduler';
 
 /** Android 8 起通知必须挂在渠道上；没有渠道 = 系统直接丢掉这条通知。 */
@@ -47,17 +48,14 @@ export async function createExpoNotificationGateway(): Promise<NotificationGatew
   return {
     async ensurePermission() {
       await prepare();
-      const current = await Notifications.getPermissionsAsync();
-      if (current.granted) {
-        return true;
-      }
-      // 系统已经记住「不再询问」时再 request 一次不会有任何反应，
-      // 直接返回 false，由调用方引导用户去系统设置（与 components/permission.ts 同一套口径）
-      if (!current.canAskAgain) {
-        return false;
-      }
-      const asked = await Notifications.requestPermissionsAsync();
-      return asked.granted;
+      /**
+       * 走统一的权限入口，而不是直接 `requestPermissionsAsync()`：
+       * 审核规范要求**先用自己的文案说明用途、再弹系统窗**，拒绝后只提示并给「去设置」，
+       * 绝不退出 App（spec §12.5）。已有权限时它也不会重复打扰。
+       *
+       * 系统记住「不再询问」的情况也由它兜住：request 返回 false → 走 reject 提示。
+       */
+      return askPermission('notification');
     },
 
     async cancelAll(ids) {

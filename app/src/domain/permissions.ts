@@ -12,12 +12,15 @@
  */
 
 /**
- * 第一版只用得到这两种权限。
+ * 第一版只用得到这三种权限。
  *
  * 「拍照识别日程」暂缓上线，因此 App **不申请相机权限**——不申请就不该在隐私政策里声明，
  * 清单与实现必须一致（这正是上架检测会核对的东西）。
+ *
+ * 通知（`POST_NOTIFICATIONS`）是 2026-09-27 新加的：日程/待办的到点提醒走本地通知
+ * （spec §4.5），因此必须在申请前说明用途，隐私政策 §9.2 的权限清单也要同步列出。
  */
-export type PermissionKind = 'photo' | 'location';
+export type PermissionKind = 'photo' | 'location' | 'notification';
 
 export interface PermissionRationale {
   /** 说明弹窗标题 */
@@ -44,6 +47,14 @@ export const PERMISSION_RATIONALE: Record<PermissionKind, PermissionRationale> =
       + '定位只在使用该功能时获取，我们不会在后台持续记录您的位置。\n\n'
       + '您也可以选择「不允许」，之后仍可搜索地点或手工输入地址。',
     deniedHint: '未获得定位权限，您可以搜索地点或手工输入地址，其他功能不受影响。',
+  },
+  notification: {
+    title: '开启通知提醒',
+    message:
+      '用于在日程或待办开始前提醒您（例如「10:00 开始 · 会议室 A」）。\n\n'
+      + '提醒由您的手机在本地发出，我们不通过服务端推送，也不会把日程内容交给第三方。\n\n'
+      + '您也可以选择「不允许」，日程与待办照常使用，只是到点不会有提醒。',
+    deniedHint: '未获得通知权限，日程与待办照常使用；如需提醒可在系统设置里打开通知，其他功能不受影响。',
   },
 };
 

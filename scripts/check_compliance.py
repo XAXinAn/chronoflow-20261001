@@ -420,9 +420,9 @@ def check_permission_rationale() -> None:
     text = read(helper)
     require_contains(
         text,
-        ["photo", "location"],
+        ["photo", "location", "notification"],
         "domain/permissions.ts",
-        "相册 / 定位两类权限都要有用途说明文案（第一版不做拍照识别，因此不申请相机权限）",
+        "相册 / 定位 / 通知三类权限都要有用途说明文案（第一版不做拍照识别，因此不申请相机权限）",
     )
     for screen in [
         "AgendaScreen.tsx",
@@ -436,6 +436,19 @@ def check_permission_rationale() -> None:
             "PermissionsAsync" not in body or "ensurePermission" in body,
             f"{screen} 直接调了系统权限申请，没有先说明用途；"
             "统一走 domain/permissions.ts 的 ensurePermission（先解释、再申请、拒绝也不退出）",
+        )
+    # 适配层之外**任何**文件都不许直接申请权限：通知的排期模块是最近新增的一个，
+    # 它必须走 components/permission.ts 的 askPermission，而不是自己 request
+    for path in sorted(APP_SRC.rglob("*.ts*")):
+        if path.name == "permission.ts" and path.parent.name == "components":
+            continue
+        body = read(path)
+        if "PermissionsAsync" not in body:
+            continue
+        require(
+            "askPermission" in body or "ensurePermission" in body,
+            f"{path.relative_to(APP_SRC)} 直接调了系统权限申请，没有先说明用途；"
+            "统一走 components/permission.ts 的 askPermission（先解释、再申请、拒绝也不退出）",
         )
 
 

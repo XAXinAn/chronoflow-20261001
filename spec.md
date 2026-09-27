@@ -1508,12 +1508,14 @@ GET /api/v1/legal/{doc}  →  纯静态 HTML（无脚本、无跳转、免登录
 规范 §四把「未及时明确告知索取权限的目的和用途」「用户拒绝授权后强制退出」
 「不给权限弹窗循环」都列为常见违规。因此：
 
-- 所有相册 / 定位申请统一走 `app/src/components/permission.ts` 的 `askPermission()`
+- 所有相册 / 定位 / 通知申请统一走 `app/src/components/permission.ts` 的 `askPermission()`
   （纯逻辑在 `app/src/domain/permissions.ts`）：**已有权限就不再打扰** → 先弹我们自己的
   用途说明 → 再弹系统权限 → 拒绝只提示 + 给一个「去设置」入口，**绝不退出 App**；
 - 被拒绝后必须保留可用的兜底路径：不定位仍可搜索 / 手工输入地点，不给相册权限仍可手工新建日程与待办；
+  不给通知权限仍可正常使用日程与待办，只是到点不提醒（spec §4.5：到点提醒走**本地通知**，
+  不经过服务端推送，因此通知权限与第三方推送 SDK 是两件事）；
 - `scripts/check_compliance.py` 会检查界面里没有人绕过 `askPermission` 直接调
-  `*PermissionsAsync()`。
+  `*PermissionsAsync()`（适配层 `components/permission.ts` 除外，任何新模块都要走它）。
 
 ### 12.6 双清单、个性化推送与 SDK
 
