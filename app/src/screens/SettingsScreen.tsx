@@ -104,7 +104,6 @@ export function SettingsScreen({
     await signOut();
   };
 
-  const isOrg = session?.identityType === 'ORG_MEMBER';
   const nickname = session?.nickname ?? '未命名';
 
   return (
@@ -152,12 +151,13 @@ export function SettingsScreen({
           <Text style={{ color: theme.color.textPrimary, fontSize: 22, fontWeight: '600' }} numberOfLines={1}>
             {nickname}
           </Text>
-          <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 4 }}>
-            {isOrg ? '组织身份' : '个人身份'} · 身份 #{session?.identityId ?? '-'}
-          </Text>
-          <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: 2 }}>
-            账号 #{session?.accountId ?? '-'}
-          </Text>
+          {/*
+            这里原来还有两行「个人身份 · 身份 #1」「账号 #1」。
+            身份 ID / 账号 ID 是内部标识：用户看不懂、也没法拿它做任何事，
+            真要排查问题让他报手机号就够了。「个人身份 / 组织身份」也一并去掉 ——
+            那是我们的数据模型术语，用户视角只有「我在用哪个账号」，
+            而当前组织在「组织」tab 顶部已经写清楚。
+          */}
           {avatarError ? (
             <Text style={{ color: theme.color.danger, fontSize: 12, marginTop: 4 }}>{avatarError}</Text>
           ) : null}
@@ -209,7 +209,6 @@ export function SettingsScreen({
           <ListRow
             leading={<RowIcon name="chatbubble-ellipses-outline" />}
             title="意见反馈"
-            subtitle="功能异常、体验建议都可以提"
             onPress={onOpenFeedback}
             trailing={<Chevron />}
           />
@@ -249,7 +248,6 @@ export function SettingsScreen({
           <ListRow
             leading={<RowIcon name="list-outline" />}
             title={LEGAL_DOCS['personal-info-collected'].title}
-            subtitle="我们实际收集到的每一项信息"
             onPress={() => onOpenLegal('personal-info-collected')}
             trailing={<Chevron />}
           />
@@ -281,17 +279,13 @@ export function SettingsScreen({
             title="运营主体"
             subtitle={OPERATOR_NAME}
           />
-          {/*
-            接口地址只在开发构建里显示：正式包给用户看一个 IP:端口没有意义，
-            而且把后端地址摆在设置页里等于给攻击者省一步侦察。
-          */}
-          {__DEV__ ? (
-            <>
-              <ListSeparator inset={52} />
-              <ListRow leading={<RowIcon name="link-outline" />} title="接口地址" subtitle={baseUrl} />
-            </>
-          ) : null}
           <ListSeparator inset={52} />
+          {/*
+            接口地址那一行删掉了。原先的判断是「只在 __DEV__ 显示」，但 Expo Go / dev client
+            里 __DEV__ 恒为 true —— 于是演示包里用户照样看到 `http://<ip>:8080`：
+            对用户是无意义的噪音，对我们则是白送一次后端地址的侦察。
+            开发需要看地址时读 app.json / .env.local 即可，不必摆在界面上。
+          */}
           <ListRow leading={<RowIcon name="information-circle-outline" />} title="版本" subtitle={APP_VERSION} />
         </ListGroup>
       </View>
