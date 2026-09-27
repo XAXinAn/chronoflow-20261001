@@ -936,7 +936,7 @@ erDiagram
 | GET / PATCH / DELETE | `/tasks/{id}` | 详情 / 编辑 / 删除。待办与日程一样支持 `rrule`（§4.1.2）：详情里回带，PATCH 里 `null` = 不修改、空串 = 清空（回到「不重复」） |
 | POST | `/tasks/{id}/complete` | 完成 / 取消完成 |
 | POST | `/tasks/{id}/convert-to-event` | 转为日程 |
-| PUT | `/reminders` | 批量覆盖某日程/待办的提醒设置 |
+| PUT | `/reminders` | 批量覆盖某日程/待办的提醒设置。请求体 `{ "targetType": "EVENT" \| "TASK", "targetId": 12, "items": [{ "minutesBefore": 15, "occurrenceDate": null }] }` —— **字段名是 `items`**（传空数组 = 清空全部提醒） |
 | GET | `/reminders/schedule` | 未来一段时间内**所有会响的提醒**（入参 `start` / `end`）。重复日程按**展开后的每一次实例**给出，条目含目标类型 / id / 标题 / 地点 / 开始时刻 / 全天 / 时区 / `minutesBefore[]`。App 冷启动、回到前台、以及每次保存或删除之后用它对齐本机通知（§4.5） |
 | GET | `/holidays` | 节假日与调休数据。入参 `year`、可选 `month`（省略返回全年）、可选 `country`（默认 `zh-CN`）；返回 `date` / `name` / `dayType`（`HOLIDAY` 放假 / `WORKDAY` 调休上班），见 §5.11 |
 

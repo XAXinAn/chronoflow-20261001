@@ -21,11 +21,28 @@
 | 4 | App：冷启动 / 回到前台 / 每次保存删除后**对齐本机排期**（服务端没返回的目标一律撤销）；「我的 → 到点提醒」总开关；**通知点击统一路由**（含冷启动补捞） | `8083564` |
 | 5 | **待办也支持重复与提醒**：两版后端补 `rrule` 的读/写与校验（PATCH 里空串 = 清空），编辑页加「重复 / 提醒」两行（有截止时间才出现） | `8083564` |
 
+### 模拟器真跑一遍才发现的两个坑（2026-09-27 当天）
+
+1. **`PUT /reminders` 的数组字段名是 `items`，不是 `reminders`。** 客户端一度按语义写成
+   `reminders`，而两版后端 DTO 都要 `items` —— 两版后端的测试都只测 `items`，App 又是
+   第一个真正调用这个接口的地方，于是「保存提醒」必然 10001「items 不能为空」，
+   直到第一次在模拟器里点保存才暴露（界面上的表现是「待办已保存，但提醒没有存上：…」）。
+   修法：请求体形状下沉到 `domain/reminderSchedule.ts` 的 `buildSetRemindersPayload` + 单测，
+   spec §6.2 也补上了字段名。
+2. **Expo Go（Android）用不了 `expo-notifications`。** SDK 53 起该模块的推送部分被移出 Expo Go，
+   只要 `import('expo-notifications')` 就在模块求值阶段抛错（LogBox 红框，catch 都不住）。
+   已在 `runtime.ts` 用 `Constants.executionEnvironment === 'storeClient'` 判掉，Expo Go 里直接用
+   空实现，App 干净启动；**想在设备上验证「到点真的会响」，必须走开发构建**
+   （`expo-dev-client` / `npx expo run:android`），这同时也是极光推送的前置条件。
+
 ### 当前状态
 
-- **测试基线**：Java **104**、Python **57**、App **165 + typecheck**、web-admin 18、合规门禁 19 项，全绿。
+- **测试基线**：Java **104**、Python **57**、App **166 + typecheck**、web-admin 18、合规门禁 19 项，全绿。
 - **提醒链路现在是闭环的**：编辑页写入 → 服务端存设置 → App 对齐本机排期（重复日程按实例展开）→ 到点本地响 → 点击跳回那一次。
-- **仍然没做真机验证**：本机没有模拟器，`expo-notifications` 的渠道创建、权限弹窗、到点触发只做了单测与 typecheck 覆盖。
+- **线上已更新**：2026-09-27 把新 jar 推到 `8.136.20.182`（备份在 `/opt/xatodo/backend/jar.bak-*`），
+  实测 `GET /reminders/schedule` 401（路由存在且受保护）、App 冷启动会调它并拿到 200、
+  `POST /tasks` 写入成功并且库里能查到。**服务端 + App 的写入链路已实测通**。
+- **还没验证的只剩「本机通知真的响」**：Expo Go 跑不了（见上），需要开发构建。
 
 ### 下一步
 

@@ -272,3 +272,31 @@ export function parseCustomMinutes(
   }
   return { ok: true, minutes };
 }
+
+/** `PUT /reminders` 的请求体（spec §6.2）。 */
+export interface SetRemindersPayload {
+  targetType: 'EVENT' | 'TASK';
+  targetId: number;
+  /**
+   * 数组字段名是 **`items`**：两版后端的 DTO 都叫 `items`。
+   *
+   * 这里踩过一次 —— 客户端一度按「语义好看」写成 `reminders`，结果保存提醒必然
+   * 10001「items 不能为空」。当时两版后端的测试都只测 `items`，而 App 是第一个真正调用
+   * 这个接口的地方，所以直到第一次真机点保存才暴露。形状放在这里 + 单测，就是为了让它
+   * 不可能再悄悄改回去。
+   */
+  items: { minutesBefore: number }[];
+}
+
+/** 组装提醒设置的请求体：去重升序后逐条写成 `{ minutesBefore }`。 */
+export function buildSetRemindersPayload(
+  targetType: 'EVENT' | 'TASK',
+  targetId: number,
+  minutes: number[],
+): SetRemindersPayload {
+  return {
+    targetType,
+    targetId,
+    items: normalizeReminders(minutes).map((minutesBefore) => ({ minutesBefore })),
+  };
+}

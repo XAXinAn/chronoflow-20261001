@@ -1,5 +1,5 @@
 import type { Endpoints } from '../api/endpoints';
-import { normalizeReminders, sameReminderSet } from '../domain/reminderSchedule';
+import { buildSetRemindersPayload, sameReminderSet } from '../domain/reminderSchedule';
 import type { ReminderScheduler, ReminderSyncResult } from './scheduler';
 import { resyncLocalReminders } from './resync';
 
@@ -19,11 +19,9 @@ export async function persistReminderSettings(options: {
   if (sameReminderSet(options.minutes, options.initialMinutes)) {
     return;
   }
-  await options.api.setReminders({
-    targetType: options.targetType,
-    targetId: options.targetId,
-    reminders: normalizeReminders(options.minutes).map((minutesBefore) => ({ minutesBefore })),
-  });
+  await options.api.setReminders(
+    buildSetRemindersPayload(options.targetType, options.targetId, options.minutes),
+  );
 }
 
 /**

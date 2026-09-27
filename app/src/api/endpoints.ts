@@ -149,7 +149,14 @@ export function createEndpoints(client: ApiClient) {
     setReminders: (payload: {
       targetType: 'EVENT' | 'TASK';
       targetId: number;
-      reminders: { minutesBefore: number }[];
+      /**
+       * 字段名是 `items`（两版后端的 DTO 都是这个），**不是** `reminders`。
+       *
+       * 这里踩过一次：客户端按「语义好看」写成 `reminders`，而后端要 `items`，
+       * 结果保存提醒必然 10001「items 不能为空」。因为 App 是第一个真正调用这个接口的地方，
+       * 两版后端的测试都只测了 `items`，谁都没发现 —— 真机第一次点保存才暴露。
+       */
+      items: { minutesBefore: number }[];
     }) => client.put<{ minutesBefore: number }[]>('/api/v1/reminders', payload),
 
     reminders: (targetType: 'EVENT' | 'TASK', targetId: number) =>

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_SCHEDULED_REMINDERS,
   MAX_CUSTOM_MINUTES,
+  buildSetRemindersPayload,
   describeReminders,
   formatMinutesBefore,
   normalizeReminders,
@@ -183,5 +184,23 @@ describe('提醒的界面值', () => {
 
     expect(planned).toHaveLength(1);
     expect(planned[0]!.occurrenceDate).toBe('2026-10-05');
+  });
+
+  /**
+   * 请求体字段名必须与两版后端一致（spec §6.2）。
+   *
+   * 这条用例是补出来的：客户端一度把数组字段写成 `reminders`（语义上更好看），
+   * 而后端 DTO 要的是 `items` —— 两版后端的测试都只测 `items`，App 又是第一个真正调用
+   * 这个接口的地方，于是「保存提醒」在真机上必然失败，直到第一次真机点保存才暴露。
+   */
+  it('提醒设置的请求体：数组字段是 items，去重升序', () => {
+    const payload = buildSetRemindersPayload('TASK', 7, [60, 15, 60]);
+
+    expect(payload).toEqual({
+      targetType: 'TASK',
+      targetId: 7,
+      items: [{ minutesBefore: 15 }, { minutesBefore: 60 }],
+    });
+    expect(payload).not.toHaveProperty('reminders');
   });
 });
