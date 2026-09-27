@@ -32,6 +32,15 @@ export interface EventDraft {
   status: EventStatus;
   /** 出行时间用文本保存，避免用户边输边被 Number('') 变成 0 */
   travelTimeMinutes: string;
+  /**
+   * 重复规则（RFC 5545）。空串 = 不重复。
+   *
+   * 存字符串而不是结构化对象：它就是要提交给服务端的东西，中间再转一层只会多一处走形的地方；
+   * 生成与解析都在 domain/recurrence.ts 里，有单测盯着往返一致。
+   */
+  rrule: string;
+  /** 本地提醒的提前量（分钟）。服务端也存一份（PUT /reminders），用于换设备后重排。 */
+  reminders: number[];
 }
 
 export const DEFAULT_START_TIME = '09:00';
@@ -69,6 +78,8 @@ export function emptyDraft(): EventDraft {
     availability: 'BUSY',
     status: 'CONFIRMED',
     travelTimeMinutes: '',
+    rrule: '',
+    reminders: [],
   };
 }
 
@@ -196,6 +207,9 @@ export function buildCreatePayload(dateKey: string, draft: EventDraft) {
     category: blankToNull(draft.category),
     url: blankToNull(draft.url),
     travelTimeMinutes: travel.ok ? travel.minutes : null,
+    // 空串表示「不重复」；服务端的 PATCH 里 null 是「不修改」，所以这里给的是 '' 而不是 null，
+    // 否则用户把重复改回「不重复」会静默失效（与地点清空是同一个坑，spec §4.1.4）
+    rrule: draft.rrule.trim(),
   };
 }
 
@@ -226,6 +240,9 @@ export function draftFromEvent(event: EventDetail): EventDraft {
     availability: event.availability ?? 'BUSY',
     status: event.status === 'TENTATIVE' ? 'TENTATIVE' : 'CONFIRMED',
     travelTimeMinutes: event.travelTimeMinutes === null ? '' : String(event.travelTimeMinutes),
+    rrule: event.rrule ?? '',
+    // 提醒由 PUT /reminders 单独维护（不在 event 行上），编辑页加载后另行拉取回填
+    reminders: [],
   };
 }
 

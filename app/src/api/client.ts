@@ -172,6 +172,8 @@ export function createApiClient(options: ApiClientOptions) {
     post: <T>(path: string, body?: unknown, extra: ApiRequestOptions = {}) =>
       request<T>(path, { ...extra, method: 'POST', body }),
     patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
+    // PUT 的语义是「整体覆盖」（如 PUT /reminders），与 PATCH 的「只改给到的字段」不是一回事
+    put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
     del: <T>(path: string, query?: ApiRequestOptions['query']) =>
       request<T>(path, { method: 'DELETE', query }),
   };

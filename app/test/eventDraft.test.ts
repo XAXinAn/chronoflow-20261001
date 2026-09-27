@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addMinutes,
   buildCreatePayload,
+  buildUpdatePayload,
   emptyDraft,
   parseTravelTime,
   parseTime,
@@ -76,6 +77,7 @@ describe('新建日程草稿', () => {
         category: null,
         url: null,
         travelTimeMinutes: null,
+        rrule: '',
       });
   });
 
@@ -149,5 +151,17 @@ describe('新建日程草稿', () => {
     expect(validateDraft({ ...emptyDraft(), title: '开会', url: 'https://example.com' })).toEqual({
       ok: true,
     });
+  });
+
+  it('重复规则原样提交；“不重复”要提交空串而不是 null', () => {
+    // PATCH 里 null 表示「不修改」，所以清空重复必须用空串表达——
+    // 否则用户把重复改回「不重复」会静默失效（与地点清空同一个坑，spec §4.1.4）
+    expect(buildCreatePayload('2026-09-28', emptyDraft()).rrule).toBe('');
+    expect(
+      buildCreatePayload('2026-09-28', { ...emptyDraft(), rrule: 'FREQ=WEEKLY;BYDAY=MO' }).rrule,
+    ).toBe('FREQ=WEEKLY;BYDAY=MO');
+    expect(
+      buildUpdatePayload('2026-09-28', { ...emptyDraft(), rrule: '  FREQ=DAILY  ' }).rrule,
+    ).toBe('FREQ=DAILY');
   });
 });

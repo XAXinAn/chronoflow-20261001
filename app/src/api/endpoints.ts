@@ -137,6 +137,24 @@ export function createEndpoints(client: ApiClient) {
      */
     deleteAccount: () => client.post<void>('/api/v1/me/deletion', {}),
 
+    /**
+     * 批量覆盖某个日程/待办的提醒设置（spec §6.2 的 `PUT /reminders`，语义是整体覆盖）。
+     *
+     * 服务端存一份是为了「换设备/重装后还能把提醒排回来」，真正的到点触发由 App 本地通知负责
+     * （spec §4.5：到点提醒不经过服务端推送）。
+     */
+    setReminders: (payload: {
+      targetType: 'EVENT' | 'TASK';
+      targetId: number;
+      reminders: { minutesBefore: number }[];
+    }) => client.put<{ minutesBefore: number }[]>('/api/v1/reminders', payload),
+
+    reminders: (targetType: 'EVENT' | 'TASK', targetId: number) =>
+      client.get<{ minutesBefore: number }[]>('/api/v1/reminders', {
+        targetType,
+        targetId: String(targetId),
+      }),
+
     // ----------------------------------------------------------- 个人日历
     calendars: () => client.get<CalendarSummary[]>('/api/v1/calendars'),
     eventsInRange: (start: string, end: string) =>
