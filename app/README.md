@@ -13,6 +13,22 @@ npm run start -w @xa-todo/app             # 启动 Expo dev server
 
 ## 界面结构
 
+## 图标与品牌标记
+
+标记沿用旧 ChronoFlow 的**「时纪」字标**（细白描边圆头笔画、近黑底 `#21221D`），
+源图在 `app/assets/brand/mark-1024.png`，取自旧仓库
+`github.com/XAXinAn/ChronoFlow` 的 `frontend/assets/AppIcons/.../1024.png`。
+
+全套图标由脚本派生，**不要手改产物**：
+
+```bash
+pip install pillow
+python3 scripts/generate_app_icons.py          # 生成 icon / adaptive-icon / splash / store-512
+```
+
+注意源图写的是两个字「时纪」，而软件名是三个字「时纪流」——标记当作图形资产沿用，
+名称变化不跟着改标记（要改标记得先有设计稿）。
+
 | 页面 | 说明 |
 | --- | --- |
 | 首次启动 | **隐私政策同意页**：显著提醒 + 同意 / 不同意（spec §12.3，默认不勾选、同意前不发任何请求） |

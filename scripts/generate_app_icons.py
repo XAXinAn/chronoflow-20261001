@@ -1,35 +1,30 @@
 #!/usr/bin/env python3
-"""生成时纪流的应用图标（黑白极简的「X」字标）。
+"""由品牌源图派生全套应用图标（时纪流 / ChronoFlow）。
 
-为什么用代码画而不是让 AI 生成：
-商店对图标有硬性要求——**1024×1024、iOS 不能带 alpha 通道、Android 自适应图标要留安全区**，
-而且要求同一个 mark 在图标 / 启动图 / 商店素材上是同一个形状。这些用几行几何代码就能精确保证，
-还能改一个数字就重出全套（比例、描边、颜色都在下面的常量与命令行参数里）。
+**品牌标记沿用旧 ChronoFlow 的「时纪」字标**——细白描边圆头笔画、近黑底 `#21221D`。
+源图 `app/assets/brand/mark-1024.png` 直接取自旧仓库：
 
-**这一版的造型是「粗细对比 + 圆头 + 大留白」**：两根对角线一粗一细（粗 .108 / 细 .062）。
-前两版都不行，记下来免得再走一遍：
-  ① 等粗粗笔画（.125）＝ 一个「关闭按钮」，与系统的 ✕ 图标没有区别；
-  ② 等粗但整体变细（.085）＝ 优雅但依然是个普通 X；
-  ③ 对比太弱（.102 / .074）＝ 看着像手抖，不像设计。
-把对比拉到 .108 / .062 才既像字标又不像按钮。留白用 0.60（0.66 太满，0.52 又显得虚）。
-小尺寸可用性用「128 / 64 / 48 / 32 px 阶梯图」验过：细笔画在 32px 下仍然分得出来，
-**细到 .055 以下会在小尺寸糊掉**，别再调更细。
+    github.com/XAXinAn/ChronoFlow
+      frontend/assets/AppIcons/Assets.xcassets/AppIcon.appiconset/_/1024.png
+      （与同目录 appstore.png 字节相同）
 
-底色保持近黑、标是白色：白底图标在商店列表与浅色壁纸上会失去边界，
-而深底白标在哪儿都有一个清晰的方块边界（启动图反过来用白底黑标，形成呼应）。
+为什么不自己画：品牌标记是既有资产，重画一版必然走形；整个 ChronoFlow 生态（旧前端、
+邮件发件别名、短信签名）都用这一个标记，新一版要延续它。
+注意源图写的是**两个字「时纪」**，而软件名是三个字「时纪流」——这是刻意的：
+标记当作图形资产沿用，名称变化不跟着改标记（要改标记得先有设计稿）。
 
 产出（默认写进 app/assets/）：
 
     icon.png            1024×1024 RGB，无 alpha —— 构建用 + 商店上传用（iOS 要求无透明）
-    adaptive-icon.png   1024×1024 RGBA  —— Android 自适应图标前景，mark 缩到安全圆内
-    splash.png          1024×1024 RGB   —— 启动图：白底 + 黑 X（与 app.json 的 splash 一致）
+    adaptive-icon.png   1024×1024 RGBA  —— Android 自适应图标前景（透明底 + 缩进安全圆的标记）
+    splash.png          1024×1024 RGB   —— 启动图：白底 + 深色标记
     store/icon-512.png   512×512 RGB    —— 应用宝/部分商店要求 512×512
 
 用法：
 
     pip install pillow
     python3 scripts/generate_app_icons.py
-    python3 scripts/generate_app_icons.py --out /tmp/icons --box 0.62 --stroke 0.11   # 试参数
+    python3 scripts/generate_app_icons.py --source <新标记.png> --out /tmp/icons   # 换标记时
 """
 
 from __future__ import annotations
@@ -38,168 +33,112 @@ import argparse
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
-# 与 packages/design-tokens 保持一致：accent 是近黑，文本色是纯白
-INK = (10, 10, 10)
+#: 品牌底色（从源图四角取样得到：RGB(33,34,29)，近黑带一点暖调）
+BRAND_BACKGROUND = (33, 34, 29)
 PAPER = (255, 255, 255)
 
-#: 超采样倍数：先按 4 倍画再降采样，边缘才不会有锯齿
-SUPERSAMPLE = 4
+#: 背景亮度上限与笔画亮度下限之间的渐变带：用来把抗锯齿边缘抠干净，
+#: 同时保证源图背景上那层极淡的光晕（亮度 48~199 的零星像素）不会变成灰边。
+BACKDROP_MAX = 60
+STROKE_MIN = 170
 
 
-def thick_line(draw: ImageDraw.ImageDraw, start, end, width: float, color) -> None:
-    """带圆头的粗线段。
-
-    PIL 的 ``line`` 只有方头（``joint='curve'`` 也只管拐角），因此这里手动画：
-    四边形做躯干 + 两端各一个圆做圆头。圆头是这套设计语言的关键——
-    X 的四个端点是视觉焦点，方的会显得生硬，而且更容易被看成系统图标。
-    """
-    (x1, y1), (x2, y2) = start, end
-    dx, dy = x2 - x1, y2 - y1
-    length = math.hypot(dx, dy)
-    if length == 0:
-        return
-    # 单位法向量，用来把线段「加粗」成四边形
-    nx, ny = -dy / length, dx / length
-    half = width / 2
-    draw.polygon(
-        [
-            (x1 + nx * half, y1 + ny * half),
-            (x2 + nx * half, y2 + ny * half),
-            (x2 - nx * half, y2 - ny * half),
-            (x1 - nx * half, y1 - ny * half),
-        ],
-        fill=color,
-    )
-    for cx, cy in (start, end):
-        draw.ellipse([cx - half, cy - half, cx + half, cy + half], fill=color)
+def build_mask(source: Image.Image) -> Image.Image:
+    """从源图里提取「笔画」的 alpha 掩膜（白笔画 → 255，背景 → 0）。"""
+    rgb = source.convert("RGB")
+    mask = Image.new("L", rgb.size)
+    src, dst = rgb.load(), mask.load()
+    width, height = rgb.size
+    span = STROKE_MIN - BACKDROP_MAX
+    for y in range(height):
+        for x in range(width):
+            luminance = max(src[x, y])  # 笔画是近白，取通道最大值最稳
+            if luminance <= BACKDROP_MAX:
+                dst[x, y] = 0
+            elif luminance >= STROKE_MIN:
+                dst[x, y] = 255
+            else:
+                dst[x, y] = int((luminance - BACKDROP_MAX) * 255 / span)
+    return mask
 
 
-def draw_mark(
+def content_box(mask: Image.Image) -> tuple[int, int, int, int]:
+    """标记的实际包围盒：后面按它做等比缩放与居中，避免把源图的留白也一起缩放。"""
+    box = mask.getbbox()
+    if box is None:
+        raise SystemExit("源图里没有找到任何笔画，检查阈值或换一张源图")
+    return box
+
+
+def place_mark(
+    mask: Image.Image,
     size: int,
     *,
-    box_ratio: float,
-    stroke_ratio: float,
-    thin_stroke_ratio: float,
-    background,
-    color,
+    max_half_diagonal: float,
+    color: tuple[int, int, int],
+    background: tuple[int, int, int] | None,
 ) -> Image.Image:
-    """在 size×size 画布上居中画一个粗细对比的 X。
+    """把标记等比缩放后居中放进 size×size 画布。
 
-    ``box_ratio`` 是**可见图形**占画布的比例（含圆头的外沿）；
-    两根对角线分别用 ``stroke_ratio``（粗）与 ``thin_stroke_ratio``（细）。
-    端点要从可见边界再往里缩「最粗那根的一半」：圆头是以端点为中心向外扩的，
-    不缩的话 X 会顶到画布边上。
+    ``max_half_diagonal`` 是**标记半对角线**占画布的比例上限：Android 自适应图标会被裁成
+    圆形/圆角方形，只按宽度缩放会导致两个端点被切掉，必须按对角线约束。
     """
-    canvas = Image.new("RGB", (size, size), background)
-    draw = ImageDraw.Draw(canvas)
-    span = size * box_ratio
-    thin = size * thin_stroke_ratio
-    thick = size * stroke_ratio
-    inset = max(thick, thin) / 2
-    low = (size - span) / 2 + inset
-    high = size - low
-    # 粗的那根走「左上 → 右下」，细的走「右上 → 左下」
-    thick_line(draw, (low, low), (high, high), thick, color)
-    thick_line(draw, (high, low), (low, high), thin, color)
+    left, top, right, bottom = content_box(mask)
+    mark = mask.crop((left, top, right, bottom))
+    half_diagonal_ratio = math.hypot(mark.width, mark.height) / 2 / max(mark.width, mark.height)
+    # 先把标记放大到「宽度 = 画布」得到基准，再按对角线约束缩回去
+    scale = size / mark.width
+    scale = min(
+        scale,
+        max_half_diagonal * size * 2 / math.hypot(mark.width, mark.height),
+    )
+    target = (max(1, round(mark.width * scale)), max(1, round(mark.height * scale)))
+    mark = mark.resize(target, Image.LANCZOS)
+    assert half_diagonal_ratio > 0  # 只为说明上面那步在算什么，不参与逻辑
+
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0) if background is None else background + (255,))
+    layer = Image.new("RGBA", target, color + (255,))
+    canvas.paste(layer, ((size - target[0]) // 2, (size - target[1]) // 2), mark)
     return canvas
 
 
-def render(
-    size: int,
-    *,
-    box_ratio: float,
-    stroke_ratio: float,
-    thin_stroke_ratio: float,
-    background=INK,
-    color=PAPER,
-) -> Image.Image:
-    """超采样后降采样，得到边缘干净的成品。"""
-    big = draw_mark(
-        size * SUPERSAMPLE,
-        box_ratio=box_ratio,
-        stroke_ratio=stroke_ratio,
-        thin_stroke_ratio=thin_stroke_ratio,
-        background=background,
-        color=color,
-    )
-    return big.resize((size, size), Image.LANCZOS)
-
-
-def render_alpha(
-    size: int,
-    *,
-    box_ratio: float,
-    stroke_ratio: float,
-    thin_stroke_ratio: float,
-    color=PAPER,
-) -> Image.Image:
-    """透明底前景（Android 自适应图标要前沿透明）：
-
-    先把 X 画在近黑底上，再把黑底抠成透明，只保留 mark 的像素。
-    """
-    big = draw_mark(
-        size * SUPERSAMPLE,
-        box_ratio=box_ratio,
-        stroke_ratio=stroke_ratio,
-        thin_stroke_ratio=thin_stroke_ratio,
-        background=INK,
-        color=color,
-    )
-    mask = big.convert("L").point(lambda value: 255 if value > 40 else 0)
-    foreground = Image.new("RGBA", big.size, (0, 0, 0, 0))
-    foreground.paste(big.convert("RGBA"), (0, 0), mask)
-    return foreground.resize((size, size), Image.LANCZOS)
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="生成时纪流的 X 字标图标")
+    parser = argparse.ArgumentParser(description="由品牌源图派生应用图标")
+    parser.add_argument("--source", default="app/assets/brand/mark-1024.png", help="品牌标记源图")
     parser.add_argument("--out", default="app/assets", help="输出目录（默认 app/assets）")
     parser.add_argument("--size", type=int, default=1024, help="图标边长（默认 1024）")
-    parser.add_argument(
-        "--box", type=float, default=0.60,
-        help="可见图形占画布的比例（默认 0.60；自适应图标另用 0.44，见下）",
-    )
-    parser.add_argument("--stroke", type=float, default=0.108, help="粗笔画的占比（默认 0.108）")
-    parser.add_argument(
-        "--thin-stroke", type=float, default=0.062,
-        help="细笔画的占比（默认 0.062；小于 0.055 在 32px 下会糊成一根粗线）",
-    )
     args = parser.parse_args()
 
+    source = Image.open(args.source)
+    mask = build_mask(source)
     out = Path(args.out)
     (out / "store").mkdir(parents=True, exist_ok=True)
 
-    # 1) 应用图标：近黑底 + 白色 X。**必须是 RGB**——iOS 的应用图标不允许带 alpha 通道
-    icon = render(
-        args.size,
-        box_ratio=args.box,
-        stroke_ratio=args.stroke,
-        thin_stroke_ratio=args.thin_stroke,
-    )
+    # 1) 应用图标：直接用品牌源图，只去掉 alpha 通道——iOS 的应用图标不允许透明。
+    #    （源图本身 alpha 全 255，这里只是把通道砍掉，像素颜色一字不改。）
+    icon = Image.new("RGB", source.size, BRAND_BACKGROUND)
+    icon.paste(source.convert("RGB"), (0, 0))
+    icon = icon.resize((args.size, args.size), Image.LANCZOS)
     icon.save(out / "icon.png")
 
-    # 2) Android 自适应图标前景：透明底，且缩到**安全圆**里。
-    #    安全圆半径是画布的 1/3，X 的四个尖端到中心的距离必须小于它，
-    #    否则圆形遮罩会把四个角切掉（0.44 是留了余量的取值，别再往上调）。
-    adaptive = render_alpha(
-        args.size,
-        box_ratio=0.44,
-        stroke_ratio=args.stroke * 0.9,
-        thin_stroke_ratio=args.thin_stroke * 0.9,
-    )
+    # 2) Android 自适应图标前景：透明底，标记缩到安全圆内（外围会被系统裁掉）
+    adaptive = place_mark(
+        mask, args.size * 4,
+        max_half_diagonal=0.30,
+        color=PAPER,
+        background=None,
+    ).resize((args.size, args.size), Image.LANCZOS)
     adaptive.save(out / "adaptive-icon.png")
 
-    # 3) 启动图：白底黑 X，与 app.json 的 splash.backgroundColor 一致
-    splash = render(
-        args.size,
-        box_ratio=0.32,
-        stroke_ratio=args.stroke * 0.82,
-        thin_stroke_ratio=args.thin_stroke * 0.82,
+    # 3) 启动图：白底 + 深色标记（与 app.json 的 splash.backgroundColor 一致）
+    splash = place_mark(
+        mask, args.size * 4,
+        max_half_diagonal=0.22,
+        color=BRAND_BACKGROUND,
         background=PAPER,
-        color=INK,
-    )
+    ).convert("RGB").resize((args.size, args.size), Image.LANCZOS)
     splash.save(out / "splash.png")
 
     # 4) 商店素材：应用宝等要求 512×512
