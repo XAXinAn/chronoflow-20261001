@@ -13,13 +13,9 @@ import {
   FormRowValue,
   FormRowText,
   FormTextArea,
-  SegmentedControl,
 } from '../components/form';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import {
-  AVAILABILITY_OPTIONS,
-  PRIORITY_OPTIONS,
-  STATUS_OPTIONS,
   addMinutes,
   buildCreatePayload,
   buildUpdatePayload,
@@ -441,61 +437,19 @@ export function EventEditorScreen({
           </Card>
         </View>
 
-        <View style={{ marginTop: theme.spacing.md }}>
-          <Card>
-            <FormRow label="链接">
-              <FormRowText
-                value={draft.url}
-                placeholder="http:// 或 https://"
-                onChangeText={(url) => patch({ url })}
-              />
-            </FormRow>
-            <FormRow label="分类">
-              <FormRowText
-                value={draft.category}
-                placeholder="如：会议"
-                onChangeText={(category) => patch({ category })}
-              />
-            </FormRow>
-            <FormRow label="出行">
-              <FormRowText
-                value={draft.travelTimeMinutes}
-                placeholder="分钟"
-                onChangeText={(travelTimeMinutes) => patch({ travelTimeMinutes })}
-              />
-            </FormRow>
-            <FormRow label="优先级">
-              <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>
-                <SegmentedControl
-                  label="优先级"
-                  options={PRIORITY_OPTIONS}
-                  value={draft.priority}
-                  onChange={(priority) => patch({ priority })}
-                />
-              </View>
-            </FormRow>
-            <FormRow label="闲忙">
-              <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>
-                <SegmentedControl
-                  label="闲忙"
-                  options={AVAILABILITY_OPTIONS}
-                  value={draft.availability}
-                  onChange={(availability) => patch({ availability })}
-                />
-              </View>
-            </FormRow>
-            <FormRow label="状态" last>
-              <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>
-                <SegmentedControl
-                  label="状态"
-                  options={STATUS_OPTIONS}
-                  value={draft.status}
-                  onChange={(status) => patch({ status })}
-                />
-              </View>
-            </FormRow>
-          </Card>
-        </View>
+        {/*
+          这里原来还有第二张卡片：「链接 / 分类 / 出行 / 优先级 / 闲忙 / 状态」。
+          2026-09-27 整块从界面撤掉：这六项当时都没有消费方 ——
+          链接与分类没有任何读取方（分类筛选还没做），出行时间要等「出发提醒」（还没做）、
+          闲忙要等合并视图、状态要等参与者与邀请（阶段二）、日程优先级全仓无人读
+          （只有**待办**的优先级参与列表排序）。留着不仅占掉小半屏、把「删除日程」推得很远，
+          还会让用户以为「不填就不对」；其中「出行」那行更是因为后端不输出空字段
+          而显示成了 `undefined`，连带把保存也堵住（见 domain/eventDraft 的修复）。
+
+          **字段与接口都保留**：draft 里照旧带着它们（`draftFromEvent` 读、`buildUpdatePayload` 写），
+          所以编辑一条已有日程不会把这些值抹掉；将来做「出发提醒 / 分类筛选 / 合并视图」时，
+          接回界面即可，不需要动契约与两版后端。
+        */}
 
         {draft.place ? (
           <Pressable

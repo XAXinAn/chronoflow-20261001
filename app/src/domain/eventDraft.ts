@@ -222,15 +222,21 @@ export function draftFromEvent(event: EventDetail): EventDraft {
     endTime: timeInZone(event.endAt, zone),
     allDay: event.allDay,
     locationDetail: event.locationDetail ?? '',
+    /**
+     * 判断「有没有地点」必须用 `== null`（同时覆盖 null 与 undefined）：
+     * Java 那边配了 `default-property-inclusion: non_null`，值为空时**字段整个消失**，
+     * 客户端拿到的是 `undefined` 而不是 `null`。写成 `=== null` 会给一条没有任何地点的日程
+     * 造出一个叫「已选地点」的假地点。
+     */
     place:
-      event.locationName === null && event.latitude === null
+      event.locationName == null && event.latitude == null
         ? null
         : {
-            poiId: event.poiId,
+            poiId: event.poiId ?? null,
             name: event.locationName ?? '已选地点',
-            address: event.locationAddress,
-            latitude: event.latitude,
-            longitude: event.longitude,
+            address: event.locationAddress ?? null,
+            latitude: event.latitude ?? null,
+            longitude: event.longitude ?? null,
           },
     description: event.description ?? '',
     url: event.url ?? '',
@@ -239,7 +245,12 @@ export function draftFromEvent(event: EventDetail): EventDraft {
     priority: event.priority ?? 'NORMAL',
     availability: event.availability ?? 'BUSY',
     status: event.status === 'TENTATIVE' ? 'TENTATIVE' : 'CONFIRMED',
-    travelTimeMinutes: event.travelTimeMinutes === null ? '' : String(event.travelTimeMinutes),
+    /**
+     * 同上：字段缺失时是 `undefined`，`String(undefined)` 会得到字符串 `"undefined"`，
+     * 于是编辑页那一栏显示成「undefined」，而且保存时被 `parseTravelTime` 判为非法 ——
+     * 用户改一个字都存不进去（2026-09-27 真机上实测到的就是这个）。
+     */
+    travelTimeMinutes: event.travelTimeMinutes == null ? '' : String(event.travelTimeMinutes),
     rrule: event.rrule ?? '',
     // 提醒由 PUT /reminders 单独维护（不在 event 行上），编辑页加载后另行拉取回填
     reminders: [],

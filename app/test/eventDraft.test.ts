@@ -4,12 +4,14 @@ import {
   addMinutes,
   buildCreatePayload,
   buildUpdatePayload,
+  draftFromEvent,
   emptyDraft,
   parseTravelTime,
   parseTime,
   toIso,
   validateDraft,
 } from '../src/domain/eventDraft';
+import type { EventDetail } from '../src/api/types';
 
 describe('新建日程草稿', () => {
   it('parseTime 接受 HH:mm 与 H:mm，拒绝越界或乱写', () => {
@@ -163,5 +165,47 @@ describe('新建日程草稿', () => {
     expect(
       buildUpdatePayload('2026-09-28', { ...emptyDraft(), rrule: '  FREQ=DAILY  ' }).rrule,
     ).toBe('FREQ=DAILY');
+  });
+});
+
+/**
+ * 解析服务端响应时，**空字段是「不存在」而不是 `null`**。
+ *
+ * Java 侧配了 `default-property-inclusion: non_null`：值为空时字段整个消失。
+ * 曾经写成 `event.travelTimeMinutes === null ? '' : String(...)`，于是字段缺失时
+ * 得到字符串 `"undefined"`，编辑页那一栏显示成 `undefined`，并且被 `parseTravelTime`
+ * 判为非法 —— 用户改一个字都存不进去（2026-09-27 真机上实测到）。
+ * 地点那几行同理会造出一个叫「已选地点」的假地点。
+ */
+describe('从服务端响应还原草稿（字段可能整个缺失）', () => {
+  const sparse = {
+    id: 1,
+    calendarId: 1,
+    title: 'aaaaa',
+    startAt: '2026-09-27T01:00:00Z',
+    endAt: '2026-09-27T02:00:00Z',
+    allDay: false,
+    timezone: 'Asia/Shanghai',
+    rrule: null,
+    status: 'CONFIRMED',
+    availability: 'BUSY',
+    priority: 'NORMAL',
+    // description / locationName / latitude / url / category / travelTimeMinutes 全部缺失
+  } as unknown as EventDetail;
+
+  it('缺失的字段还原成空值，不会变成字符串 "undefined"', () => {
+    const draft = draftFromEvent(sparse);
+    expect(draft.travelTimeMinutes).toBe('');
+    expect(draft.url).toBe('');
+    expect(draft.category).toBe('');
+    expect(draft.description).toBe('');
+  });
+
+  it('没有地点时不会造出「已选地点」', () => {
+    expect(draftFromEvent(sparse).place).toBeNull();
+  });
+
+  it('这样还原出来的草稿可以正常保存（校验不会被 undefined 卡住）', () => {
+    expect(validateDraft(draftFromEvent(sparse))).toEqual({ ok: true });
   });
 });
