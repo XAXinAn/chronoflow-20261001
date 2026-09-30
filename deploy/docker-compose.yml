@@ -80,6 +80,18 @@ services:
       JPUSH_APNS_PRODUCTION: ${JPUSH_APNS_PRODUCTION:-true}
       # 节假日每天自动同步（spec §5.11）；拉不到只告警，界面用库里已有数据
       HOLIDAY_SYNC_BASE_URL: ${HOLIDAY_SYNC_BASE_URL:-https://raw.githubusercontent.com/NateScarlet/holiday-cn/master}
+      # 智能助手「小安」（spec §11）：模型地址与 Key。**只列变量名**，
+      # 真 Key 放在 /opt/xatodo/.env（gitignore），仓库里搜不到明文。
+      # api-key 为空 = 未接入：接口返回 90002，App 显示「还没有接入模型」。
+      XATODO_AGENT_BASE_URL: ${XATODO_AGENT_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      XATODO_AGENT_API_KEY: ${XATODO_AGENT_API_KEY:-}
+      XATODO_AGENT_MODEL: ${XATODO_AGENT_MODEL:-qwen3.6-flash}
+      XATODO_AGENT_ENABLE_THINKING: ${XATODO_AGENT_ENABLE_THINKING:-false}
+      XATODO_AGENT_MAX_TOKENS: ${XATODO_AGENT_MAX_TOKENS:-600}
+      # 语音转文字（长按说话）：走百炼的多模态生成接口，与对话不是同一个地址
+      XATODO_ASR_URL: ${XATODO_ASR_URL:-https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation}
+      XATODO_ASR_API_KEY: ${XATODO_ASR_API_KEY:-}
+      XATODO_ASR_MODEL: ${XATODO_ASR_MODEL:-qwen3-asr-flash}
       TZ: Asia/Shanghai
     volumes:
       - xatodo_uploads:/data/uploads

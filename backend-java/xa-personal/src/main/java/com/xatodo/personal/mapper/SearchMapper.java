@@ -34,7 +34,7 @@ public interface SearchMapper {
               AND (e.title ILIKE #{pattern} ESCAPE '\\'
                    OR e.description ILIKE #{pattern} ESCAPE '\\'
                    OR e.location_name ILIKE #{pattern} ESCAPE '\\')
-            ORDER BY e.start_at DESC
+            ORDER BY e.at DESC
             LIMIT #{limit}
             """)
     List<Event> searchEvents(@Param("identityId") Long identityId,

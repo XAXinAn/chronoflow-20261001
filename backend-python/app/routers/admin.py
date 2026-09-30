@@ -54,6 +54,10 @@ class OrganizationCreate(BaseModel):
     adminUsername: str = Field(min_length=3, max_length=64)
     adminPassword: str = Field(min_length=8, max_length=64)
     adminRealName: str | None = None
+    # 可选：预置首位拥有者（成员唯一识别 ID）。填了就同时建「总部」+ 一条 OWNER 成员，
+    # 组织一建好就能被认领；不填就是老行为（空组织）。见 services/admin.create_organization
+    ownerMemberKey: str | None = Field(default=None, max_length=64)
+    ownerRealName: str | None = Field(default=None, max_length=64)
 
 
 class OrganizationUpdate(BaseModel):

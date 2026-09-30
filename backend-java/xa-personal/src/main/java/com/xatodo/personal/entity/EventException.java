@@ -25,10 +25,9 @@ public class EventException {
 
     private String exceptionType;
 
-    private OffsetDateTime overrideStartAt;
+    private OffsetDateTime overrideAt;
 
-    private OffsetDateTime overrideEndAt;
-
+    
     private String overrideTitle;
 
     private OffsetDateTime createdAt;
@@ -65,20 +64,12 @@ public class EventException {
         this.exceptionType = exceptionType;
     }
 
-    public OffsetDateTime getOverrideStartAt() {
-        return overrideStartAt;
+    public OffsetDateTime getOverrideAt() {
+        return overrideAt;
     }
 
-    public void setOverrideStartAt(OffsetDateTime overrideStartAt) {
-        this.overrideStartAt = overrideStartAt;
-    }
-
-    public OffsetDateTime getOverrideEndAt() {
-        return overrideEndAt;
-    }
-
-    public void setOverrideEndAt(OffsetDateTime overrideEndAt) {
-        this.overrideEndAt = overrideEndAt;
+    public void setOverrideAt(OffsetDateTime overrideAt) {
+        this.overrideAt = overrideAt;
     }
 
     public String getOverrideTitle() {

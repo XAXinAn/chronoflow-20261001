@@ -227,6 +227,37 @@ class AdminService:
                 "org_id": org["id"],
             },
         )
+        if payload.get("ownerMemberKey"):
+            # 可选：预置「首位拥有者」（spec §3.4）。不填就维持老行为（空组织）——
+            # 那种组织只能靠组织管理员在后台手动建「总部」再加人。
+            # 这里只写成员记录，不建账号也不建身份：身份要等成员自己认领（spec §3.1）。
+            root = self._session.execute(
+                text(
+                    "INSERT INTO department (org_id, name, path, level, sort_order, status)"
+                    " VALUES (:org_id, '总部', '/', 1, 0, 'ACTIVE') RETURNING id"
+                ),
+                {"org_id": org["id"]},
+            ).scalar_one()
+            # 物化路径的结尾斜杠是硬要求：少了它 '/5' 会误匹配 '/51'（spec §6.4）
+            self._session.execute(
+                text("UPDATE department SET path = '/' || id || '/', updated_at = now()"
+                     " WHERE id = :id"),
+                {"id": root},
+            )
+            owner_key = payload["ownerMemberKey"].strip()
+            self._session.execute(
+                text(
+                    "INSERT INTO org_member (org_id, department_id, member_key, real_name,"
+                    " org_role, status) VALUES (:org_id, :department_id, :member_key, :real_name,"
+                    " 'OWNER', 'ACTIVE')"
+                ),
+                {
+                    "org_id": org["id"],
+                    "department_id": root,
+                    "member_key": owner_key,
+                    "real_name": (payload.get("ownerRealName") or owner_key).strip(),
+                },
+            )
         self._session.commit()
         self.record_audit(principal, "ORG_CREATE", "ORGANIZATION", org["id"], {"code": payload["code"]})
         return _org_view(org)

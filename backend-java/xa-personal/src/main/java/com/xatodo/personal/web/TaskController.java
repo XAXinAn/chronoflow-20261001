@@ -42,7 +42,7 @@ public class TaskController {
     }
 
     /**
-     * 待办转日程：需补齐起止时间；只给 startAt 时默认 1 小时。
+     * 待办转日程：需补齐起止时间；只给 at 时默认 1 小时。
      */
     @PostMapping("/{id}/convert-to-event")
     public ApiResponse<EventResponse> convertToEvent(@PathVariable Long id,
@@ -50,8 +50,7 @@ public class TaskController {
         Long identityId = CurrentIdentity.require().identityId();
         var event = conversionService.convertTaskToEvent(
                 identityId, id,
-                request == null ? null : request.startAt(),
-                request == null ? null : request.endAt());
+                request == null ? null : request.at());
         return ApiResponse.ok(EventResponse.from(event));
     }
 

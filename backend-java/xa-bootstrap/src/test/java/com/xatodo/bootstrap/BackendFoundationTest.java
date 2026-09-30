@@ -132,8 +132,8 @@ class BackendFoundationTest {
     }
 
     @Test
-    @DisplayName("日程结束时间必须晚于开始时间（spec §5.5）")
-    void eventEndMustBeAfterStart() {
+    @DisplayName("日程只有唯一时间点 at：必填，且旧的时间段列已真的删掉（spec §5.5）")
+    void eventHasSingleTimePoint() {
         long orgId = insertOrganization("心安科技", "XAKJ2");
         long departmentId = insertDepartment(orgId);
         long identityId = createOrgIdentity("13800000003", orgId);
@@ -141,11 +141,34 @@ class BackendFoundationTest {
                 "INSERT INTO calendar (calendar_type, org_id, name) VALUES ('ORG', ?, '组织日历') RETURNING id",
                 Long.class, orgId);
 
+        // 没给时间就写不进去（at 是 NOT NULL）
         assertThatThrownBy(() -> jdbcTemplate.update(
-                "INSERT INTO event (calendar_id, org_id, creator_identity_id, title, start_at, end_at) "
-                        + "VALUES (?, ?, ?, '倒置日程', TIMESTAMPTZ '2026-10-08 11:00:00+08', TIMESTAMPTZ '2026-10-08 09:00:00+08')",
+                "INSERT INTO event (calendar_id, org_id, creator_identity_id, title) "
+                        + "VALUES (?, ?, ?, '没时间的日程')",
                 calendarId, orgId, identityId))
                 .isInstanceOf(DataAccessException.class);
+
+        // V18 是**真删列**，不是留下 end_at 当遗留列——列没了，就没法再写出「结束时间」
+        assertThat(columnExists("event", "at")).isTrue();
+        assertThat(columnExists("event", "start_at")).isFalse();
+        assertThat(columnExists("event", "end_at")).isFalse();
+        assertThat(columnExists("event_exception", "override_at")).isTrue();
+        assertThat(columnExists("event_exception", "override_end_at")).isFalse();
+
+        // 只给一个时间点就建得出来
+        Long eventId = jdbcTemplate.queryForObject(
+                "INSERT INTO event (calendar_id, org_id, creator_identity_id, title, at) "
+                        + "VALUES (?, ?, ?, '只给一个时间', TIMESTAMPTZ '2026-10-08 09:00:00+08') RETURNING id",
+                Long.class, calendarId, orgId, identityId);
+        assertThat(eventId).isPositive();
+    }
+
+    private boolean columnExists(String table, String column) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_name = ? AND column_name = ?",
+                Integer.class, table, column);
+        return count != null && count > 0;
     }
 
     private long insertOrganization(String name, String code) {

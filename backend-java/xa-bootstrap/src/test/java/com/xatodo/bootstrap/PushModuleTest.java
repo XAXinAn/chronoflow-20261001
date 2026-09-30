@@ -151,8 +151,8 @@ class PushModuleTest {
         long memberId = jdbcTemplate.queryForObject(
                 "SELECT id FROM org_member WHERE org_id = ?", Long.class, orgId);
         postJsonWithBearer("/api/v1/org-admin/events", orgToken,
-                "{\"title\":\"周二例会\",\"startAt\":\"2026-10-06T01:00:00Z\","
-                        + "\"endAt\":\"2026-10-06T02:00:00Z\",\"scopeType\":\"MEMBER\","
+                "{\"title\":\"周二例会\",\"at\":\"2026-10-06T01:00:00Z\","
+                        + "\"scopeType\":\"MEMBER\","
                         + "\"memberIds\":[" + memberId + "],\"includeSubDepartments\":false}");
 
         // 关键断言：设备是按**账号**找到的 —— 上报时用的是个人身份，
@@ -178,8 +178,8 @@ class PushModuleTest {
 
         int before = pushProvider.calls.size();
         postJsonWithBearer("/api/v1/org-admin/events", orgToken,
-                "{\"title\":\"无人收到\",\"startAt\":\"2026-10-07T01:00:00Z\","
-                        + "\"endAt\":\"2026-10-07T02:00:00Z\",\"scopeType\":\"MEMBER\","
+                "{\"title\":\"无人收到\",\"at\":\"2026-10-07T01:00:00Z\","
+                        + "\"scopeType\":\"MEMBER\","
                         + "\"memberIds\":[" + memberId + "],\"includeSubDepartments\":false}");
         assertThat(pushProvider.calls).as("没有设备就不该调通道").hasSize(before);
     }

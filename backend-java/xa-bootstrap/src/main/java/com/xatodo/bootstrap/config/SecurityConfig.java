@@ -6,6 +6,7 @@ import com.xatodo.auth.security.AuthAttributes;
 import com.xatodo.auth.security.JwtAuthenticationFilter;
 import com.xatodo.common.api.ApiResponse;
 import com.xatodo.common.api.ErrorCode;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -56,6 +57,20 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(registry -> registry
+                        /*
+                         * 异步分派（ASYNC）与错误分派（ERROR）**不再走鉴权**。
+                         *
+                         * <p>Spring Security 6 起，AuthorizationFilter 默认对所有 dispatcher type 生效。
+                         * 而 SSE / DeferredResult 这种异步响应在收尾时，容器会把**同一个请求**
+                         * 再派发一次；这次再派发没有 SecurityContext，于是必然 Access Denied。
+                         * 此时响应已经提交（响应头早就发给客户端了），错误页写不进去，
+                         * 容器只能把连接硬切断 —— 客户端看到的是「流被中断」
+                         * （实测：curl 退出码 18 / transfer closed with outstanding read data remaining）。
+                         *
+                         * <p>放行它们是安全的：真正决定能不能进来的始终是**第一次** REQUEST 派发，
+                         * 那一次照样要过完整套鉴权规则。
+                         */
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers("/api/v1/system/**").permitAll()
                         .requestMatchers("/api/v1/admin/auth/login").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()

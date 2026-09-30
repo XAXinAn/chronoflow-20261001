@@ -17,7 +17,7 @@ export interface AgendaSection<T> {
   items: T[];
 }
 
-/** 按本地日期分组，并保持每组内按开始时间升序。 */
+/** 按本地日期分组，并保持每组内按时间升序。 */
 export function groupByDay<T>(
   items: T[],
   getStart: (item: T) => string,
@@ -42,7 +42,7 @@ export function groupByDay<T>(
 }
 
 export function groupOccurrences(items: EventOccurrence[], timeZone: string) {
-  return groupByDay(items, (item) => item.startAt, timeZone);
+  return groupByDay(items, (item) => item.at, timeZone);
 }
 
 /** 相对日期标签：今天 / 明天 / 昨天 / 周几 / 具体日期。 */
@@ -86,18 +86,47 @@ export function dayHeading(dateKey: string, todayKey: string): string {
   return `${prefix}${month} 月 ${day} 日 ${weekday}`;
 }
 
-/** 时间范围展示：全天不显示具体时刻。 */
-export function formatTimeRange(startIso: string, endIso: string, allDay: boolean, timeZone: string): string {
-  if (allDay) {
-    return '全天';
-  }
+/**
+ * 这个时刻是不是「只说了哪一天、没说几点」。
+ *
+ * 日程只有一个时间点（spec §4.1.2），**没有 all_day 字段了**；约定：落在当地 00:00
+ * 就表示「就这一天」。这样「全天」这个概念不必存在，界面也不显示 00:00。
+ */
+export function isDayOnlyPoint(atIso: string, timeZone: string): boolean {
   const formatter = new Intl.DateTimeFormat('zh-CN', {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   });
-  return `${formatter.format(new Date(startIso))} – ${formatter.format(new Date(endIso))}`;
+  return formatter.format(new Date(atIso)) === '00:00';
+}
+
+/**
+ * 日程时间的展示：有具体时刻给「15:00」，只说了哪一天给 null（界面只显示日期）。
+ */
+export function formatEventTime(atIso: string, timeZone: string): string | null {
+  return isDayOnlyPoint(atIso, timeZone) ? null : timeInZoneByIntl(atIso, timeZone);
+}
+
+/**
+ * 「什么时候的事」整串文案：`9 月 30 日 15:00` / `9 月 30 日`（通知正文用）。
+ */
+export function formatEventWhen(atIso: string, timeZone: string): string {
+  const [, month, day] = localDateKey(atIso, timeZone).split('-').map(Number) as
+    [number, number, number];
+  const date = `${month} 月 ${day} 日`;
+  const time = formatEventTime(atIso, timeZone);
+  return time ? `${date} ${time}` : date;
+}
+
+function timeInZoneByIntl(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso));
 }
 
 /**

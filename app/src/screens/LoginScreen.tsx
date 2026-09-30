@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '../api/client';
@@ -38,7 +39,6 @@ export function LoginScreen({
    * 「注册或登录即默认同意」都列为违规。判定逻辑抽在 domain/consent.ts，由单测盯着。
    */
   const [acceptedPolicy, setAcceptedPolicy] = useState(false);
-  const [debugCode, setDebugCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /** 发码后的倒计时秒数（spec §3.6：同手机号 60 秒 1 条） */
   const [cooldown, setCooldown] = useState(0);
@@ -62,11 +62,18 @@ export function LoginScreen({
     setError(null);
     try {
       const result = await api.sendSmsCode(phone.trim());
-      // 开发环境后端会回显验证码；生产环境该字段不存在
-      setDebugCode(result.debugCode ?? null);
+      /**
+       * 开发环境后端会回显验证码，生产环境该字段不存在。
+       *
+       * <p>**回显的验证码直接填进输入框，不在界面上写「开发环境验证码」**——
+       * 那种字样是给开发看的，用户看到会以为产品出了问题。
+       */
+      if (result.debugCode) {
+        setCode(result.debugCode);
+      }
       setCooldown(SMS_COOLDOWN_SECONDS);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '验证码发送失败');
+      setError(userFacingError(cause, '验证码发送失败'));
       // 后端说「发送过于频繁」时也进入倒计时：否则用户会一直点、一直失败
       if (cause instanceof ApiError && cause.code === 20005) {
         setCooldown(SMS_COOLDOWN_SECONDS);
@@ -103,7 +110,7 @@ export function LoginScreen({
       }
       setError('登录返回异常，请重试');
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '登录失败');
+      setError(userFacingError(cause, '登录失败'));
     } finally {
       setBusy(false);
     }
@@ -161,12 +168,6 @@ export function LoginScreen({
             />
           </View>
         </View>
-
-        {debugCode ? (
-          <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: theme.spacing.xs }}>
-            开发环境验证码：{debugCode}
-          </Text>
-        ) : null}
 
         {error ? (
           <Text style={{ color: theme.color.danger, fontSize: 13, marginTop: theme.spacing.sm }}>{error}</Text>

@@ -146,8 +146,7 @@ class ComplianceTest {
 
         // 造一点个人数据：一条日程 + 一个关联到它的待办
         long eventId = postJsonWithBearer("/api/v1/events", accessToken,
-                "{\"title\":\"要消失的日程\",\"startAt\":\"2026-10-01T01:00:00Z\","
-                        + "\"endAt\":\"2026-10-01T02:00:00Z\"}")
+                "{\"title\":\"要消失的日程\",\"at\":\"2026-10-01T01:00:00Z\"}")
                 .path("data").path("id").asLong();
         postJsonWithBearer("/api/v1/tasks", accessToken,
                 "{\"title\":\"要消失的待办\",\"eventId\":" + eventId + "}");

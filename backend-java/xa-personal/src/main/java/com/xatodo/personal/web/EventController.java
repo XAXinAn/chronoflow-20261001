@@ -50,7 +50,7 @@ public class EventController {
     }
 
     /**
-     * 日程转待办：保留标题、描述与结束时间（转为 due_at），原日程标记取消。
+     * 日程转待办：保留标题、描述与那一个时间点（转为 due_at），原日程标记取消。
      */
     @PostMapping("/{id}/convert-to-task")
     public ApiResponse<TaskResponse> convertToTask(@PathVariable Long id) {
@@ -74,7 +74,7 @@ public class EventController {
     }
 
     /**
-     * 我的全部日程（每个重复序列只出现一次），按开始时间倒序，可用关键字过滤。
+     * 我的全部日程（每个重复序列只出现一次），按时间倒序，可用关键字过滤。
      *
      * <p>给「待办 → 关联日程」用（spec §4.1.6）：候选不该被时间窗口限制，而且要能搜。
      * 路径放在 `/{id}` 之前声明，避免 `/events/all` 被当成 id 解析。

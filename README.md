@@ -24,19 +24,20 @@ xa-todo/
 | 部分 | 状态 |
 | --- | --- |
 | 需求与规格（spec.md） | 完成 |
-| 数据库结构（V1–V16 迁移，由 Flyway 独占管理） | 完成 |
-| 后端 Java（common / auth / personal / org / admin / support） | 完成（**96 项**集成测试 + 契约门禁） |
+| 数据库结构（V1–V19 迁移，由 Flyway 独占管理） | 完成 |
+| 后端 Java（common / auth / personal / org / support / agent / admin） | 完成（**149 项**集成测试 + 契约门禁） |
 | 设计令牌 packages/design-tokens | 完成（1 个测试文件，覆盖 35 个 CSS 变量） |
-| Web 后台 web-admin | 完成：超管端 + 组织管理端 + 意见反馈（18 项测试） |
-| App 端 app | 核心流程可用（**109 项**纯逻辑层测试，组件无渲染测试） |
-| 阶段二 backend-python | 完成（契约覆盖率 100%，**54 项**测试） |
+| Web 后台 web-admin | 完成：超管端 + 组织管理端 + 意见反馈（21 项测试） |
+| App 端 app | 核心流程可用（**206 项**纯逻辑层测试，组件无渲染测试） |
+| 智能助手「小安」 | 完成：流式对话 + 个人日程工具 + 逐条授权 + 语音输入（**Java 与 Python 两版都有**，见 spec §11 阶段三） |
+| 阶段二 backend-python | 完成（契约覆盖率 100%，**70 项**测试） |
 | CI 与 API 契约测试 | 完成（GitHub Actions） |
-| 上架合规（隐私政策 / 注销 / 权限告知） | 完成（spec §12，`scripts/check_compliance.py` 19 项门禁已进 CI） |
+| 上架合规（隐私政策 / 注销 / 权限告知） | 完成（spec §12，`scripts/check_compliance.py` 20 项门禁已进 CI） |
 | 生产部署编排（Dockerfile / docker-compose / Nginx） | 完成，已部署到 `http://8.136.20.182:8088` |
 
 ## API 契约
 
-[`contract/api-contract.json`](./contract/api-contract.json) 是**跨语言共享**的接口清单（**103 个端点**）。
+[`contract/api-contract.json`](./contract/api-contract.json) 是**跨语言共享**的接口清单（**111 个端点**）。
 Java 版与阶段二的 Python 版都必须满足它——改动这个文件等于改动契约，
 必须同时更新两版实现与 `spec.md`。
 

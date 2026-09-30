@@ -45,10 +45,9 @@ class VisionRecognizeTest {
         String reply = """
                 ```json
                 {"events":[
-                  {"title":"季度技术评审会","startAt":"2026-09-26T15:00:00+08:00",
-                   "endAt":"2026-09-26T17:00:00+08:00","location":"A座3F报告厅","confidence":0.92},
-                  {"title":"团队晚餐","startAt":"2026-09-26 19:00","endAt":"","allDay":false},
-                  {"title":"季度总结（全天）","startAt":"2026-09-30","allDay":true}
+                  {"title":"季度技术评审会","at":"2026-09-26T15:00:00+08:00","location":"A座3F报告厅","confidence":0.92},
+                  {"title":"团队晚餐","at":"2026-09-26 19:00"},
+                  {"title":"季度总结","at":"2026-09-30"}
                 ]}
                 ```
                 """;
@@ -60,14 +59,12 @@ class VisionRecognizeTest {
 
         assertThat(events).hasSize(3);
         assertThat(events.get(0).title()).isEqualTo("季度技术评审会");
-        assertThat(events.get(0).startAt().toString()).isEqualTo("2026-09-26T15:00+08:00");
+        assertThat(events.get(0).at().toString()).isEqualTo("2026-09-26T15:00+08:00");
         assertThat(events.get(0).confidence()).isEqualTo(0.92);
-        // 「2026-09-26 19:00」这种没有偏移量的写法，要按请求时区补上；endAt 留空 = 没看出
-        assertThat(events.get(1).startAt().toString()).isEqualTo("2026-09-26T19:00+08:00");
-        assertThat(events.get(1).endAt()).isNull();
-        // 只给日期 = 全天
-        assertThat(events.get(2).allDay()).isTrue();
-        assertThat(events.get(2).startAt().toString()).isEqualTo("2026-09-30T00:00+08:00");
+        // 「2026-09-26 19:00」这种没有偏移量的写法，要按请求时区补上
+        assertThat(events.get(1).at().toString()).isEqualTo("2026-09-26T19:00+08:00");
+                // 只给日期 = 当天 00:00（「就这一天」）
+        assertThat(events.get(2).at().toString()).isEqualTo("2026-09-30T00:00+08:00");
 
         // 提示词必须把「一图多活动」与「看不清时间不要猜」写进去，否则模型会擅自合并/编造
         assertThat(receivedPrompts).hasSize(1);
@@ -77,13 +74,13 @@ class VisionRecognizeTest {
     @Test
     @DisplayName("模型没给时间时不丢这条，交给 App 降级成待办")
     void keepsEventWithoutTime() throws Exception {
-        startFakeModel("{\"events\":[{\"title\":\"看板上的事项\",\"startAt\":\"\",\"location\":\"\"}]}", new ArrayList<>());
+        startFakeModel("{\"events\":[{\"title\":\"看板上的事项\",\"at\":\"\",\"location\":\"\"}]}", new ArrayList<>());
 
         var events = new LocalVisionEventRecognizer(properties(), objectMapper)
                 .recognize(new byte[]{1}, "image/png", "2026-09-25", "Asia/Shanghai");
 
         assertThat(events).hasSize(1);
-        assertThat(events.get(0).startAt()).isNull();
+        assertThat(events.get(0).at()).isNull();
         assertThat(events.get(0).locationName()).isNull();
     }
 
@@ -105,7 +102,7 @@ class VisionRecognizeTest {
         // 第一次回一段解释性文字（很常见），第二次才给 JSON
         startFakeModel(List.of(
                 "好的，图片里是一场季度技术评审会，时间是 9 月 26 日下午三点。",
-                "{\"events\":[{\"title\":\"季度技术评审会\",\"startAt\":\"2026-09-26T15:00:00+08:00\"}]}"
+                "{\"events\":[{\"title\":\"季度技术评审会\",\"at\":\"2026-09-26T15:00:00+08:00\"}]}"
         ), prompts);
 
         var events = new LocalVisionEventRecognizer(properties(), objectMapper)
@@ -130,16 +127,15 @@ class VisionRecognizeTest {
     }
 
     @Test
-    @DisplayName("校园通知（中秋放假 + 离返校登记）：一条全天跨天日程 + 两条待办，全部识别出来")
+    @DisplayName("校园通知（中秋放假 + 离返校登记）：一条跨天日程 + 两条待办，全部识别出来")
     void recognizesCampusNoticeFixture() throws Exception {
         // 这是用户给的真实测试图（学院通知）对应的模型回复：一图三类事，
-        // 假期是全天跨天日程、登记与统计是带/不带截止的待办。
+        // 假期是跨天日程（只记起始那天）、登记与统计是带/不带截止的待办。
         String reply = """
                 {"events":[
-                  {"title":"中秋节假期","kind":"EVENT","startAt":"2026-09-25T00:00:00+08:00",
-                   "endAt":"2026-09-28T00:00:00+08:00","allDay":true,
+                  {"title":"中秋节假期","kind":"EVENT","at":"2026-09-25T00:00:00+08:00",
                    "description":"放假 3 天（9 月 25 日—9 月 27 日）","confidence":0.95},
-                  {"title":"中秋节假期离返校登记","kind":"TASK","dueAt":"2026-09-24T23:59:00+08:00",
+                  {"title":"中秋节假期离返校登记","kind":"TASK","at":"2026-09-24T23:59:00+08:00",
                    "description":"钉钉→应用服务→学工系统→日常事务→节假日离返校→学生组；\\"离校不返家\\"需上传家长知情同意书，全体同学（含留校）均需填写"},
                   {"title":"填写 2026-2027 秋学期中秋节返校情况","kind":"TASK",
                    "description":"金山文档（信息工程学院）https://www.kdocs.cn/l/cpk2A3hrWyCd"}
@@ -152,23 +148,21 @@ class VisionRecognizeTest {
 
         assertThat(items).hasSize(3);
 
-        // 假期：全天跨天用 iCalendar 约定，结束时间落在最后一天的次日 00:00
+        // 假期：区间只记起始那一刻（当天 00:00 表示「就这一天」）
         var holiday = items.get(0);
         assertThat(holiday.kind()).isEqualTo("EVENT");
-        assertThat(holiday.allDay()).isTrue();
-        assertThat(holiday.startAt().toString()).isEqualTo("2026-09-25T00:00+08:00");
-        assertThat(holiday.endAt().toString()).isEqualTo("2026-09-28T00:00+08:00");
+        assertThat(holiday.at().toString()).isEqualTo("2026-09-25T00:00+08:00");
 
-        // 登记：待办 + 截止时间落在 dueAt，而不是被当成一段日程
+        // 登记：待办 + 截止时间落在 at，而不是被当成一段日程
         var signUp = items.get(1);
         assertThat(signUp.kind()).isEqualTo("TASK");
-        assertThat(signUp.dueAt().toString()).isEqualTo("2026-09-24T23:59+08:00");
+        assertThat(signUp.at().toString()).isEqualTo("2026-09-24T23:59+08:00");
         assertThat(signUp.description()).contains("家长知情同意书");
 
         // 统计：没有截止时间也不该被丢掉，保持「待安排」
         var survey = items.get(2);
         assertThat(survey.kind()).isEqualTo("TASK");
-        assertThat(survey.dueAt()).isNull();
+        assertThat(survey.at()).isNull();
         // 链接放在描述里，不塞进标题
         assertThat(survey.title()).doesNotContain("http");
         assertThat(survey.description()).contains("kdocs.cn");
@@ -195,7 +189,7 @@ class VisionRecognizeTest {
         assertThat(events).hasSize(1);
 
         // 只回一个对象（没有 events 数组）也要认
-        startFakeModel(List.of("{\"title\":\"团队晚餐\",\"startAt\":\"2026-09-26T19:00:00+08:00\"}"), new ArrayList<>());
+        startFakeModel(List.of("{\"title\":\"团队晚餐\",\"at\":\"2026-09-26T19:00:00+08:00\"}"), new ArrayList<>());
         var single = new LocalVisionEventRecognizer(properties(), objectMapper)
                 .recognize(new byte[]{1}, "image/png", "2026-09-25", "Asia/Shanghai");
         assertThat(single).hasSize(1);

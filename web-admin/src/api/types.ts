@@ -132,13 +132,16 @@ export interface OrgEventItem {
   title: string;
   description?: string;
   location?: string;
-  startAt: string;
-  endAt: string;
-  allDay: boolean;
+  /** 日程只有一个时间点（spec §4.1.2） */
+  at: string;
   timezone: string;
   scopeType: 'ALL' | 'DEPARTMENT' | 'MEMBER';
   departmentId?: number;
   recipientCount: number;
+  /** 下发状态：ACTIVE 生效中 / REVOKED 已撤回（只有带 includeRevoked 查历史时才可能出现） */
+  status: 'ACTIVE' | 'REVOKED';
+  /** 当前身份能不能改 / 撤 / 删：只有发起人为 true（spec §4.2.2），页面据此决定按钮显不显示 */
+  canEdit: boolean;
 }
 
 export interface ImportRowResult {

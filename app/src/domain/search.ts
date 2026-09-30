@@ -1,5 +1,5 @@
 import type { SearchResultItem } from '../api/types';
-import { formatTimeRange, localDateKey } from './agenda';
+import { formatEventTime, localDateKey } from './agenda';
 import { APP_TIMEZONE } from './calendar';
 
 /**
@@ -46,17 +46,18 @@ export function resultSubtitle(item: SearchResultItem, fallback: string = APP_TI
     return `${prefix}截止 ${formatDayTime(item.dueAt, timeZone)}`;
   }
 
-  if (!item.startAt || !item.endAt) {
-    // 服务端一定会给时间，缺了说明数据有问题——如实说明，别假装它是全天
+  if (!item.at) {
+    // 服务端一定会给时间，缺了说明数据有问题——如实说明，别假装它是「就这一天」
     return '时间缺失';
   }
-  const range = formatTimeRange(item.startAt, item.endAt, Boolean(item.allDay), timeZone);
+  // 没有时刻（只说了哪一天）时这一项就是空的，下面的 join 不会留下多余的分隔符
+  const time = formatEventTime(item.at, timeZone) ?? '';
   // 组织日程标明来源：同一条结果流里混着多个组织的日程，不标就分不清是哪个组织的
   if (item.type === 'ORG_EVENT') {
     const org = item.orgName ? `${item.orgName} · ` : '';
-    return `${org}${range}${item.locationName ? ` · ${item.locationName}` : ''}`;
+    return `${org}${[time, item.locationName].filter(Boolean).join(' · ')}`;
   }
-  return item.locationName ? `${range} · ${item.locationName}` : range;
+  return [time, item.locationName].filter(Boolean).join(' · ');
 }
 
 /** 结果行上的小标签。 */
@@ -74,13 +75,13 @@ export function resultBadges(item: SearchResultItem): string[] {
 /**
  * 打开该结果时日历应选中的日期。
  *
- * 重复日程取的是**最近一次实例**的日期（服务端已经算好放在 startAt 里），
+ * 重复日程取的是**最近一次实例**的日期（服务端已经算好放在 at 里），
  * 打开时同时带上 occurrenceDate，才落在「这一次」而不是整条序列上。
  */
 export function resultDateKey(item: SearchResultItem, fallback: string = APP_TIMEZONE): string | null {
-  // 组织日程同样按开始时间定位日期（点开后跳到那个组织的对应日期）
-  if (item.type === 'TASK' || !item.startAt) {
+  // 组织日程同样按那一个时间点定位日期（点开后跳到那个组织的对应日期）
+  if (item.type === 'TASK' || !item.at) {
     return null;
   }
-  return localDateKey(item.startAt, resultTimeZone(item, fallback));
+  return localDateKey(item.at, resultTimeZone(item, fallback));
 }

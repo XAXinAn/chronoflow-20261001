@@ -4,9 +4,7 @@ import {
   buildDispatchPayload,
   buildUpdatePayload,
   canDispatch,
-  nextDateKey,
   validateDispatchForm,
-  withStartTime,
   type DispatchForm,
 } from '../src/domain/orgDispatch';
 
@@ -17,9 +15,7 @@ function form(overrides: Partial<DispatchForm> = {}): DispatchForm {
     location: '',
     locationDetail: '',
     dateKey: '2026-09-26',
-    allDay: false,
-    startTime: '09:00',
-    endTime: '10:00',
+    time: '09:00',
     memberIds: [11, 12],
     ...overrides,
   };
@@ -42,20 +38,13 @@ describe('组织日程下发', () => {
       .toEqual({ ok: false, message: '请填写日程标题' });
   });
 
-  it('结束时间不晚于开始时间 → 拦住', () => {
-    expect(validateDispatchForm(form({ startTime: '15:00', endTime: '09:00' })))
-      .toEqual({ ok: false, message: '结束时间要晚于开始时间' });
+  it('时刻非法要拦住（没有「全天」这个开关了）', () => {
+    expect(validateDispatchForm(form({ time: '乱写' })).ok).toBe(false);
   });
 
-  it('开始时间改动时结束时间跟着 +1 小时', () => {
-    expect(withStartTime(form(), '14:30')).toMatchObject({ startTime: '14:30', endTime: '15:30' });
-  });
-
-  it('全天日程按整天提交，避免成员端显示成 00:00–00:00 的零长日程', () => {
-    const payload = buildDispatchPayload(form({ allDay: true }), 'Asia/Shanghai');
-    expect(payload.startAt).toBe('2026-09-26T00:00:00+08:00');
-    expect(payload.endAt).toBe('2026-09-27T00:00:00+08:00');
-    expect(nextDateKey('2026-09-30')).toBe('2026-10-01');
+  it('时间拨到 00:00 就是「就这一天」（组织日程也只有一个时间）', () => {
+    const payload = buildDispatchPayload(form({ time: '00:00' }), 'Asia/Shanghai');
+    expect(payload.at).toBe('2026-09-26T00:00:00+08:00');
   });
 
   it('下发对象就是一份人名单：提交 MEMBER 范围 + memberIds', () => {
@@ -80,9 +69,7 @@ describe('组织日程下发', () => {
       title: '改后标题',
       description: '',
       location: 'A 座 3F',
-      startAt: '2026-09-26T09:00:00+08:00',
-      endAt: '2026-09-26T10:00:00+08:00',
-      allDay: false,
+      at: '2026-09-26T09:00:00+08:00',
     });
     // 编辑请求体里没有 memberIds：范围只能靠「撤回 + 重新下发」改
     expect(payload).not.toHaveProperty('memberIds');

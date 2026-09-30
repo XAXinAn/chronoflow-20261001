@@ -104,8 +104,8 @@ class PersonalModuleTest {
         String token = registerAccount("13800000202");
 
         postJson("/api/v1/events", token,
-                "{\"title\":\"产品评审\",\"startAt\":\"2026-10-05T14:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-05T15:00:00+08:00\",\"timezone\":\"Asia/Shanghai\"}");
+                "{\"title\":\"产品评审\",\"at\":\"2026-10-05T14:00:00+08:00\","
+                        + "\"timezone\":\"Asia/Shanghai\"}");
 
         JsonNode hit = rangeQuery(token, "2026-10-05T00:00:00+08:00", "2026-10-06T00:00:00+08:00");
         assertThat(hit.path("data")).hasSize(1);
@@ -121,8 +121,8 @@ class PersonalModuleTest {
         String token = registerAccount("13800000203");
 
         postJson("/api/v1/events", token,
-                "{\"title\":\"站会\",\"startAt\":\"2026-10-05T09:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-05T09:30:00+08:00\",\"timezone\":\"Asia/Shanghai\","
+                "{\"title\":\"站会\",\"at\":\"2026-10-05T09:00:00+08:00\","
+                        + "\"timezone\":\"Asia/Shanghai\","
                         + "\"rrule\":\"FREQ=WEEKLY;BYDAY=MO,WE,FR\"}");
 
         JsonNode result = rangeQuery(token, "2026-10-05T00:00:00+08:00", "2026-10-18T00:00:00+08:00");
@@ -143,8 +143,8 @@ class PersonalModuleTest {
 
         patchJson("/api/v1/events/" + eventId, token,
                 "{\"scope\":\"THIS\",\"occurrenceDate\":\"2026-10-07\","
-                        + "\"startAt\":\"2026-10-07T14:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-07T15:00:00+08:00\",\"title\":\"临时改期\"}");
+                        + "\"at\":\"2026-10-07T14:00:00+08:00\","
+                        + "\"title\":\"临时改期\"}");
 
         JsonNode result = rangeQuery(token, "2026-10-05T00:00:00+08:00", "2026-10-10T00:00:00+08:00");
         assertThat(startInstants(result.path("data"))).containsExactly(
@@ -179,8 +179,8 @@ class PersonalModuleTest {
 
         JsonNode split = patchJson("/api/v1/events/" + eventId, token,
                 "{\"scope\":\"FUTURE\",\"occurrenceDate\":\"2026-10-12\","
-                        + "\"startAt\":\"2026-10-12T10:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-12T10:30:00+08:00\",\"title\":\"新节奏站会\"}");
+                        + "\"at\":\"2026-10-12T10:00:00+08:00\","
+                        + "\"title\":\"新节奏站会\"}");
         long splitEventId = split.path("data").path("id").asLong();
         assertThat(splitEventId).isNotEqualTo(eventId);
 
@@ -202,8 +202,8 @@ class PersonalModuleTest {
         mockMvc.perform(post("/api/v1/events")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"title\":\"坏规则\",\"startAt\":\"2026-10-05T09:00:00+08:00\","
-                                + "\"endAt\":\"2026-10-05T10:00:00+08:00\","
+                        .content("{\"title\":\"坏规则\",\"at\":\"2026-10-05T09:00:00+08:00\","
+                                + ""
                                 + "\"rrule\":\"FREQ=EVERY_OTHER_BLUE_MOON\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(30002));
@@ -344,7 +344,7 @@ class PersonalModuleTest {
                         + ",\"items\":[{\"minutesBefore\":15},{\"minutesBefore\":0}]}");
 
         long taskId = postJson("/api/v1/tasks", token,
-                "{\"title\":\"交周报\",\"dueAt\":\"2026-10-06T18:00:00+08:00\",\"allDay\":false}")
+                "{\"title\":\"交周报\",\"dueAt\":\"2026-10-06T18:00:00+08:00\"}")
                 .path("data").path("id").asLong();
         putJson("/api/v1/reminders", token,
                 "{\"targetType\":\"TASK\",\"targetId\":" + taskId + ",\"items\":[{\"minutesBefore\":60}]}");
@@ -359,7 +359,7 @@ class PersonalModuleTest {
         assertThat(schedule.get(0).path("targetType").asText()).isEqualTo("EVENT");
         assertThat(schedule.get(0).path("targetId").asLong()).isEqualTo(eventId);
         assertThat(schedule.get(0).path("occurrenceDate").asText()).isEqualTo("2026-10-05");
-        assertThat(Instant.parse(schedule.get(0).path("startAt").asText()))
+        assertThat(Instant.parse(schedule.get(0).path("at").asText()))
                 .isEqualTo(local("2026-10-05T09:00"));
         assertThat(schedule.get(0).path("title").asText()).isEqualTo("站会");
         // 提前量升序返回：客户端按顺序排通知，读起来才不会「先到点、再提前」
@@ -402,19 +402,19 @@ class PersonalModuleTest {
         String token = registerAccount("13800000226");
         // 「早上建完、晚上来关联」的那条：已经过去了，但必须在候选里
         long past = postJson("/api/v1/events", token,
-                "{\"title\":\"上周复盘\",\"startAt\":\"2026-09-20T09:00:00+08:00\","
-                        + "\"endAt\":\"2026-09-20T10:00:00+08:00\",\"timezone\":\"Asia/Shanghai\"}")
+                "{\"title\":\"上周复盘\",\"at\":\"2026-09-20T09:00:00+08:00\","
+                        + "\"timezone\":\"Asia/Shanghai\"}")
                 .path("data").path("id").asLong();
         // 重复日程：候选里只该出现一次（用户关联的是序列本身）
         long weekly = createWeeklyStandup(token);
         long future = postJson("/api/v1/events", token,
-                "{\"title\":\"季度评审\",\"startAt\":\"2026-10-20T09:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-20T11:00:00+08:00\",\"timezone\":\"Asia/Shanghai\","
+                "{\"title\":\"季度评审\",\"at\":\"2026-10-20T09:00:00+08:00\","
+                        + "\"timezone\":\"Asia/Shanghai\","
                         + "\"locationName\":\"A 座报告厅\"}")
                 .path("data").path("id").asLong();
 
         JsonNode all = getJson("/api/v1/events/all", token).path("data");
-        // 按开始时间倒序：未来 → 重复序列起点 → 过去
+        // 按时间倒序：未来 → 重复序列起点 → 过去
         assertThat(all).hasSize(3);
         assertThat(startInstants(all)).containsExactly(
                 local("2026-10-20T09:00"), local("2026-10-05T09:00"), local("2026-09-20T09:00"));
@@ -478,26 +478,25 @@ class PersonalModuleTest {
         String token = registerAccount("13800000222");
 
         long eventId = postJson("/api/v1/events", token,
-                "{\"title\":\"改成待办\",\"startAt\":\"2026-10-05T09:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-05T10:00:00+08:00\",\"timezone\":\"Asia/Shanghai\"}")
+                "{\"title\":\"改成待办\",\"at\":\"2026-10-05T09:00:00+08:00\","
+                        + "\"timezone\":\"Asia/Shanghai\"}")
                 .path("data").path("id").asLong();
 
         JsonNode task = postJson("/api/v1/events/" + eventId + "/convert-to-task", token, "{}");
         assertThat(task.path("data").path("title").asText()).isEqualTo("改成待办");
         assertThat(task.path("data").path("status").asText()).isEqualTo("TODO");
-        // 结束时间转为截止时间
-        assertThat(task.path("data").path("dueAt").asText()).startsWith("2026-10-05T02:00:00");
+        // 日程与待办都只有一个时间：直接搬过去当截止时间（09:00+08 = 01:00Z）
+        assertThat(task.path("data").path("dueAt").asText()).startsWith("2026-10-05T01:00:00");
 
         // 原日程已取消，不再出现在范围查询里
         JsonNode events = rangeQuery(token, "2026-10-05T00:00:00+08:00", "2026-10-06T00:00:00+08:00");
         assertThat(events.path("data")).isEmpty();
 
-        // 待办 → 日程：未给 endAt 时默认 1 小时
+        // 待办 → 日程：没给时间就用待办自己的截止时间
         long taskId = task.path("data").path("id").asLong();
         JsonNode createdEvent = postJson("/api/v1/tasks/" + taskId + "/convert-to-event", token,
-                "{\"startAt\":\"2026-10-06T09:00:00+08:00\"}");
-        assertThat(createdEvent.path("data").path("startAt").asText()).startsWith("2026-10-06T01:00:00");
-        assertThat(createdEvent.path("data").path("endAt").asText()).startsWith("2026-10-06T02:00:00");
+                "{\"at\":\"2026-10-06T09:00:00+08:00\"}");
+        assertThat(createdEvent.path("data").path("at").asText()).startsWith("2026-10-06T01:00:00");
 
         JsonNode after = rangeQuery(token, "2026-10-06T00:00:00+08:00", "2026-10-07T00:00:00+08:00");
         assertThat(after.path("data")).hasSize(1);
@@ -510,8 +509,7 @@ class PersonalModuleTest {
         String token = registerAccount("13800000231");
 
         JsonNode created = postJson("/api/v1/events", token, """
-                {"title":"季度评审","description":"带上 OKR","startAt":"2026-10-08T09:00:00+08:00",
-                 "endAt":"2026-10-08T11:00:00+08:00","timezone":"Asia/Shanghai",
+                {"title":"季度评审","description":"带上 OKR","at":"2026-10-08T09:00:00+08:00","timezone":"Asia/Shanghai",
                  "locationName":"北京南站","locationAddress":"北京市丰台区永外大街车站路12号",
                  "latitude":39.865400,"longitude":116.378700,"poiId":"BJ-NAN",
                  "priority":"HIGH","category":"会议","url":"https://example.com/meet",
@@ -550,8 +548,8 @@ class PersonalModuleTest {
         mockMvc.perform(post("/api/v1/events")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"title\":\"只有纬度\",\"startAt\":\"2026-10-09T09:00:00+08:00\","
-                                + "\"endAt\":\"2026-10-09T10:00:00+08:00\",\"latitude\":39.9}"))
+                        .content("{\"title\":\"只有纬度\",\"at\":\"2026-10-09T09:00:00+08:00\","
+                                + "\"latitude\":39.9}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(10002));
     }
@@ -560,7 +558,7 @@ class PersonalModuleTest {
     @DisplayName("枚举取值非法时给出业务错误码，而不是让数据库约束抛异常")
     void invalidEnumsRejected() throws Exception {
         String token = registerAccount("13800000233");
-        String common = "\"startAt\":\"2026-10-10T09:00:00+08:00\",\"endAt\":\"2026-10-10T10:00:00+08:00\",";
+        String common = "\"at\":\"2026-10-10T09:00:00+08:00\",";
 
         for (String bad : new String[]{"availability", "priority", "status"}) {
             mockMvc.perform(post("/api/v1/events")
@@ -577,8 +575,8 @@ class PersonalModuleTest {
     void clearingPlaceAlsoClearsCoordinates() throws Exception {
         String token = registerAccount("13800000234");
         long eventId = postJson("/api/v1/events", token,
-                "{\"title\":\"带地点\",\"startAt\":\"2026-10-11T09:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-11T10:00:00+08:00\",\"locationName\":\"外滩\","
+                "{\"title\":\"带地点\",\"at\":\"2026-10-11T09:00:00+08:00\","
+                        + "\"locationName\":\"外滩\","
                         + "\"latitude\":31.24,\"longitude\":121.49,\"poiId\":\"SH-BUND\"}")
                 .path("data").path("id").asLong();
 
@@ -599,8 +597,7 @@ class PersonalModuleTest {
     void taskLinksToEvent() throws Exception {
         String token = registerAccount("13800000243");
         long eventId = postJson("/api/v1/events", token,
-                "{\"title\":\"季度评审\",\"startAt\":\"2026-10-20T09:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-20T11:00:00+08:00\"}")
+                "{\"title\":\"季度评审\",\"at\":\"2026-10-20T09:00:00+08:00\"}")
                 .path("data").path("id").asLong();
 
         // 一个日程可以关联多个待办
@@ -641,8 +638,7 @@ class PersonalModuleTest {
         String owner = registerAccount("13800000244");
         String stranger = registerAccount("13800000245");
         long eventId = postJson("/api/v1/events", owner,
-                "{\"title\":\"私人日程\",\"startAt\":\"2026-10-21T09:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-21T10:00:00+08:00\"}")
+                "{\"title\":\"私人日程\",\"at\":\"2026-10-21T09:00:00+08:00\"}")
                 .path("data").path("id").asLong();
 
         mockMvc.perform(post("/api/v1/tasks")
@@ -755,8 +751,8 @@ class PersonalModuleTest {
 
     private long createWeeklyStandup(String token) throws Exception {
         return postJson("/api/v1/events", token,
-                "{\"title\":\"站会\",\"startAt\":\"2026-10-05T09:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-05T09:30:00+08:00\",\"timezone\":\"Asia/Shanghai\","
+                "{\"title\":\"站会\",\"at\":\"2026-10-05T09:00:00+08:00\","
+                        + "\"timezone\":\"Asia/Shanghai\","
                         + "\"rrule\":\"FREQ=WEEKLY;BYDAY=MO,WE,FR\"}")
                 .path("data").path("id").asLong();
     }
@@ -774,7 +770,7 @@ class PersonalModuleTest {
 
     private List<Instant> startInstants(JsonNode array) {
         List<Instant> instants = new ArrayList<>();
-        array.forEach(node -> instants.add(Instant.parse(node.path("startAt").asText())));
+        array.forEach(node -> instants.add(Instant.parse(node.path("at").asText())));
         return instants;
     }
 

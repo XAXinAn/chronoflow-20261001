@@ -212,6 +212,39 @@ class AdminModuleTest {
         assertThat(logs.path("data").get(0).path("actorName").asText()).isEqualTo(BOOTSTRAP_USERNAME);
     }
 
+    @Test
+    @DisplayName("超管建组织可选预置首位拥有者：组织一建好就能被认领（spec §3.4）")
+    void organizationCanBeCreatedWithPresetOwner() throws Exception {
+        String token = adminLogin(BOOTSTRAP_USERNAME, BOOTSTRAP_PASSWORD);
+        String phone = "13800003201";
+
+        JsonNode created = postJson("/api/v1/admin/organizations", token,
+                "{\"name\":\"预置组织\",\"code\":\"PRESETORG\",\"adminUsername\":\"preset_admin\","
+                        + "\"adminPassword\":\"presetadmin123\",\"ownerMemberKey\":\"" + phone + "\","
+                        + "\"ownerRealName\":\"预置拥有者\"}");
+        assertThat(created.path("code").asInt())
+                .as("预置拥有者不该让建组织失败: %s", created).isZero();
+        long orgId = created.path("data").path("id").asLong();
+
+        // 关键：这条链路**没有人工播种任何部门或成员**，
+        // 但成员照样能认领，且一进来就是组织管理员（否则组织日历没人管得了）
+        String orgToken = loginOrgMemberInExistingOrg(phone, orgId);
+        JsonNode current = getJson("/api/v1/org/current", orgToken);
+        assertThat(current.path("data").path("realName").asText()).isEqualTo("预置拥有者");
+        assertThat(current.path("data").path("orgAdmin").asBoolean()).isTrue();
+
+        // 根部门「总部」也建好了，成员挂在它下面 —— 路径结尾必须带斜杠（spec §6.4）
+        Long deptId = jdbcTemplate.queryForObject(
+                "SELECT id FROM department WHERE org_id = ? AND name = '总部' AND parent_id IS NULL",
+                Long.class, orgId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT path FROM department WHERE id = ?", String.class, deptId))
+                .isEqualTo("/" + deptId + "/");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT department_id FROM org_member WHERE org_id = ?", Long.class, orgId))
+                .isEqualTo(deptId);
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private record LoginResult(String accessToken, String refreshToken) {

@@ -44,11 +44,21 @@ CI 上有 root，直接 `apt-get install postgresql redis-server` 并设置
 | 认证（短信、密码、身份选择与切换、令牌轮换与宽限期、登出） | 完成 |
 | 账号设置（资料、密码、设备、通知偏好） | 完成 |
 | 个人日历 / 日程（RRULE + 例外 + THIS/FUTURE/ALL）/ 待办 / 提醒 / 互转 | 完成 |
-| 组织、部门树、成员、批量导入、组织日历下发与回执 | 完成 |
+| 组织、部门树、成员、批量导入、组织日历下发（首版不收集回执） | 完成 |
+| 智能助手「小安」（`/ai/agent/chat` SSE + `/ai/agent/approvals` + `/ai/transcribe`） | 完成（与 Java 版同一套工具语义、同一份提示词、同一套事件形状） |
 | 平台超管后台（组织、账号、管理员、配置、看板、审计） | 完成 |
 
-**契约覆盖率 100%（83/83 端点）**，由 `tests/test_contract.py` 里的棘轮常量守着，不允许倒退。
-测试 22 项，覆盖认证链路、时区展开、THIS/FUTURE 范围、部门递归权限、下发快照等关键语义。
+**契约覆盖率 100%（111/111 端点）**，由 `tests/test_contract.py` 里的棘轮常量守着，不允许倒退。
+测试 70 项，覆盖认证链路、时区展开、THIS/FUTURE 范围、部门递归权限、下发快照、
+以及助手的工具循环 / 授权回路 / 隔离沙盒。
+
+助手的模型配置与 Java 版**同名环境变量**（`XATODO_AGENT_BASE_URL` / `XATODO_AGENT_API_KEY` /
+`XATODO_AGENT_MODEL` / `XATODO_ASR_*`），两边可以指向同一个模型、共用同一份 `.env`。
+`XATODO_AGENT_API_KEY` 留空 = 未接入：`/ai/agent/chat` 直接返回 `90002`，
+`/system/info` 的 `aiAgentEnabled=false`，App 保持「还没有接入模型」的提示。
+
+> 提示词正文在 `app/resources/agent/prompt.md`，与 Java 版 `xa-agent` 里那一份
+> **必须逐字节相同**（`tests/test_agent.py` 钉住了）。改提示词要同时改两份与两边的 VERSION。
 
 ## 踩过的三个坑
 

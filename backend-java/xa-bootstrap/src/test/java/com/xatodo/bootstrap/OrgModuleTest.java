@@ -529,8 +529,8 @@ class OrgModuleTest {
 
         // 部门管理员用「指定成员」下发给同事：目标里没有他自己
         long eventId = postJson("/api/v1/org-admin/events", managerToken,
-                "{\"title\":\"组内同步\",\"startAt\":\"" + RANGE_START + "\","
-                        + "\"endAt\":\"2026-10-01T09:00:00+08:00\",\"scopeType\":\"MEMBER\","
+                "{\"title\":\"组内同步\",\"at\":\"" + RANGE_START + "\","
+                        + "\"scopeType\":\"MEMBER\","
                         + "\"memberIds\":[" + targetId + "]}")
                 .path("data").path("eventId").asLong();
 
@@ -563,6 +563,48 @@ class OrgModuleTest {
         // 撤回同样按发起人放行
         JsonNode revoked = postJson("/api/v1/org-admin/events/" + eventId + "/revoke", managerToken, "{}");
         assertThat(revoked.path("code").asInt()).as("发起人应能撤回: %s", revoked).isZero();
+    }
+
+    @Test
+    @DisplayName("组织管理端日程列表：canEdit 只认发起人；includeRevoked 能翻到已撤回的下发")
+    void adminEventListReportsCanEditAndRevokedHistory() throws Exception {
+        Fixture fixture = seedOrg("HIST", "13700001701");
+        // 另一位**组织管理员**（不是发起人）：管理端能看列表，但按钮不该给他
+        long otherAdminId = createMember(fixture, "13700001702", "另一位管理员",
+                fixture.rootDepartmentId());
+        patchJson("/api/v1/org-admin/members/" + otherAdminId, fixture.ownerToken(),
+                "{\"orgRole\":\"ADMIN\"}");
+        String otherAdminToken = claimOrgAccount(fixture.orgCode(), "13700001702");
+
+        // 拥有者从 App 下发一条（管理端列表里的条目就是这条）
+        long eventId = postJson("/api/v1/org-admin/events", fixture.ownerToken(),
+                dispatchBody("组内同步", "ALL", null, true, null))
+                .path("data").path("eventId").asLong();
+
+        JsonNode mine = rangeQuery("/api/v1/org-admin/events", fixture.ownerToken());
+        assertThat(mine.path("data")).hasSize(1);
+        assertThat(mine.path("data").get(0).path("canEdit").asBoolean())
+                .as("发起人在管理端应可操作: %s", mine).isTrue();
+        assertThat(mine.path("data").get(0).path("status").asText()).isEqualTo("ACTIVE");
+
+        JsonNode other = rangeQuery("/api/v1/org-admin/events", otherAdminToken);
+        assertThat(other.path("data")).hasSize(1);
+        assertThat(other.path("data").get(0).path("canEdit").asBoolean())
+                .as("组织管理员不是发起人，页面不该给他按钮: %s", other).isFalse();
+
+        // 撤回后默认列表里消失；includeRevoked=true 能翻到这条历史，状态是 REVOKED
+        postJson("/api/v1/org-admin/events/" + eventId + "/revoke", fixture.ownerToken(), "{}");
+        assertThat(rangeQuery("/api/v1/org-admin/events", fixture.ownerToken()).path("data"))
+                .as("撤回后默认列表不该再出现").isEmpty();
+
+        JsonNode history = getJson(get("/api/v1/org-admin/events")
+                .param("start", RANGE_START)
+                .param("end", RANGE_END)
+                .param("includeRevoked", "true")
+                .header("Authorization", "Bearer " + fixture.ownerToken()));
+        assertThat(history.path("data")).hasSize(1);
+        assertThat(history.path("data").get(0).path("status").asText()).isEqualTo("REVOKED");
+        assertThat(history.path("data").get(0).path("canEdit").asBoolean()).isTrue();
     }
 
     @Test
@@ -689,8 +731,8 @@ class OrgModuleTest {
     /** 组织管理员把一条日程下发给全组织，返回 eventId。 */
     private long dispatchToAll(String orgToken, String title) throws Exception {
         return postJson("/api/v1/org-admin/events", orgToken,
-                "{\"title\":\"" + title + "\",\"startAt\":\"2026-10-08T09:00:00+08:00\","
-                        + "\"endAt\":\"2026-10-08T11:00:00+08:00\",\"scopeType\":\"ALL\"}")
+                "{\"title\":\"" + title + "\",\"at\":\"2026-10-08T09:00:00+08:00\","
+                        + "\"scopeType\":\"ALL\"}")
                 .path("data").path("eventId").asLong();
     }
 
@@ -725,8 +767,8 @@ class OrgModuleTest {
                                 boolean includeSub, String memberIds) {
         StringBuilder body = new StringBuilder()
                 .append("{\"title\":\"").append(title).append("\",")
-                .append("\"startAt\":\"2026-10-08T09:00:00+08:00\",")
-                .append("\"endAt\":\"2026-10-08T11:00:00+08:00\",")
+                .append("\"at\":\"2026-10-08T09:00:00+08:00\",")
+                .append("")
                 .append("\"timezone\":\"Asia/Shanghai\",")
                 .append("\"scopeType\":\"").append(scopeType).append("\",")
                 .append("\"includeSubDepartments\":").append(includeSub);

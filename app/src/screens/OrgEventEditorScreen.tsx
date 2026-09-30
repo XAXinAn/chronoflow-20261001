@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { userFacingError } from '../domain/errors';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { ApiError } from '../api/client';
 import type { OrgCurrent, OrgEvent } from '../api/types';
 import { EditorHeader, FormInput, FormRow, FormRowText, FormTextArea } from '../components/form';
 import { Card, Screen } from '../components/ui';
@@ -12,7 +12,6 @@ import {
   buildUpdatePayload,
   canDispatch,
   validateDispatchForm,
-  withStartTime,
   type DispatchForm,
 } from '../domain/orgDispatch';
 
@@ -55,9 +54,7 @@ export function OrgEventEditorScreen({
     location: event?.location ?? '',
     locationDetail: event?.locationDetail ?? '',
     dateKey,
-    allDay: event?.allDay ?? false,
-    startTime: event ? timeInZone(event.startAt, event.timezone || 'Asia/Shanghai') : '09:00',
-    endTime: event ? timeInZone(event.endAt, event.timezone || 'Asia/Shanghai') : '10:00',
+    time: event ? timeInZone(event.at, event.timezone || 'Asia/Shanghai') : '09:00',
     memberIds: [],
   });
   const [saving, setSaving] = useState(false);
@@ -79,8 +76,7 @@ export function OrgEventEditorScreen({
       setOrg(await api.orgCurrent());
     } catch (cause) {
       // 留下日志：这条失败会直接表现为「没法下发」，不留痕迹很难查（实测踩过一次）
-      console.warn('[org-event-editor] 组织上下文加载失败', cause);
-      setError(cause instanceof ApiError ? cause.message : '组织信息加载失败，请重试');
+      setError(userFacingError(cause, '组织信息加载失败，请重试'));
     } finally {
       setLoading(false);
     }
@@ -99,7 +95,7 @@ export function OrgEventEditorScreen({
       await action();
       onSaved(done);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '操作失败');
+      setError(userFacingError(cause, '操作失败'));
     }
   };
 
@@ -123,7 +119,7 @@ export function OrgEventEditorScreen({
         );
         onSaved(`「${form.title.trim()}」已更新，收件人看到的还是同一条`);
       } catch (cause) {
-        setError(cause instanceof ApiError ? cause.message : '保存失败');
+        setError(userFacingError(cause, '保存失败'));
       } finally {
         setSaving(false);
       }
@@ -145,7 +141,7 @@ export function OrgEventEditorScreen({
       // 服务端保证发起人也在名单里（spec §4.2.2），提示里说清楚，免得用户以为漏了自己
       onSaved(`「${payload.title}」已下发给 ${recipients.length} 人（含你自己）`);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '下发失败');
+      setError(userFacingError(cause, '下发失败'));
     } finally {
       setSaving(false);
     }
@@ -183,33 +179,13 @@ export function OrgEventEditorScreen({
             <FormRow label="日期">
               <Text style={{ color: theme.color.textPrimary, fontSize: 15 }}>{form.dateKey}</Text>
             </FormRow>
-            <FormRow label="全天">
-              <Switch
-                value={form.allDay}
-                onValueChange={(allDay) => patch({ allDay })}
-                accessibilityLabel="全天"
-                trackColor={{ false: theme.color.border, true: theme.color.accent }}
-                thumbColor={theme.color.surfaceRaised}
+            <FormRow label="时间">
+              <FormRowText
+                value={form.time}
+                placeholder="09:00"
+                onChangeText={(time) => patch({ time })}
               />
             </FormRow>
-            {!form.allDay ? (
-              <>
-                <FormRow label="开始">
-                  <FormRowText
-                    value={form.startTime}
-                    placeholder="09:00"
-                    onChangeText={(startTime) => setForm(withStartTime(form, startTime))}
-                  />
-                </FormRow>
-                <FormRow label="结束">
-                  <FormRowText
-                    value={form.endTime}
-                    placeholder="10:00"
-                    onChangeText={(endTime) => patch({ endTime })}
-                  />
-                </FormRow>
-              </>
-            ) : null}
             <FormRow label="地点">
               <FormRowText
                 value={form.location}
@@ -283,14 +259,14 @@ export function OrgEventEditorScreen({
           <Text style={{ color: theme.color.danger, marginTop: theme.spacing.md }}>{error}</Text>
         ) : null}
 
-        {/* 编辑模式下的破坏性操作：撤回（成员端不再展示，已有回执时服务端会拒绝）与删除 */}
+        {/* 编辑模式下的破坏性操作：撤回（成员端不再展示，可恢复不了，但管理端能翻到这条历史）与删除 */}
         {isEdit && event ? (
           <View style={{ marginTop: theme.spacing.lg, gap: theme.spacing.sm }}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="撤回下发"
               onPress={() =>
-                Alert.alert('撤回下发？', '撤回后成员不再看到这条日程；已有成员回执时无法撤回。', [
+                Alert.alert('撤回下发？', '撤回后成员不再看到这条日程；要重新下发只能再发一条。', [
                   { text: '取消', style: 'cancel' },
                   {
                     text: '撤回',

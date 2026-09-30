@@ -13,8 +13,7 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 WEEKLY_PAYLOAD = {
     "title": "站会",
-    "startAt": "2026-10-05T09:00:00+08:00",
-    "endAt": "2026-10-05T09:30:00+08:00",
+    "at": "2026-10-05T09:00:00+08:00",
     "timezone": "Asia/Shanghai",
     "rrule": "FREQ=WEEKLY;BYDAY=MO,WE,FR",
 }
@@ -76,8 +75,7 @@ def test_all_events_include_past_series_once_and_support_search(client) -> None:
         tokens,
         {
             "title": "上周复盘",
-            "startAt": "2026-09-20T09:00:00+08:00",
-            "endAt": "2026-09-20T10:00:00+08:00",
+            "at": "2026-09-20T09:00:00+08:00",
         },
     )
     weekly = create_event(client, tokens, WEEKLY_PAYLOAD)
@@ -86,8 +84,7 @@ def test_all_events_include_past_series_once_and_support_search(client) -> None:
         tokens,
         {
             "title": "季度评审",
-            "startAt": "2026-10-20T09:00:00+08:00",
-            "endAt": "2026-10-20T11:00:00+08:00",
+            "at": "2026-10-20T09:00:00+08:00",
             "locationName": "A 座报告厅",
         },
     )
@@ -131,7 +128,7 @@ def test_reminder_schedule_expands_recurrence_and_includes_tasks(client) -> None
     task = create_task(
         client,
         tokens,
-        {"title": "交周报", "dueAt": "2026-10-06T18:00:00+08:00", "allDay": False},
+        {"title": "交周报", "dueAt": "2026-10-06T18:00:00+08:00"},
     )
     set_reminders(client, tokens, "TASK", task["id"], [60])
 
@@ -174,8 +171,7 @@ def test_search_spans_events_and_tasks_in_time_desc_order(client) -> None:
         tokens,
         {
             "title": "评审会彩排",
-            "startAt": "2026-10-05T10:00:00+08:00",
-            "endAt": "2026-10-05T11:00:00+08:00",
+            "at": "2026-10-05T10:00:00+08:00",
         },
     )
     create_event(
@@ -183,8 +179,7 @@ def test_search_spans_events_and_tasks_in_time_desc_order(client) -> None:
         tokens,
         {
             "title": "技术评审会",
-            "startAt": "2026-09-20T10:00:00+08:00",
-            "endAt": "2026-09-20T11:00:00+08:00",
+            "at": "2026-09-20T10:00:00+08:00",
         },
     )
     create_task(client, tokens, {"title": "写评审会纪要", "dueAt": "2026-09-25T18:00:00+08:00"})
@@ -211,8 +206,7 @@ def test_search_is_scoped_to_own_identity_and_can_filter_types(client) -> None:
         mine,
         {
             "title": "我的评审会",
-            "startAt": "2026-10-05T10:00:00+08:00",
-            "endAt": "2026-10-05T11:00:00+08:00",
+            "at": "2026-10-05T10:00:00+08:00",
         },
     )
     create_event(
@@ -220,8 +214,7 @@ def test_search_is_scoped_to_own_identity_and_can_filter_types(client) -> None:
         others,
         {
             "title": "别人的评审会",
-            "startAt": "2026-10-06T10:00:00+08:00",
-            "endAt": "2026-10-06T11:00:00+08:00",
+            "at": "2026-10-06T10:00:00+08:00",
         },
     )
     create_task(client, mine, {"title": "评审会待办"})
@@ -239,8 +232,7 @@ def test_search_treats_wildcards_as_literals(client) -> None:
         tokens,
         {
             "title": "50% 折扣复盘",
-            "startAt": "2026-10-05T10:00:00+08:00",
-            "endAt": "2026-10-05T11:00:00+08:00",
+            "at": "2026-10-05T10:00:00+08:00",
         },
     )
     create_event(
@@ -248,8 +240,7 @@ def test_search_treats_wildcards_as_literals(client) -> None:
         tokens,
         {
             "title": "普通复盘",
-            "startAt": "2026-10-06T10:00:00+08:00",
-            "endAt": "2026-10-06T11:00:00+08:00",
+            "at": "2026-10-06T10:00:00+08:00",
         },
     )
 
@@ -265,8 +256,7 @@ def test_search_resolves_upcoming_occurrence_for_recurring_event(client) -> None
         tokens,
         {
             "title": "周会",
-            "startAt": "2026-09-07T09:00:00+08:00",
-            "endAt": "2026-09-07T10:00:00+08:00",
+            "at": "2026-09-07T09:00:00+08:00",
             "timezone": "Asia/Shanghai",
             "rrule": "FREQ=WEEKLY;BYDAY=MO",
         },
@@ -278,7 +268,7 @@ def test_search_resolves_upcoming_occurrence_for_recurring_event(client) -> None
     assert item["occurrenceDate"] is not None
     # 断言「形态」而不是「具体哪一天」：最近一次实例随运行日期变化，
     # 真正要守住的是「落在周一 09:00 的本地墙上时间」
-    start = datetime.fromisoformat(item["startAt"]).astimezone(SHANGHAI)
+    start = datetime.fromisoformat(item["at"]).astimezone(SHANGHAI)
     assert (start.hour, start.minute) == (9, 0)
     assert start.isoweekday() == 1
 
@@ -595,7 +585,7 @@ def test_weekly_recurrence_expands_in_event_timezone(client) -> None:
     # 「每周一/三/五 09:00」跨两周 = 6 次，且每次都必须落在当地 09:00
     assert len(occurrences) == 6, occurrences
     for occurrence in occurrences:
-        local = datetime.fromisoformat(occurrence["startAt"]).astimezone(SHANGHAI)
+        local = datetime.fromisoformat(occurrence["at"]).astimezone(SHANGHAI)
         assert (local.hour, local.minute) == (9, 0)
 
 
@@ -607,8 +597,7 @@ def test_this_scope_modifies_only_one_occurrence(client) -> None:
         json={
             "scope": "THIS",
             "occurrenceDate": "2026-10-07",
-            "startAt": "2026-10-07T14:00:00+08:00",
-            "endAt": "2026-10-07T15:00:00+08:00",
+            "at": "2026-10-07T14:00:00+08:00",
             "title": "临时改期",
         },
         headers=auth(tokens),
@@ -621,8 +610,8 @@ def test_this_scope_modifies_only_one_occurrence(client) -> None:
     modified = occurrences[1]
     assert modified["title"] == "临时改期"
     assert modified["modified"] is True
-    assert datetime.fromisoformat(occurrences[0]["startAt"]).astimezone(SHANGHAI).hour == 9
-    assert datetime.fromisoformat(modified["startAt"]).astimezone(SHANGHAI).hour == 14
+    assert datetime.fromisoformat(occurrences[0]["at"]).astimezone(SHANGHAI).hour == 9
+    assert datetime.fromisoformat(modified["at"]).astimezone(SHANGHAI).hour == 14
 
 
 def test_future_scope_truncates_and_clones_series(client) -> None:
@@ -633,8 +622,7 @@ def test_future_scope_truncates_and_clones_series(client) -> None:
         json={
             "scope": "FUTURE",
             "occurrenceDate": "2026-10-12",
-            "startAt": "2026-10-12T10:00:00+08:00",
-            "endAt": "2026-10-12T10:30:00+08:00",
+            "at": "2026-10-12T10:00:00+08:00",
             "title": "新节奏站会",
         },
         headers=auth(tokens),
@@ -644,7 +632,7 @@ def test_future_scope_truncates_and_clones_series(client) -> None:
     occurrences = range_query(
         client, tokens, "2026-10-05T00:00:00+08:00", "2026-10-18T00:00:00+08:00"
     )
-    hours = [datetime.fromisoformat(o["startAt"]).astimezone(SHANGHAI).hour for o in occurrences]
+    hours = [datetime.fromisoformat(o["at"]).astimezone(SHANGHAI).hour for o in occurrences]
     # 原序列剩 3 次在 09:00，克隆出的新序列 3 次在 10:00
     assert hours == [9, 9, 9, 10, 10, 10], occurrences
     assert occurrences[3]["title"] == "新节奏站会"
@@ -658,8 +646,7 @@ def test_task_links_to_event(client) -> None:
         tokens,
         {
             "title": "季度评审",
-            "startAt": "2026-10-20T09:00:00+08:00",
-            "endAt": "2026-10-20T11:00:00+08:00",
+            "at": "2026-10-20T09:00:00+08:00",
         },
     )
 
@@ -699,8 +686,7 @@ def test_task_cannot_link_to_others_event(client) -> None:
         owner,
         {
             "title": "私人日程",
-            "startAt": "2026-10-21T09:00:00+08:00",
-            "endAt": "2026-10-21T10:00:00+08:00",
+            "at": "2026-10-21T09:00:00+08:00",
         },
     )
 
@@ -824,8 +810,7 @@ def test_event_clear_place(client) -> None:
         tokens,
         {
             "title": "带地点",
-            "startAt": "2026-10-12T09:00:00+08:00",
-            "endAt": "2026-10-12T10:00:00+08:00",
+            "at": "2026-10-12T09:00:00+08:00",
             "locationName": "外滩",
             "locationAddress": "上海市黄浦区中山东一路",
             "latitude": 31.24,
@@ -849,8 +834,7 @@ def test_event_to_task_conversion(client) -> None:
         tokens,
         {
             "title": "改成待办",
-            "startAt": "2026-10-05T09:00:00+08:00",
-            "endAt": "2026-10-05T10:00:00+08:00",
+            "at": "2026-10-05T09:00:00+08:00",
             "timezone": "Asia/Shanghai",
         },
     )
@@ -901,6 +885,44 @@ def test_admin_creates_organization_with_first_admin(client) -> None:
         "/api/v1/admin/organizations", headers=admin_headers(login["data"]["accessToken"])
     ).json()
     assert forbidden["code"] == 20003
+
+
+def test_super_admin_can_preset_first_owner(client, db) -> None:
+    """超管建组织时可选预置首位拥有者：组织一建好就能被认领（spec §3.4）。"""
+    phone = "13900006001"
+    created = client.post(
+        "/api/v1/admin/organizations",
+        json={
+            "name": "预置组织",
+            "code": "PYPRESET",
+            "adminUsername": "py_preset_admin",
+            "adminPassword": "pyadmin123",
+            "ownerMemberKey": phone,
+            "ownerRealName": "预置拥有者",
+        },
+        headers=admin_headers(admin_login(client)),
+    ).json()
+    assert created["code"] == 0, created
+    org_id = created["data"]["id"]
+
+    # 关键：这条链路**没有人工播种任何部门或成员**，
+    # 但成员照样能认领，且一进来就是组织管理员（否则组织日历没人管得了）
+    org = claim_org_account(client, register(client, phone), org_id, phone)
+    current = client.get("/api/v1/org/current", headers=org).json()["data"]
+    assert current["realName"] == "预置拥有者"
+    assert current["orgAdmin"] is True
+
+    # 根部门「总部」也建好了，成员挂在它下面 —— 路径结尾必须带斜杠（spec §6.4）
+    root = db.execute(
+        "SELECT id, path FROM department"
+        " WHERE org_id = %s AND name = '总部' AND parent_id IS NULL",
+        (org_id,),
+    ).fetchone()
+    assert root is not None
+    assert root[1] == f"/{root[0]}/"
+    assert db.execute(
+        "SELECT department_id FROM org_member WHERE org_id = %s", (org_id,)
+    ).fetchone()[0] == root[0]
 
 
 def seed_root_department(db, org_id: int) -> int:
@@ -1011,8 +1033,7 @@ def test_department_manager_scope_is_recursive(client, db) -> None:
     assert sorted(item["realName"] for item in visible) == ["后端同学", "技术负责人"]
 
     base_event = {
-        "startAt": "2026-10-08T09:00:00+08:00",
-        "endAt": "2026-10-08T11:00:00+08:00",
+        "at": "2026-10-08T09:00:00+08:00",
         "scopeType": "DEPARTMENT",
     }
     ok = client.post(
@@ -1040,8 +1061,7 @@ def test_dispatch_snapshot_excludes_new_members(client, db) -> None:
         "/api/v1/org-admin/events",
         json={
             "title": "历史全员会",
-            "startAt": "2026-10-08T09:00:00+08:00",
-            "endAt": "2026-10-08T11:00:00+08:00",
+            "at": "2026-10-08T09:00:00+08:00",
             "scopeType": "ALL",
         },
         headers=headers,
@@ -1204,8 +1224,7 @@ def dispatch_to_all(client, headers: dict, title: str) -> int:
         "/api/v1/org-admin/events",
         json={
             "title": title,
-            "startAt": "2026-10-08T09:00:00+08:00",
-            "endAt": "2026-10-08T11:00:00+08:00",
+            "at": "2026-10-08T09:00:00+08:00",
             "scopeType": "ALL",
         },
         headers=headers,
@@ -1315,8 +1334,7 @@ def test_org_console_token_can_open_up_a_new_organization(client, db) -> None:
         "/api/v1/org-admin/events",
         json={
             "title": "新组织第一场会",
-            "startAt": "2026-10-08T09:00:00+08:00",
-            "endAt": "2026-10-08T11:00:00+08:00",
+            "at": "2026-10-08T09:00:00+08:00",
             "scopeType": "ALL",
         },
         headers=console,
@@ -1395,8 +1413,7 @@ def test_org_console_token_is_scoped_and_member_is_rejected(client, db) -> None:
         "/api/v1/org-admin/events",
         json={
             "title": "组内同步",
-            "startAt": "2026-10-08T09:00:00+08:00",
-            "endAt": "2026-10-08T10:00:00+08:00",
+            "at": "2026-10-08T09:00:00+08:00",
             "scopeType": "MEMBER",
             "memberIds": [target_id],
         },
@@ -1443,6 +1460,57 @@ def test_org_console_token_is_scoped_and_member_is_rejected(client, db) -> None:
     ).json()["code"] == 20003
     # 撤回同样按发起人放行
     assert client.post(f"/api/v1/org-admin/events/{event_id}/revoke", headers=manager).json()["code"] == 0
+
+
+def test_admin_event_list_can_edit_and_revoked_history(client, db) -> None:
+    """组织管理端日程列表：canEdit 只认发起人；includeRevoked 能翻到已撤回的下发（spec §4.2.2）。"""
+    org_id = create_org(client, admin_login(client), "PYHIST", "py_hist_admin")
+    console = admin_headers(
+        client.post(
+            "/api/v1/admin/auth/login",
+            json={"username": "py_hist_admin", "password": "pyadmin123"},
+        ).json()["data"]["accessToken"]
+    )
+    root = client.post(
+        "/api/v1/org-admin/departments", json={"name": "总部"}, headers=console
+    ).json()["data"]["id"]
+
+    # 另一位组织管理员（不是发起人）：管理端列表能看，但按钮不该给他
+    other_id = add_member(client, console, "PY-HIST-A", "另一位管理员", root)
+    assert client.patch(
+        f"/api/v1/org-admin/members/{other_id}", json={"orgRole": "ADMIN"}, headers=console
+    ).json()["code"] == 0
+    other = claim_org_account(client, register(client, "13900005001"), org_id, "PY-HIST-A")
+
+    window = {"start": "2026-10-01T00:00:00+08:00", "end": "2026-11-01T00:00:00+08:00"}
+    dispatched = client.post(
+        "/api/v1/org-admin/events",
+        json={"title": "组内同步", "at": "2026-10-08T09:00:00+08:00", "scopeType": "ALL"},
+        headers=console,
+    ).json()
+    assert dispatched["code"] == 0, dispatched
+    event_id = dispatched["data"]["eventId"]
+
+    mine = client.get("/api/v1/org-admin/events", params=window, headers=console).json()["data"]
+    assert len(mine) == 1 and mine[0]["canEdit"] is True
+    assert mine[0]["status"] == "ACTIVE"
+
+    seen = client.get("/api/v1/org-admin/events", params=window, headers=other).json()["data"]
+    assert len(seen) == 1 and seen[0]["canEdit"] is False, "组织管理员不是发起人，页面不该给他按钮"
+
+    # 撤回后默认列表里消失；includeRevoked=true 能翻到这条历史
+    assert client.post(
+        f"/api/v1/org-admin/events/{event_id}/revoke", headers=console
+    ).json()["code"] == 0
+    assert client.get("/api/v1/org-admin/events", params=window, headers=console).json()["data"] == []
+    history = client.get(
+        "/api/v1/org-admin/events",
+        params={**window, "includeRevoked": "true"},
+        headers=console,
+    ).json()["data"]
+    assert len(history) == 1
+    assert history[0]["status"] == "REVOKED"
+    assert history[0]["canEdit"] is True
 
 
 def test_org_console_token_is_scoped_across_organizations(client, db) -> None:

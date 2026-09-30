@@ -11,6 +11,7 @@ import com.xatodo.common.api.ErrorCode;
 import com.xatodo.common.exception.BizException;
 import com.xatodo.org.entity.Organization;
 import com.xatodo.org.mapper.OrganizationMapper;
+import com.xatodo.org.service.OrgBootstrapService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,15 +36,18 @@ public class AdminOrganizationService {
     private final AdminUserMapper adminUserMapper;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
+    private final OrgBootstrapService orgBootstrapService;
 
     public AdminOrganizationService(OrganizationMapper organizationMapper,
                                     AdminUserMapper adminUserMapper,
                                     PasswordEncoder passwordEncoder,
-                                    AuditLogService auditLogService) {
+                                    AuditLogService auditLogService,
+                                    OrgBootstrapService orgBootstrapService) {
         this.organizationMapper = organizationMapper;
         this.adminUserMapper = adminUserMapper;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
+        this.orgBootstrapService = orgBootstrapService;
     }
 
     @Transactional
@@ -81,6 +85,12 @@ public class AdminOrganizationService {
 
         organization.setCreatedByAdminId(principal.adminId());
         organizationMapper.updateById(organization);
+
+        // 可选：预置「首位拥有者」。不填就维持老行为（空组织），填了组织一建好就能被认领（spec §3.4）
+        if (StringUtils.hasText(request.ownerMemberKey())) {
+            orgBootstrapService.createRootOwner(organization.getId(),
+                    request.ownerMemberKey(), request.ownerRealName());
+        }
 
         auditLogService.record(principal, "ORG_CREATE", "ORGANIZATION", organization.getId(),
                 Map.of("code", organization.getCode(), "adminUsername", orgAdmin.getUsername()));

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import {
   ActivityIndicator,
   Pressable,
@@ -10,10 +11,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ApiError } from '../api/client';
 import { Card, EmptyState, Screen } from '../components/ui';
 import { useAppTheme, useRuntime } from '../context/AppContext';
-import { dayHeading, formatTimeRange, localDateKey } from '../domain/agenda';
+import { dayHeading, formatEventTime, localDateKey } from '../domain/agenda';
 import { APP_TIMEZONE } from '../domain/calendar';
 
 /** 输入停顿多久才算「搜」：与日历页检索一致，打字过程中不发请求。 */
@@ -42,7 +42,7 @@ export function EventPickerScreen({
   const insets = useSafeAreaInsets();
   const { api } = useRuntime();
 
-  const [items, setItems] = useState<{ eventId: number; title: string; startAt: string; endAt: string; allDay: boolean; timezone: string; locationName: string | null }[]>([]);
+  const [items, setItems] = useState<{ eventId: number; title: string; at: string; timezone: string; locationName: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export function EventPickerScreen({
         } catch (cause) {
           if (!cancelled) {
             setItems([]);
-            setError(cause instanceof ApiError ? cause.message : '加载日程失败');
+            setError(userFacingError(cause, '加载日程失败'));
           }
         } finally {
           if (!cancelled) {
@@ -83,7 +83,7 @@ export function EventPickerScreen({
 
   // 按天分组展示，和日历页的口径保持一致
   const grouped = items.reduce<Record<string, typeof items>>((acc, item) => {
-    const key = localDateKey(item.startAt, APP_TIMEZONE);
+    const key = localDateKey(item.at, APP_TIMEZONE);
     (acc[key] ??= []).push(item);
     return acc;
   }, {});
@@ -161,7 +161,7 @@ export function EventPickerScreen({
             </Text>
             {dayItems.map((item) => (
               <Pressable
-                key={`${item.eventId}-${item.startAt}`}
+                key={`${item.eventId}-${item.at}`}
                 accessibilityRole="button"
                 accessibilityLabel={`日程-${item.title}`}
                 onPress={() => onPick({ eventId: item.eventId, title: item.title })}
@@ -172,8 +172,9 @@ export function EventPickerScreen({
                     {item.title}
                   </Text>
                   <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 2 }}>
-                    {formatTimeRange(item.startAt, item.endAt, item.allDay, item.timezone || APP_TIMEZONE)}
-                    {item.locationName ? ` · ${item.locationName}` : ''}
+                    {[formatEventTime(item.at, item.timezone || APP_TIMEZONE), item.locationName]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </Text>
                 </Card>
               </Pressable>

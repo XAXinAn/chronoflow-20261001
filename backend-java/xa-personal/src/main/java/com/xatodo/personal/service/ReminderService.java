@@ -138,8 +138,7 @@ public class ReminderService {
                         occurrence.occurrenceDate(),
                         occurrence.title(),
                         occurrence.locationName(),
-                        occurrence.startAt(),
-                        occurrence.allDay(),
+                        occurrence.at(),
                         occurrence.timezone(),
                         sortedMinutes(minutes)));
             }
@@ -150,7 +149,7 @@ public class ReminderService {
             entries.addAll(taskEntries(identityId, rangeStart, rangeEnd, taskReminders));
         }
 
-        entries.sort(Comparator.comparing(ReminderScheduleEntry::startAt)
+        entries.sort(Comparator.comparing(ReminderScheduleEntry::at)
                 .thenComparing(ReminderScheduleEntry::targetType)
                 .thenComparing(ReminderScheduleEntry::targetId));
         return entries;
@@ -162,7 +161,7 @@ public class ReminderService {
      * <p>只取「待办中（TODO）且有截止时间」的：已完成 / 已取消的待办再到点提醒一次，
      * 只会让用户觉得提醒不准（与列表里不展示它们是一个口径）。
      *
-     * <p>时区取待办所在日历的时区 —— 待办自己没有时区列，而全天待办的提醒基准（当地 09:00）
+     * <p>时区取待办所在日历的时区 —— 待办自己没有时区列，而「只说了哪一天」的提醒基准（当地 09:00）
      * 需要一个时区才算得对。
      */
     private List<ReminderScheduleEntry> taskEntries(Long identityId,
@@ -193,7 +192,6 @@ public class ReminderService {
                         task.getTitle(),
                         null,
                         task.getDueAt().toInstant(),
-                        Boolean.TRUE.equals(task.getAllDay()),
                         zones.getOrDefault(task.getCalendarId(), DEFAULT_TIMEZONE),
                         sortedMinutes(taskReminders.get(task.getId()))))
                 .toList();

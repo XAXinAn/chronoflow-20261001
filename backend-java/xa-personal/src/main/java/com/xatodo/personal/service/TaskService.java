@@ -176,7 +176,6 @@ public class TaskService {
         task.setTitle(request.title());
         task.setDescription(request.description());
         task.setDueAt(request.dueAt());
-        task.setAllDay(Boolean.TRUE.equals(request.allDay()));
         task.setStatus(Task.STATUS_TODO);
         task.setPriority(priority);
         task.setImages(writeImages(request.images()));
@@ -205,12 +204,8 @@ public class TaskService {
         // 先看「显式清空」再看赋值：否则一旦设过截止时间就再也回不到「待安排」
         if (Boolean.TRUE.equals(request.clearDueAt())) {
             task.setDueAt(null);
-            task.setAllDay(false);
         } else if (request.dueAt() != null) {
             task.setDueAt(request.dueAt());
-        }
-        if (request.allDay() != null) {
-            task.setAllDay(request.allDay());
         }
         if (StringUtils.hasText(request.priority())) {
             if (!PRIORITIES.contains(request.priority())) {

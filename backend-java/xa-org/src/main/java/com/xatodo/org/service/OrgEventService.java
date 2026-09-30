@@ -93,9 +93,6 @@ public class OrgEventService {
 
     @Transactional
     public OrgEventResponse dispatch(OrgActor actor, OrgEventDispatchRequest request) {
-        if (!request.endAt().isAfter(request.startAt())) {
-            throw BizException.of(ErrorCode.EVENT_TIME_INVALID);
-        }
         expander.validate(request.rrule());
         if (StringUtils.hasText(request.rrule())) {
             throw BizException.of(ErrorCode.PARAM_INVALID, "首版组织日程暂不支持重复规则");
@@ -119,9 +116,7 @@ public class OrgEventService {
         event.setLocationName(request.location());
         event.setLocationDetail(StringUtils.hasText(request.locationDetail())
                 ? request.locationDetail().trim() : null);
-        event.setStartAt(request.startAt());
-        event.setEndAt(request.endAt());
-        event.setAllDay(Boolean.TRUE.equals(request.allDay()));
+        event.setAt(request.at());
         event.setTimezone(StringUtils.hasText(request.timezone())
                 ? request.timezone()
                 : calendar.getTimezone());
@@ -172,7 +167,7 @@ public class OrgEventService {
 
     /** 通知正文：把时间写进去，用户不解锁就能判断要不要马上看。 */
     private static String orgPushBody(Event event) {
-        String when = event.getStartAt()
+        String when = event.getAt()
                 .atZoneSameInstant(java.time.ZoneId.of(event.getTimezone()))
                 .format(java.time.format.DateTimeFormatter.ofPattern("M月d日 HH:mm"));
         return "组织日程 · " + when;
@@ -204,11 +199,7 @@ public class OrgEventService {
             throw BizException.of(ErrorCode.FORBIDDEN, "日程不存在");
         }
 
-        OffsetDateTime start = request.startAt() != null ? request.startAt() : event.getStartAt();
-        OffsetDateTime end = request.endAt() != null ? request.endAt() : event.getEndAt();
-        if (!end.isAfter(start)) {
-            throw BizException.of(ErrorCode.EVENT_TIME_INVALID);
-        }
+        OffsetDateTime at = request.at() != null ? request.at() : event.getAt();
         if (StringUtils.hasText(request.title())) {
             event.setTitle(request.title());
         }
@@ -222,11 +213,7 @@ public class OrgEventService {
             event.setLocationDetail(StringUtils.hasText(request.locationDetail())
                     ? request.locationDetail().trim() : null);
         }
-        event.setStartAt(start);
-        event.setEndAt(end);
-        if (request.allDay() != null) {
-            event.setAllDay(request.allDay());
-        }
+        event.setAt(at);
         if (StringUtils.hasText(request.timezone())) {
             event.setTimezone(request.timezone());
         }
@@ -357,14 +344,13 @@ public class OrgEventService {
                 result.add(new OrgEventResponse(
                         event.getId(), dispatch.getId(), occurrence.title(), event.getDescription(),
                         occurrence.locationName(), occurrence.locationDetail(),
-                        OffsetDateTime.ofInstant(occurrence.startAt(), ZoneOffset.UTC),
-                        OffsetDateTime.ofInstant(occurrence.endAt(), ZoneOffset.UTC),
-                        occurrence.allDay(), occurrence.timezone(), event.getRrule(),
+                        OffsetDateTime.ofInstant(occurrence.at(), ZoneOffset.UTC),
+                        occurrence.timezone(), event.getRrule(),
                         receipt.getReadAt() != null,
                         isInitiator(permission.memberActor(member), dispatch)));
             }
         }
-        result.sort(Comparator.comparing(OrgEventResponse::startAt)
+        result.sort(Comparator.comparing(OrgEventResponse::at)
                 .thenComparing(OrgEventResponse::eventId));
         return result;
     }
@@ -389,42 +375,53 @@ public class OrgEventService {
     /**
      * 组织管理端（Web）的组织日程列表（spec §6.3 `GET /org-admin/events`）。
      *
-     * <p>这里是本组织的**全部活跃下发**，并附回执分布，管理端一眼看到「谁还没回执」。
-     * 已撤回的下发不再出现在列表里——和成员端展示口径一致。
+     * <p>默认只列本组织的**活跃下发**（和成员端展示口径一致）；{@code includeRevoked=true}
+     * 时把已撤回的下发也带上，靠条目的 {@code status} 区分，用于「这条当初发给谁了」的历史回溯。
+     * 删除过的日程（{@code deleted_at} 非空）两种情形都不列——那是「取消并删除」，不是「撤回」。
+     *
+     * <p>条目带 {@code canEdit}：页面据此决定「撤回 / 删除」按不按钮，而不是点下去再收 20003。
      */
-    public List<OrgEventManageItem> listForAdmin(OrgActor actor, Instant start, Instant end) {
+    public List<OrgEventManageItem> listForAdmin(OrgActor actor, Instant start, Instant end,
+                                                 boolean includeRevoked) {
         permission.requireOrgAdmin(actor);
         OffsetDateTime from = OffsetDateTime.ofInstant(start, ZoneOffset.UTC);
         OffsetDateTime to = OffsetDateTime.ofInstant(end, ZoneOffset.UTC);
 
-        List<Event> events = eventMapper.selectList(new LambdaQueryWrapper<Event>()
-                .eq(Event::getOrgId, actor.getOrgId())
-                .isNull(Event::getDeletedAt)
-                .lt(Event::getStartAt, to)
-                .gt(Event::getEndAt, from)
-                .orderByAsc(Event::getStartAt));
-        if (events.isEmpty()) {
+        List<String> statuses = includeRevoked
+                ? List.of(EventDispatch.STATUS_ACTIVE, EventDispatch.STATUS_REVOKED)
+                : List.of(EventDispatch.STATUS_ACTIVE);
+        List<EventDispatch> dispatches = eventDispatchMapper.selectList(
+                new LambdaQueryWrapper<EventDispatch>()
+                        .eq(EventDispatch::getOrgId, actor.getOrgId())
+                        .in(EventDispatch::getStatus, statuses));
+        if (dispatches.isEmpty()) {
             return List.of();
         }
 
-        Map<Long, EventDispatch> dispatches = eventDispatchMapper.selectList(
-                        new LambdaQueryWrapper<EventDispatch>()
-                                .in(EventDispatch::getEventId, events.stream().map(Event::getId).toList())
-                                .eq(EventDispatch::getStatus, EventDispatch.STATUS_ACTIVE))
-                .stream().collect(Collectors.toMap(EventDispatch::getEventId, dispatch -> dispatch,
+        Map<Long, Event> events = eventMapper.selectList(new LambdaQueryWrapper<Event>()
+                .in(Event::getId, dispatches.stream().map(EventDispatch::getEventId).distinct().toList())
+                .eq(Event::getOrgId, actor.getOrgId())
+                .isNull(Event::getDeletedAt)
+                // 单时间点：落在 [from, to) 窗口内就算命中
+                .ge(Event::getAt, from)
+                .lt(Event::getAt, to))
+                .stream().collect(Collectors.toMap(Event::getId, event -> event,
                         (existing, replacement) -> existing));
         List<OrgEventManageItem> result = new ArrayList<>();
-        for (Event event : events) {
-            EventDispatch dispatch = dispatches.get(event.getId());
-            if (dispatch == null) {
-                continue;   // 没有活跃下发记录的日程不属于管理端列表
+        for (EventDispatch dispatch : dispatches) {
+            Event event = events.get(dispatch.getEventId());
+            if (event == null) {
+                continue;   // 日程被删 / 不在时间窗口内：这条下发不属于管理端列表
             }
             result.add(new OrgEventManageItem(event.getId(), dispatch.getId(), event.getTitle(),
                     event.getDescription(), event.getLocationName(), event.getLocationDetail(),
-                    event.getStartAt(), event.getEndAt(),
-                    event.getAllDay(), event.getTimezone(), dispatch.getScopeType(),
-                    dispatch.getDepartmentId(), dispatch.getRecipientCount()));
+                    event.getAt(),
+                    event.getTimezone(), dispatch.getScopeType(),
+                    dispatch.getDepartmentId(), dispatch.getRecipientCount(),
+                    dispatch.getStatus(), isInitiator(actor, dispatch)));
         }
+        result.sort(Comparator.comparing(OrgEventManageItem::at)
+                .thenComparing(OrgEventManageItem::eventId));
         return result;
     }
 
@@ -565,8 +562,8 @@ public class OrgEventService {
     private OrgEventResponse toResponse(Event event, EventDispatch dispatch) {
         return new OrgEventResponse(event.getId(), dispatch.getId(), event.getTitle(),
                 event.getDescription(), event.getLocationName(), event.getLocationDetail(),
-                event.getStartAt(), event.getEndAt(),
-                event.getAllDay(), event.getTimezone(), event.getRrule(), false,
+                event.getAt(),
+                event.getTimezone(), event.getRrule(), false,
                 // 能走到这里的调用者已经过了权限校验（下发/修改的返回体）：对自己刚动过的东西当然可编辑
                 true);
     }

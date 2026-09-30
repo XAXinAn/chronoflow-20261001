@@ -22,8 +22,6 @@ import java.time.OffsetDateTime;
 @Service
 public class ConversionService {
 
-    private static final long DEFAULT_EVENT_MINUTES = 60;
-
     private final EventService eventService;
     private final TaskService taskService;
     private final EventMapper eventMapper;
@@ -43,7 +41,7 @@ public class ConversionService {
     }
 
     /**
-     * 日程 → 待办：保留标题、描述与结束时间（转为 due_at），原日程标记取消。
+     * 日程 → 待办：保留标题、描述与时间（转为 due_at），原日程标记取消。
      */
     @Transactional
     public Task convertEventToTask(Long identityId, Long eventId) {
@@ -54,8 +52,7 @@ public class ConversionService {
         task.setOwnerIdentityId(identityId);
         task.setTitle(event.getTitle());
         task.setDescription(event.getDescription());
-        task.setDueAt(event.getEndAt());
-        task.setAllDay(event.getAllDay());
+        task.setDueAt(event.getAt());
         task.setStatus(Task.STATUS_TODO);
         task.setPriority("NORMAL");
         task.setSortOrder(0);
@@ -67,20 +64,16 @@ public class ConversionService {
     }
 
     /**
-     * 待办 → 日程：未给 startAt 时回退到待办的截止时间；未给 endAt 时默认 1 小时。
+     * 待办 → 日程：未给时间时回退到待办的截止时间（日程与待办都只有一个时间，spec §4.1.2）。
      */
     @Transactional
-    public Event convertTaskToEvent(Long identityId, Long taskId, OffsetDateTime startAt, OffsetDateTime endAt) {
+    public Event convertTaskToEvent(Long identityId, Long taskId, OffsetDateTime at) {
         Task task = taskService.requireOwned(identityId, taskId);
         Calendar calendar = calendarService.requireOwned(identityId, task.getCalendarId());
 
-        OffsetDateTime start = startAt != null ? startAt : task.getDueAt();
+        OffsetDateTime start = at != null ? at : task.getDueAt();
         if (start == null) {
-            throw BizException.of(ErrorCode.PARAM_INVALID, "该待办没有截止时间，请提供 startAt");
-        }
-        OffsetDateTime end = endAt != null ? endAt : start.plusMinutes(DEFAULT_EVENT_MINUTES);
-        if (!end.isAfter(start)) {
-            throw BizException.of(ErrorCode.EVENT_TIME_INVALID);
+            throw BizException.of(ErrorCode.PARAM_INVALID, "该待办没有截止时间，请提供 at");
         }
 
         Event event = new Event();
@@ -89,9 +82,7 @@ public class ConversionService {
         event.setSourceType(Event.SOURCE_PERSONAL);
         event.setTitle(task.getTitle());
         event.setDescription(task.getDescription());
-        event.setStartAt(start);
-        event.setEndAt(end);
-        event.setAllDay(Boolean.TRUE.equals(task.getAllDay()));
+        event.setAt(start);
         event.setTimezone(calendar.getTimezone());
         event.setStatus(Event.STATUS_CONFIRMED);
         event.setUpdatedAfterDispatch(false);

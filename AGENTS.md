@@ -2,11 +2,399 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-09-27（第六轮：提醒链路闭环 + 待办重复）
+> 最后更新：2026-09-30（第十三轮：**组织日历管理端的两处欠账收口** —— `canEdit` 上列表、
+> 撤回后可查历史；并清掉「回执」下线后残留的用户可见文案）
+>
+> ⚠️ **数据模型变了**：`event.start_at` / `event.end_at` 已被 V18 迁移合并成 `event.at`（单时间点），
+> 不再有起止与时长；`event_exception.override_*` 同样合成 `override_at`。
+> 两版后端、Web 组织管理端与 App 都已对齐。改动前先读 §0.0 第九轮摘要。
 
 ---
 
-## 0.0 本次交接摘要（2026-09-27，第六轮：提醒链路闭环）
+## 0.0 本次交接摘要（2026-09-30，第十三轮：组织日历收口 + 助手两端对齐）
+
+这一轮把「欠账清单」上剩下的三条**代码层面能做的**一次做完（产品没定的与依赖真机的都没动）。
+
+| # | 内容 |
+| --- | --- |
+| 1 | **`GET /org-admin/events` 条目新增 `canEdit`**（两版后端，规则与成员侧 `/org/events` 完全一致：只有**发起人本人**为 true，组织管理员也不行）。web-admin 据此显示「撤回 / 删除」，非发起人那行显示「仅发起人可操作」——以前是点下去必收 `20003`、页面只弹个错 |
+| 2 | **`GET /org-admin/events` 新增 `includeRevoked`（默认 false）**，条目新增 `status`（`ACTIVE`/`REVOKED`）。web-admin 组织日历加「含已撤回」开关 + 「状态」列，撤回后终于能翻到「这条当初发给谁了」。**删除过的日程两种情形都不列**——那是「取消并删除」，不是「撤回」 |
+| 3 | 清掉过期文案：web-admin 撤回确认框与 App 组织日程编辑页还写着「已有成员回执时无法撤回」——回执在第三轮已整条下线，这句话在教用户一个不存在的规则 |
+| 4 | **`AgentTranscribeController` 按助手其余部分的结构整理**：新增 `AgentTranscribeService`（大小上限 / 未配置怎么答 / 音频怎么交给模型都在这里），控制器只留 HTTP 胶水；顺手删掉 `AgentChatService.transcriptionEnabled()`（没人用的死方法），补了「超限与忘带文件当场拒掉、不打上游」的用例 |
+| 5 | **授权等待不再占线程**（第十二轮记的那条欠账）。`AgentApprovalRegistry.await`（`future.get(200ms)` 轮询 + 阻塞整条流）换成 `register → CompletableFuture`：线程在授权点**交回**，答复 / 超时 / 客户端断开才把循环叫醒继续跑。超时改成 `completeOnTimeout`（值是拒绝，不抛异常），断开改成 `Stream.markClosed() → approvals.cancel(id)`；同一会话的任务在 `Session.stateLock` 上串行，收尾日志只打一次 |
+| 6 | **Python 版助手补齐**（第七轮以来的欠账）：`/ai/agent/chat`（SSE）、`/ai/agent/approvals`、`/ai/transcribe` 三个端点 + `agent_tools/agent_scope/agent_write/agent_chat/agent_model/agent_approvals/agent_prompt` 七个服务，语义与 Java 一字对齐。**这三个端点现在进 `contract/api-contract.json` 了**（111 个端点），两版都受契约门禁约束 |
+| 7 | **超管建组织可选预置首位拥有者**：创建请求体加 `ownerMemberKey` / `ownerRealName`（两版后端都实现），填了就同时建「总部」根部门 + 一条 OWNER 成员，组织一建好就能在 App 里认领；不填维持老行为。web-admin 新建组织表单加了这两个选填项 |
+
+### Python 助手的几个实现要点（对齐时最容易走偏的地方）
+
+- **等待用 `asyncio.Future`，不是线程**：`agent_approvals` 记住 `(account_id, future)`，
+  `await` 它只挂起协程。客户端的断线由「异步生成器被关掉 → 取消 task → 取消挂着的授权」承接，
+  所以断开同样是**立刻**按拒绝收尾，不用等满 90 秒。
+- **`asyncio.to_thread` 包住所有阻塞调用**（模型是 `urllib` 同步读 SSE、工具是同步 SQLAlchemy），
+  delta 通过 `loop.call_soon_threadsafe` 推回队列——事件循环不被上游读取按住。
+- **提示词只有一份内容、两处存放**：`backend-python/app/resources/agent/prompt.md` 与
+  `backend-java/.../resources/agent/prompt.md` 必须**逐字节相同**，
+  `tests/test_agent.py::test_agent_prompt_is_the_same_file_as_java` 钉住了这一点。
+  **改提示词要同时改两份 + 两边的 VERSION。**
+- 事件名与字段与 Java 一致（`status`/`delta`/`tool`/`action`/`done`/`error`），
+  `tool` 带 `toolCallId/name/arguments/result/readOnly/summary/detail`，历史里 tool_use 与 tool_result 必须配对
+  （`_repair_pairs`）。
+
+**验证**：Java **149**（新增授权表 6 项 + 语音校验 1 项 + 管理端列表 1 项 + 预置拥有者 1 项）、
+Python **70**（新增 `tests/test_agent.py` 10 项 + 预置拥有者 1 项，契约覆盖率仍 100%）、
+web-admin **21** + 类型检查与构建、App **206** + typecheck、合规门禁 20 项，全绿。
+契约 **111 个端点**（原 108）；spec §6.2 / §11 里「Java 先行、Python 对齐是欠账」的说法已改掉。
+
+> ⚠️ 验证边界：**没有打真实百炼上游**（两版测试注入的都是假模型），也没跑真机 ——
+> Python 那版助手在真环境里还没跑过一次。下一轮如果要继续，剩下的是：
+> release 包的明网 HTTP 验证、P95 性能验收、App 组件渲染测试（都是明确推迟的项）。
+
+---
+
+## 0.0 本次交接摘要（2026-09-30，第十二轮：助手整体对齐 mewcode）
+
+用户给的参考实现是 `C:\Users\jiang\Downloads\mewcode-java.zip`（一个 Java 版 Codex，
+解压在 `/tmp/mewcode`）。**「整个助手就参考 mewcode」**——这一轮就是把小安按它的骨架重做。
+
+### mewcode 的四条骨架 → 我们落地成什么
+
+| mewcode | 我们 |
+| --- | --- |
+| `agent/Agent` 一次对话一个循环，工具调用逐个执行、结果写回再问模型 | `AgentChatService.run()` 重写成同样的循环（不再「遇写即停、下一轮再续」） |
+| `permission/PermissionChecker` + `PermissionRequestEvent` + `future.get(5min)`：**写操作在循环里阻塞等用户答复** | 新增 `permission/AgentApprovalRegistry`：写工具发 `action` 事件后阻塞等待；客户端用 **`POST /ai/agent/approvals`**（新端点，`{actionId, allow, feedback}`）答复 |
+| `StreamingExecutor.executeSingle`：权限通过后**由 agent 自己执行工具**，结果作为 tool_result 回灌 | 新增 `permission/AgentWriteExecutor`：允许后用 `EventService` 真正落库（与 REST 同一套 Service，隔离沙盒/校验一个不少）；拒绝 → 回灌「用户拒绝了、什么都没改」 |
+| `conversation/Message` + `ToolPairing.ensure`：历史里 assistant.tool_calls 与 tool 结果**必须配对** | 客户端 `toTurns()` 按配对形状回放（`tool` 事件带 `arguments` 与 `result`）；服务端 `buildConversation` 再修一遍（缺结果补 `interrupted`、孤儿结果丢掉） |
+
+### 协议变化（App ↔ 服务端）
+
+- `POST /ai/agent/chat`：`{messages:[{role,content,toolCalls?},{role:'tool',toolCallId,content}] ,orgIdentityId}`
+  —— **没有 `actionResults` / `pendingActions` 了**，也**不再由 App 调 REST 写库**。
+- SSE 事件：`status` / `delta` / `tool`（新增 `arguments` 与 `result`，客户端回放历史要用）/
+  `action`（授权请求，**流保持打开**）/ `done` / `error`。
+- 新增 `POST /ai/agent/approvals`：用户在面板上点允许/拒绝时调用；服务端收到后同一条流继续跑。
+- 授权等待上限 **90 秒**（`AgentApprovalRegistry.await`），且**客户端断开就立刻按拒绝收尾**
+  （之前 4.5 分钟上限 + 不感知断开，实测会卡住好几分钟）。
+
+### 这一轮修掉的两个真 bug（都来自上一版的「App 写库 + 下一轮回传结果」设计）
+
+1. **点「拒绝」毫无反应**：动作 id 原来每轮都从 `a1` 重新开始，客户端按 id 全局找卡片，
+   命中的是**上一轮那张已处理的**卡片（状态不是 pending）→ 直接 return。
+   修法：服务端 `newActionId()` 用纳秒做全局唯一 id；客户端 `cardInMessage()` 按消息定位。
+2. **授权面板永远不出现（看起来像卡死）**：面板渲染条件写的是 `pendingAuth && !streaming`，
+   而新流程里服务端**正在**流未结束时阻塞等授权 → 条件永远为假。
+   修法：有 pending 卡片就顶掉输入框，不管 streaming。
+
+### 为什么值得这么改
+
+上一版把写操作交给 App 用 REST 执行、结果下一轮再回传，副作用是：历史里丢了工具调用、
+授权卡片会重复出现、动作 id 会撞车、拒绝可能点不动——**都是这一处设计的连带问题**。
+改成 mewcode 那样「工具在循环里执行、权限阻塞等待、结果写回同一个历史」之后，
+这些问题从结构上就不存在了。
+
+### 验证
+
+- Java **140** 项全绿（含重写的写操作用例：允许→落库+工具结果、拒绝→不落库+「什么都没改」、
+  一轮内多个调用按顺序执行、客户端工具配对回放与补齐、授权 id 跨轮唯一）。
+- App **206** 项 + typecheck 全绿；web-admin 18、Python 58、合规门禁 20 项全绿。
+- 线上（8.136.20.182）**原始客户端端到端**：允许 → `tool` 结果 + 模型收尾 + 库里出现日程；
+  拒绝 → 同一条流继续 + 库里一条不写（`1 → 1`）。
+- 模拟器：允许路径走通（工具行「已创建日程」+ 助手「已将…开上」+ 输入框回来）。
+  **拒绝路径的界面点按没来得及复验**（模拟器中途掉了），但两条路径在客户端是同一个函数。
+
+### 仍然欠的
+
+- `AgentTranscribeController` 与助手其余部分还没按 mewcode 的 `ToolRegistry` / `PromptBuilder` 结构整理。
+- 授权等待占着一个虚拟线程（`agentStreamExecutor`）；并发一上来要换成异步等待。
+- Python 版仍然没有助手（Java 先行，见 §0.0 第七轮的欠账）。
+
+> ✅ 以上三条**在第十三轮已收口**（见文件顶部的第十三轮摘要）：
+> 语音那一路已抽成 `AgentTranscribeService`；授权等待改成 `CompletableFuture`，等待期间不占线程；
+> Python 版助手已补齐，三个端点也进了契约。
+
+### 当前状态与怎么复验这条链路
+
+- **线上**：`http://8.136.20.182:8088` 已跑本轮 jar（`/opt/xatodo/backend/jar.bak-*` 有备份）；
+  演示库里日程 / 待办都是 **0 条**（验证留下的数据已按正式删除接口清掉）。
+- **复验（不用模拟器，最快）**：
+  1. `ssh` 进去 `docker exec xatodo-redis redis-cli set sms:code:18006569106 246810 EX 900`
+     （验证码不真发短信）；
+  2. `POST /auth/login/sms` 拿 token；
+  3. `POST /ai/agent/chat`，body `{"messages":[{"role":"user","content":"明天下午三点和张总开会"}]}`：
+     应当 0.0s 收到 `status` + `action`（`actionId` 形如 `ap8xnpg3baa-1`），**然后流保持打开**；
+  4. 拿这个 `actionId` 打 `POST /ai/agent/approvals`：`{"allow":true}` → 流继续，收到 `tool`
+     （结果 JSON 带 `eventId`）+ `delta`（模型复述结果）+ `done`，库里出现这条日程；
+     `{"allow":false}` → 同样继续，但库里**一条都不会写**。
+- **模拟器**：`/mnt/c/Users/jiang/AppData/Local/Android/Sdk/emulator/emulator.exe -avd Medium_Phone`
+  起 AVD，WSL 里用 `/mnt/c/.../platform-tools/adb.exe`；`adb reverse tcp:8081 tcp:8081` 让 App 连本地 Metro。
+  点击一律用 `uiautomator dump` 拿 `bounds` 再换算（画面 1080×2400），目测坐标点不中。
+
+
+## 0.0 本次交接摘要（2026-09-29，第十一轮：删掉「全天」字段 + 授权后重复申请的真根因）
+
+### 这一轮做完的
+
+| # | 内容 |
+| --- | --- |
+| 1 | **`all_day` 字段整个删掉**（产品决定）：V19 迁移把 `event.all_day` 与 `task.all_day` 两列真删。约定替代它：**时间点落在当地 00:00 = 「只说了哪一天」**，界面只显示日期、不显示 00:00，也**不再有「全天」这个词**。 |
+| 2 | 两版后端 / App / web-admin 全部对齐：编辑页删掉「全天」开关、时间选择层标题统一「时间」；助手 `create_my_event` 不再有 `allDay` 参数；视觉识别输出也不再带 `allDay`。 |
+| 3 | **修掉「点了允许、日程建好了，却又冒出一条一模一样的授权行」**（用户在模拟器上发现的）。根因与证据见下一节。 |
+| 4 | 线上已部署：V19 生效（`information_schema` 查过，两列都没了）、修复生效；接口级端到端复验 12/12 不再重复申请；模拟器上「建日程 → 允许 → 授权块消失、输入框回来」走通。 |
+
+### 「允许之后又申请一次」的真根因（这条值得从头读一遍）
+
+现象：用户点「允许」，日程确实建好了，但紧接着界面上**又出现一条一模一样的授权行**；
+再点一次就会建出第二条日程。
+
+排查路径（照这个顺序做，别跳步）：
+
+1. 先怀疑 App 把「已处理」的卡片又当成「还挂着」发给服务端 → 对照实验**否掉了**：
+   带不带 `pendingActions` 都 6/6 复现。（顺手修掉了这个真不一致：`pendingActionsAfterResults`。）
+2. 再怀疑「模型看不到自己的工具调用，所以又调一次」→ 按 mewcode 的 `ToolPairing`
+   把「助手工具调用 + 配对结果」补回上下文。**仍 9/9 复现**，说明还不是它。
+3. 直接用线上密钥对上游做最小复现（`/tmp/xa_upstream.py`）：五种形状**都不重复** →
+   触发点在我们自己构造的上下文里。
+4. 于是给上游客户端加了一个 dump 开关（容器里 `touch /tmp/agent-dump-on` 即可，见 §调试），
+   **把真实发给上游的请求打出来**，一眼就看到末条消息是：
+
+   ```
+   [system] 系统提醒：用户这句话是要创建 / 修改 / 删除日程的意思，但你只回了一段文字，
+            还没走到申请授权……请立刻真正调用工具
+   ```
+
+   —— 是**我们自己的兜底追问**在续跑那一轮误触发：续跑时客户端带回授权结果，
+   模型本来就该只回文字，而追问的判据（用户那句话是写意图 + 这一轮没调工具）恰好成立，
+   于是它照着「请立刻调用工具」又申请了一次。
+
+**修法**（两处，都在 `AgentChatService`）：
+
+- **带 `actionResults` 的续跑轮不再追问** —— 这是根因修复。追问只该用于「用户提了要写的事、
+  模型却只聊了一句」的首轮。
+- 仍然按 mewcode 的做法把**工具调用 + 配对结果**回放给模型（`replayActionOutcomes`）：
+  每个 `tool_use` 都要有 `tool_result`，这是参考实现 `conversation/ToolPairing` 的核心约定；
+  老客户端不带 `payload` 时退化成原来的系统说明。
+
+证据：修复后对照实验 **12/12 都不再重复申请**（带 payload / 不带 payload 都一样）。
+
+### 这一轮踩的最大的坑：**改已经执行过的迁移文件**
+
+我顺手把 V18 的两行注释改得更贴切，结果线上后端**起不来**（容器重启 8 次）：
+
+```
+Migration checksum mismatch for migration version 18
+```
+
+Flyway 校验和覆盖整个文件（**注释也算**）。已上过线的迁移文件一个字节都不能动。
+这次是从线上备份 jar 里把那份 V18 原样取回来对比、逐字节恢复才好的。
+**规矩：要改口径就新开一个迁移（V20…），别回去改 V18/V19。**
+
+### 调试助手用的开关
+
+容器内 `docker exec xatodo-backend touch /tmp/agent-dump-on` 之后，
+每一次发给上游的请求都会以 `agent upstream request: {...}` 打进 `docker logs`。
+排查「模型为什么这么答」这类问题必备（第 4 步就是靠它定位的）。
+⚠️ 日志里会含用户日程正文，**排查完立刻 `rm` 掉这个文件**。
+
+### 当前状态
+
+- **测试基线**：Java **141**、Python **58**、App **220** + typecheck、web-admin 18、合规门禁 20 项，全绿。
+- **线上**：`http://8.136.20.182:8088` 已跑 V19 + 本轮修复；DB 备份 `/opt/xatodo/db.bak-20260929-*`，
+  jar 备份 `/opt/xatodo/backend/jar.bak-*`。
+- **模拟器**：Windows 侧 AVD `Medium_Phone`（`/mnt/c/Users/jiang/AppData/Local/Android/Sdk/emulator/emulator.exe -avd Medium_Phone`），
+  WSL 里用 `/mnt/c/.../platform-tools/adb.exe`。**点不动就是坐标不对**：用 `uiautomator dump`
+  拿 `bounds` 换算设备像素（画面 1080×2400），别照比例目测。
+
+## 0.0 本次交接摘要（2026-09-29，第十轮：单时间点收尾 + 助手授权行的真 bug）
+
+### 这一轮做完的
+
+| # | 内容 |
+| --- | --- |
+| 1 | **漏改收尾**：`prompt.md` 里残留的 `startAt`/`endAt`、`AgentChatService.renderPendingActions` 读的 `payload.startAt`（会让「挂着的那次授权」丢掉时间）、`AgentVisibleEvents` 的参数名与报错文案、`ConversionService` 的死常量 `DEFAULT_EVENT_MINUTES=60`、`backend-java/README.md`、spec §5.5 表结构 / §5.8 索引 / §6.2 的 `/search` 与 `/ai/events/recognize` 响应 / 组织日程示例，全部对齐单时间点。 |
+| 2 | **App 内部命名**：草稿字段 `startTime` → `time`、`DEFAULT_START_TIME` → `DEFAULT_EVENT_TIME`，删掉没人用的 `addMinutes` / `DEFAULT_END_TIME` / `nextDateKey`；编辑页时间选择层的标题从「开始时间 / 结束时间」改成「时间」（这是**用户可见**的残留）。 |
+| 3 | **V18 补重建索引**：`DROP COLUMN` 会连带删掉引用它的索引（`idx_event_calendar_range` / `idx_event_org_range`），迁移里补上 `idx_event_calendar_at(calendar_id, at)` 与 `idx_event_org_at(org_id, at)`。 |
+| 4 | **修掉「删除 / 修改不出授权行」的真 bug**（线上实测抓到）：用户说「把明天和张总的那个会删掉」，模型先 `list_my_events` 查到，然后只回一句「…删掉，确认一下？」就收尾了 —— 界面上没有可点的授权行。详见下节。 |
+| 5 | **线上部署 + 接口级端到端复验**：V18 在 prod 执行成功，`event` 表只剩 `at`（`information_schema` 查过），`aiAgentEnabled=true`；完整走通「只给一个时间点建日程 → 小安只申请 `at`（不再猜结束时间）→ 允许后自动继续且不重复申请 → 删除出授权行 → App 侧 REST 删除」。 |
+
+### 兜底追问改成了两档（这一轮的核心修复）
+
+`AgentChatService` 里那条「模型只回文字、不调工具」的兜底追问，现在这样判：
+
+- **一个工具都没调** → 宽口径 `looksLikeWriteIntent`（写动词 **或** 时间词 + 事件味），
+  「明天下午三点和张总开会」这种一个动词都没有的说法也要接住；
+- **已经查过、但没走到申请授权** → 窄口径 `hasWriteVerb`（**只认写动词**）。
+  不能对这种情形用宽口径：「我明天有什么安排」会被推成写操作，凭空申请一次授权。
+- `writeAttempts > 0` 时**不再追问**：模型已经试过写、只是失败了（找不到那条日程），
+  再追问只会让它重试同一个必然失败的动作。
+
+提示词同步去掉了「说『要把时间改到 17:00，确认一下』这种」这个反面教材 ——
+它其实在教模型「说完这句话就停」，正是这个 bug 的源头之一；现在改成
+「这句话必须跟授权请求一起出现，不能拿文字代替授权」。
+
+### 这一轮踩到的三个坑
+
+1. **测试手机号不能复用**：两个用例用了同一个号 → 60 秒内二次发码被频控拦掉（20005），
+   而报错会出现在几步之后的登录上（「验证码不能为空」），看起来像业务坏了。
+   现在 `AgentModuleTest.registerAccount` 有一道 `USED_PHONES` 闸，复用会立刻失败并说明原因；
+   `postJson` 也会在业务码非 0 时打印响应体。
+2. **按 IP 的验证码日限额在测试里必须放宽，但父 pom 配不生效**：整套用例都从「127.0.0.1」发码。
+   正确位置是 `xa-bootstrap/pom.xml` 里 surefire 自己的 `systemPropertyVariables`
+   （已经是 100000）；写到**父 pom 的 pluginManagement 里会被整块覆盖掉**，看着配了其实没用。
+3. **范围查询返回的字段名是 `eventId` 不是 `id`**：Java 侧配了 `non_null`，空字段直接消失，
+   拿 `id` 去取就是 `undefined`。写脚本 / 客户端时按 DTO 里的字段名来。
+
+### 当前状态
+
+- **测试基线**：Java **139**、Python **58**、App **219** + typecheck、web-admin 18、合规门禁 20 项，全绿。
+- **线上**：`http://8.136.20.182:8088` 已是单时间点版本（V18 已应用、`aiAgentEnabled=true`）。
+  jar 备份在 `/opt/xatodo/backend/jar.bak-*`，DB 备份 `/opt/xatodo/db.bak-20260928-223156.sql.gz`。
+- **仍未验证的**：App 真机 / 模拟器走一遍 —— 本机没有 AVD 与 Android SDK，模拟器起不来，
+  所以「授权块顶替输入框」「长按说话」这些**纯界面**部分这一轮没有真机证据。
+
+### 复验脚本
+
+`/tmp/xa_e2e.py`：`python3 xa_e2e.py` 跑全流程、`python3 xa_e2e.py cleanup` 只清数据。
+它不真发短信 —— 直接往演示机 Redis 写 `sms:code:<手机号>`；跑完会删掉自己造的日程
+（只按标题 `E2E 单时间点` / `和张总开会` 删，别拿它去清真实数据）。
+
+## 0.0 本次交接摘要（2026-09-28，第九轮：日程与待办都只有一个时间）
+
+### 为什么改
+
+助手要建日程时，用户只说「明天下午三点和张总开会」——**结束时间是我们猜的**（先按 +1 小时补，
+后来加了硬闸拦「模型自己补 1 小时」）。产品结论：**不要猜，也不要有"结束时间"这个概念**：
+日程与待办一样，都只有一个时间点。
+
+### 这一轮做完的
+
+| # | 内容 |
+| --- | --- |
+| 1 | **DB**：V18 迁移把 `event.start_at` + `event.end_at` 合并为 `event.at`（存量数据取原 start_at），`event_exception.override_start_at/override_end_at` → `override_at`。**不是遗留列，真的删掉了**。 |
+| 2 | **Java**：实体 / DTO / `EventService` / `RecurrenceExpander` / 组织日程 / 搜索 / 提醒 / 助手工具 / 视觉识别全部改单时间；`selectInRange` 与 `searchEvents` 的 SQL 同步（窗口判断变成「这个点落不落在窗口里」）。 |
+| 3 | **Python 版同步对齐**（用户明确要求）：同样的 SQL、同样的单时间展开、同样的校验。 |
+| 4 | **App**：编辑页只剩一行「时间」；列表/检索/待办转日程都只显示一个时刻；`formatTimeRange` → `formatEventTime`。 |
+| 5 | **web-admin**：组织日程表单从「起止时间」改成单个时间选择器。 |
+| 6 | **助手**：`create_my_event` 只要求 `title` + `at`；`list_my_events` 的时间窗口参数改名 `from`/`to`（避免与"日程只有一个时间"混淆）；「不许自己按 1 小时补」的硬闸与相关提示词整段删除——**没有结束时间，就无从猜起**。 |
+| 7 | spec §3/§4.1.x/§5.x 与 docs/legal 的「起止时间」表述全部改成「时间」。 |
+
+### 交接必读
+
+1. **`at` 是唯一时间字段**：`event.at`、`event_exception.override_at`、API 的 `at`、助手动作 payload 的 `at`。
+   看到任何 `endAt` / `end_at` / `时长` 的残留都是漏改，报 500 或字段缺失。
+2. **只说了哪一天 = 当天 00:00**（`all_day` 已在 V19 删掉）；**不再支持跨天**（产品明确接受这个损失）。
+3. `list_my_events` 的 `from`/`to` 是**查询窗口**，不是日程字段——别让模型把它当成日程的开始/结束。
+
+---
+
+## 0.0 交接摘要（2026-09-28，第八轮：工具重构 + 逐条授权）
+
+### 这一轮做完的（关键项都在真机 / 线上验过）
+
+| # | 内容 |
+| --- | --- |
+| 1 | **工具集收窄成五个，且只碰个人日程**：`list_my_events`（时间必填 / 正序 / 超 20 条只回"太多了"让模型缩小范围）、`read_my_event_note`（备注分段读，offset+length，单次封顶 500 字）、`create_my_event` / `update_my_event` / `delete_my_event`。删掉了 `find_free_slots`（空闲改由模型自己看日程推算，提示词给了 09:00–21:00 的口径）。 |
+| 2 | **隔离沙盒**：四个入口全部收敛到「账号 → 个人身份 → 自己的日历」；他人的 eventId 一律当"找不到"（不泄露存在性），组织日程不在范围内。有专门用例钉住。 |
+| 3 | **执行语义**：一轮里按声明顺序推进——连续查询**并行**、遇写**即停**（发出授权请求后本轮结束，后面的调用不执行）；写失败则把错误回灌给模型继续下一轮。⚠️ 第十二轮已改：现在一轮里所有调用按顺序执行，写在权限层**阻塞等答复**后由服务端执行。 |
+| 4 | **Codex 式逐条授权**：App 在对话下方**一次只摆一条**「允许 / 拒绝」；允许 → 调既有 REST → **自动继续**（上限 3 次）；拒绝 → 停下等用户说话；未处理就发新消息 → 记为「未处理」一并回传。⚠️ 第十二轮已改：App 不再调 REST、也没有自动继续；点允许/拒绝只是 `POST /ai/agent/approvals`，服务端在同一条流里继续。 |
+| 5 | **工具调用可见**：新增 SSE `tool` 事件，查询类给「已查日程 · N 条」+ 人话明细，写入类给「已申请创建 / 修改 / 删除」；界面一行小字、可展开。 |
+| 6 | **提示词工程化**：正文搬到 `xa-agent/src/main/resources/agent/prompt.md`（占位符替换），`PROMPT_VERSION` 随用量进日志，并加了提示词回归测试（关键不变量在、开发语气词不在）。 |
+| 7 | 顺手修掉两个真 bug：① 写失败时不把错误回灌（模型永远看不到那句错误）② MockMvc 连发多条 SSE 时异步派发抢写同一个响应（见 §5）。 |
+
+### 交接必读的三条
+
+1. **工具名带 `my_` 前缀是边界声明，不是风格**。组织日程下一阶段以**新工具**加入
+   （`list_org_events` 之类），**不要**把这五个改造成"既能个人又能组织"。
+2. **授权是「一次工具调用 = 一次授权」，且遇写即停**：所以模型一轮里最多只请求一条写操作，
+   App 侧的授权队列几乎总是长度 1；这个不变量由服务端保证，别在客户端"攒批"。
+3. **改提示词必须同时改 `AgentPrompt.VERSION`**，否则线上出问题时分不清跑的是哪一版。
+
+---
+
+## 0.0 交接摘要（2026-09-27，第七轮：小安接入通义千问）
+
+### 这一轮做完的
+
+把「小安」从**只有入口的骨架**变成真能用的助手：流式回答、能查可见日程、能建 / 删**个人**日程
+（写操作**必须用户确认**）、支持**语音输入**；交互按豆包那套路子（骨架，视觉仍是现有黑白令牌）。
+
+| # | 内容 | 位置 |
+| --- | --- | --- |
+| 1 | 新模块 `xa-agent`：模型配置、流式客户端、工具注册表、可见日程、空闲时段、SSE 编排 | `backend-java/xa-agent/**` |
+| 2 | `POST /ai/agent/chat`（SSE：`status` / `delta` / `action` / `done` / `error`）与 `POST /ai/transcribe` | `AgentChatController` / `AgentTranscribeController` |
+| 3 | 4 个工具：`list_events`（个人 + 当前组织，只读）、`find_free_slots`、`create_event`、`delete_event` | `AgentToolRegistry` |
+| 4 | **确认回路**：写操作只生成卡片 → 用户在卡片上确认 → App 调既有 REST → `actionResults` 回到下一轮 | `domain/agentActions.ts` + `AgentChatService` |
+| 5 | App 重写对话页：空态推荐问法、用户右侧气泡、助手左对齐正文、生成光标 + 停止、清空对话、长按复制、轻震动 | `screens/AgentChatScreen.tsx` |
+| 6 | 语音：长按说话（计时 + 音量条 + 上滑取消）→ 转写 → 文本入框（不自动发送） | `screens/agentMic*.tsx`、`domain/permissions.ts` |
+| 7 | 轻量 Markdown 子集（粗体 / 行内代码 / 列表 / 引用）自研 + 单测 | `domain/agentMarkdown.ts`、`components/AgentMarkdown.tsx` |
+| 8 | 能力判定改成读服务端：`GET /system/info` 新增 `aiAgentEnabled` | `SystemController` + `domain/agent.ts` |
+| 9 | 合规同步：隐私政策 §2 / §4.1 / §6.2 / §9.1 / §9.2、两份清单、`check_compliance.py` 新增 `assistant-disclosure`（19 → **20** 项） | `docs/legal/**`、`scripts/check_compliance.py` |
+| 10 | 部署：nginx 给 `/api/v1/ai/` 单独 `location`（**关缓冲**，否则流式变一次性）+ compose/`.env.example` 透传变量名 | `deploy/**` |
+
+### 两个必须记住的规矩
+
+1. **新规矩：默认 Java 先行，未经明确要求不做 Python 对齐。** 因此
+   `/ai/agent/chat` 与 `/ai/transcribe` **刻意不写进 `contract/api-contract.json`**
+   （那份清单的语义是「两版都必须实现」），口径写在 `spec.md` §6.2 的
+   「智能助手『小安』（阶段三 · Java 先行）」。**欠账：Python 版对齐。**
+   > ⚠️ **2026-09-30 第十三轮已收口**：Python 版助手补齐，这四个端点已进契约（111 个端点）。
+   > 「Java 先行」仍是**做事的默认顺序**（先做一版、跑通再对齐），但不再是"另一版不做"的借口。
+2. **模型没有写权限**。它只能生成待确认卡片；真正的写入永远发生在**用户点确认之后**。
+   > ⚠️ **2026-09-30 第十二轮已改**：执行方从「App 调 REST」改成「服务端在权限通过后调同一套
+   > Service」（见文件顶部第十二轮摘要）。后半句不再准，但**「用户不确认就不写库」这条底线没变**——
+   > 改链路前先想清楚这一点。
+
+### 交互上容易被误解的一点（本轮被打回过一次）
+
+**确认卡片必须在对话区里摊开写清「将写入的日程」**（标题 / 日期 / 时间 / 地点），
+而不是一句「创建日程」——用户要能一眼核对，**并且可以继续提要求修改**，
+不满意就接着说「改成下午四点」。删除同理：卡片要把**将被删掉的那条日程**摊开，
+否则用户没法判断助手是不是找对了那条（删错了找不回来）。
+
+**卡片只在模型调用 `create_event` / `delete_event` 这两个写工具时出现。** 查询类工具
+（`list_events` / `find_free_slots`）在服务端直接执行、结果回灌给模型，界面只有一行
+「正在查日程…」的状态提示，然后模型用文字回答——**查一次就弹一张卡片让用户点确认，那是错的方向**。
+反过来，写工具缺信息（没给时间）或被拒（组织日程 / 日程不属于本人）时也**不出卡片**，
+只回一句工具错误，由模型去说明或追问（`AgentModuleTest.queryToolsNeverProduceConfirmationCards` 盯着这条）。
+
+为让「继续修改」成立，客户端会把**还没确认的卡片**作为 `pendingActions` 带进下一轮请求
+（`AgentChatService.renderPendingActions` 拼进系统提示）——卡片正文不在对话历史里，
+不带的话模型根本不知道「它」指什么。同一类动作在对话区**只留最新一张**（`mergeActionCards`）。
+
+### 配置与选型
+
+- 默认 `qwen3.6-flash`（阿里云百炼 OpenAI 兼容模式）：实测「中文 + 工具 + 流式」形状下
+  首字最快、总耗时最短，且 flash 档比 plus 便宜。`XATODO_AGENT_MODEL=qwen3.7-plus`
+  一行即可切换。关思考（`enable_thinking=false`）、`max_tokens=600`、
+  只送最近 10 轮、工具结果紧凑 JSON、`stream_options.include_usage=true` 记用量。
+- **`XATODO_AGENT_API_KEY` 留空 = 未接入**：对话接口直接返回 `90002`，
+  `/system/info` 的 `aiAgentEnabled=false`，App 保持「还没有接入模型」的老文案。
+  真 Key 只放本地 `.env.local` 与服务器 `/opt/xatodo/.env`，仓库里搜不到明文。
+- ⚠️ **还没在真机 / 线上验证过的部分**：真实百炼上游的流式与语音转写（本地测试注入的是**假上游**），
+  以及 nginx 关缓冲后的逐块到达。上线后要按 §9.0 部署，再用带 token 的 `curl -N` 打一次 SSE 确认。
+- ⚠️ **`expo-audio` 要 Expo Go / dev build 支持**；缺模块时 App 的麦克风按钮会明确提示不可用，
+  不会让整个 App 起不来（`screens/agentMic.tsx` 用的是动态 import）。
+
+### 当前状态与测试基线
+
+- **Java 126**（助手模块 17 个用例：工具循环 / 事件序列 / 上游帧解析 / 空闲时段边界）、
+  **App 204 + typecheck**（原 170）、
+  **web-admin 18**、**合规门禁 20 项**（原 19），全绿。
+- 契约仍是 **108 端点**（本轮**不动** `contract/api-contract.json`）。
+- 新增 App 依赖：`expo-audio ~57.0.5`、`expo-clipboard ~57.0.2`、`expo-haptics ~57.0.3`；
+  `app.json` 增加 `expo-audio` 插件（麦克风用途说明，且关掉后台录音 / 后台播放）。
+
+### 下一步
+
+1. **真机走一遍小安**（模拟器 + Expo Go）：①说「明天下午三点开一小时会，标题张总会」→
+   卡片摊开 → 确认后日历里出现；②说「改成四点」→ 卡片被替换（不是多出一张）；
+   ③问「我下周三有什么」含当前组织日程；④删除个人日程；⑤长按说话 → 文本入框 → 发送；
+   ⑥把 `XATODO_AGENT_API_KEY` 清空后仍显示「未接入」。
+2. 线上：按 §9.0 上 jar + `nginx -t && nginx -s reload`；`curl -N` 确认逐块到达、
+   `/system/info` 的 `aiAgentEnabled=true`、`docker logs` 看 token 用量。
+3. 欠账：Python 版对齐（含契约补 2 个端点）；`pendingActions` 的契约化。
+
+---
+
+## 0.0 交接摘要（2026-09-27，第六轮：提醒链路闭环）
 
 **先看这两份**：[`docs/plan-2026-09-27.md`](docs/plan-2026-09-27.md)（执行清单）、
 [`docs/review-2026-09-27.md`](docs/review-2026-09-27.md)（review 结论）。
@@ -355,12 +743,12 @@ setsid nohup /home/jiang/tools/jdk-21.0.12.1+1/bin/java -jar target/xa-bootstrap
 | 部分 | 状态 | 测试 |
 | --- | --- | --- |
 | spec.md | 完成（v1.2） | — |
-| 跨语言契约 | `contract/api-contract.json`，**103 个端点** | Java 与 Python 各自校验 |
-| backend-java（7 模块，含新增 `xa-support`） | 完成 | **90 项集成测试全绿** |
-| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **51 项全绿** |
+| 跨语言契约 | `contract/api-contract.json`，**111 个端点** | Java 与 Python 各自校验 |
+| backend-java（8 模块，含 `xa-support` 与 `xa-agent`） | 完成 | **149 项集成测试全绿** |
+| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **70 项全绿** |
 | packages/design-tokens | 完成 | 8 个用例（1 个测试文件；`node --test` 汇总会显示 1） |
-| web-admin（React + Vite + AntD） | 完成：超管六页 + **组织管理端五页** + 意见反馈 | 18 项 |
-| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程（无回执，与个人日程同一长相）、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记/拍照入口、头像上传、意见反馈、组织账号认领与账户管理、小安 tab、深色模式偏好持久化 | **98 项**（**仅纯逻辑层，组件未做渲染测试**） |
+| web-admin（React + Vite + AntD） | 完成：超管六页 + **组织管理端五页** + 意见反馈 | 21 项 |
+| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程（无回执，与个人日程同一长相）、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记、头像上传、意见反馈、组织账号认领与账户管理、小安（对话 + 授权面板 + 长按说话）、深色模式偏好持久化 | **206 项**（**仅纯逻辑层，组件未做渲染测试**） |
 
 最近几次提交（倒序）：
 
@@ -461,12 +849,12 @@ abe6b3e feat: 日历页检索、跳到指定日期、节假日/调休标记，�
 | # | 事项 | 说明 |
 | --- | --- | --- |
 | 1 | ~~拍照 / 相册识别日程~~ → **第一版不做（产品已定，见 §0.0.1）** | App 侧入口与实现已删除（含相机权限与合规文本）；**后端 `POST /ai/events/recognize` 与两版实现保留**，将来要接只需在 App 侧补入口（spec §4.1.9 留了原设计）。端侧模型仍未跑通（要 Dev Client 构建） |
-| 1.5 | **R1 提醒/通知/推送整条链路不存在**（见 `docs/review-2026-09-27.md`）：spec §4.1.2 承诺多提醒、§4.5 承诺推送，实际只有 `reminder` 表的存储层，没有投递、App 也没有提醒 UI | 会直接影响上线的产品缺口。最低成本方案是首版接 `expo-notifications` 做**本地通知**（`reminder` 表已就绪，不需要推送通道） |
+| 1.5 | ~~**R1 提醒/通知/推送整条链路不存在**~~ ✅ **第六轮已闭环**（这条是旧快照，别照着做）：提醒走 `expo-notifications` **本地通知** + `GET /reminders/schedule` 对齐排期，推送走极光的 `push_device` 登记与组织日程推送 | 详见 §0.0 第六轮摘要 |
 | 1.6 | **R2 明文 HTTP**：`apiBaseUrl` 是 `http://…:8088`，Expo 不注入 `usesCleartextTraffic`，Android 9+ 默认禁明文 → release 包可能连不上后端 | 上线前在真实 release 包里验证；首选上域名 + HTTPS（隐私政策 URL 也需要 HTTPS） |
-| 2 | （待产品定，非阻塞）超管建组织时**预置首位拥有者成员** | 上一轮列的「路线①」。现在**路线②已落地**（见 §0.0 第 1 条），所以这条只是可选增强：预置能让组织一建好就有一个可认领的拥有者，不必先在后台手工建。若要做：组织创建请求体加 `ownerMemberKey`/`ownerRealName`，两版后端 + 契约 + 超管建组织表单同步改 |
+| 2 | ~~超管建组织时预置首位拥有者成员~~ ✅ **已做** | 组织创建请求体加可选 `ownerMemberKey` / `ownerRealName`（两版后端都实现）：填了就同时建「总部」根部门 + 一条 OWNER 成员，组织一建好就能在 App 里认领；不填维持老行为（空组织）。web-admin 新建组织表单已加这两个选填项。契约文件**不用动**（只是请求体字段） |
 | 3 | App 侧没有组织成员管理界面 | spec §4.3 把成员/部门管理划给 Web 组织管理端，App 只有组织日历（§4.2）。这是设计如此，不是遗漏；如果产品要求「拥有者在手机上也能导成员」，得先改 spec |
-| 4 | **web-admin 组织日历的「撤回 / 删除」按钮口径不对** | 后端已收紧成「只有发起人能改/撤/删」（§4.2.2），但 `GET /org-admin/events` 没告诉页面「我能不能改」，所以非发起人点下去会收到 20003（页面只弹个错）。修法：给该接口的条目加 `canEdit`（服务端按 `isInitiator` 判定），页面据此隐藏按钮——App 侧已经就是这么做的，管理端照抄即可 |
-| 5 | **撤回之后没有任何「已撤回」入口** | 撤回把 `event_dispatch` 置为 `REVOKED`，而成员端与管理端列表都只列 `ACTIVE` 的下发，所以撤回后两端都翻不到「这条曾经发给谁」。要做历史视图：列表加 `includeRevoked` 参数（管理端）或单独一个「已撤回」筛选 |
+| 4 | ~~web-admin 组织日历的「撤回 / 删除」按钮口径不对~~ ✅ **已修** | `GET /org-admin/events` 的条目现在带 `canEdit`（服务端按 `isInitiator` 判定，两版后端都有），页面据此显示「撤回 / 删除」或「仅发起人可操作」。 |
+| 5 | ~~撤回之后没有任何「已撤回」入口~~ ✅ **已修** | `GET /org-admin/events` 新增 `includeRevoked`（默认 false）；条目带 `status`（`ACTIVE`/`REVOKED`）。web-admin 组织日历加了「含已撤回」开关与「状态」列，已撤回的行不再给按钮。 |
 
 App 侧选图用 `expo-image-picker`，取文件用 `expo-file-system` 的 `File`（原因见 §5 陷阱里的
 「Expo SDK 57 的 fetch 不支持 `{uri,name,type}`」）。
@@ -638,6 +1026,8 @@ export PATH="/home/jiang/.local/bin:$PATH"
 cd /home/jiang/develop/xa-todo/backend-java/xa-bootstrap
 # 先加载本地凭据（高德 Key）——**漏了这步不会报错**，只是地点服务静默降级成内置地点集，
 # 表现是「搜不到真实 POI / 地图空白」，很容易误判成代码问题
+# 同一条也决定小安能不能用：.env.local 里没有 XATODO_AGENT_API_KEY 时，
+# /system/info 的 aiAgentEnabled=false，App 会显示「还没有接入模型」（这是正常的降级，不是 bug）
 set -a; . /home/jiang/develop/xa-todo/.env.local; set +a
 setsid nohup /home/jiang/tools/jdk-21.0.12.1+1/bin/java -jar target/xa-bootstrap-0.1.0-SNAPSHOT.jar > /tmp/xa-backend.log 2>&1 < /dev/null & disown
 
@@ -775,7 +1165,8 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 
 ### 6.2 跨语言契约（`contract/api-contract.json`）
 
-Java 与 Python 两版后端**读同一份契约**做校验，共 **103 个端点**。改动等于改契约，必须两版同步。
+Java 与 Python 两版后端**读同一份契约**做校验，共 **111 个端点**（含助手的三个端点，
+第十二/十三轮加的）。改动等于改契约，必须两版同步。
 
 > 组织管理端的 6 个端点（`GET /org-admin/departments`、`GET /org-admin/events`、`GET|PATCH /org-admin/settings`、
 > `GET /org-admin/logs`、`GET /org-admin/imports/{id}/failures`）是 2026-09-26 补上的：

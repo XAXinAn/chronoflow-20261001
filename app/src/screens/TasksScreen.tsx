@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import { useFocusEffect } from '@react-navigation/native';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { ApiError } from '../api/client';
 import type { Task } from '../api/types';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
 import { EmptyState, Screen } from '../components/ui';
@@ -56,7 +56,7 @@ export function TasksScreen({
     try {
       setTasks(await api.tasks());
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '加载失败');
+      setError(userFacingError(cause, '加载失败'));
     } finally {
       setLoading(false);
     }

@@ -1,9 +1,9 @@
 import { useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { ApiError } from '../api/client';
 import { Checkbox, PrimaryButton } from '../components/ui';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import { LEGAL_DOCS, type LegalDoc } from '../domain/legal';
@@ -51,7 +51,7 @@ export function AccountDeletionScreen({
       // 否则下次冷启动还会拿一个已被吊销的令牌去换会话
       await signOut();
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '注销失败，请稍后重试');
+      setError(userFacingError(cause, '注销失败，请稍后重试'));
     } finally {
       setBusy(false);
     }

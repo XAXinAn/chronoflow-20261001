@@ -20,7 +20,7 @@ public final class SearchDtos {
     }
 
     /**
-     * @param startAt        日程的开始时间；重复日程给出的是**最近一次实例**的时间
+     * @param at        日程的唯一时间点；重复日程给出的是**最近一次实例**的时间
      * @param timezone       展示用时区。App 端一律显式带时区格式化，否则设备时区一变就与日历页自相矛盾
      * @param dueAt          待办的截止时间，可为空（「待安排」）
      * @param recurring      是否命中重复日程
@@ -32,9 +32,7 @@ public final class SearchDtos {
     public record SearchResultItem(String type,
                                    Long id,
                                    String title,
-                                   OffsetDateTime startAt,
-                                   OffsetDateTime endAt,
-                                   Boolean allDay,
+                                   OffsetDateTime at,
                                    String timezone,
                                    String locationName,
                                    OffsetDateTime dueAt,

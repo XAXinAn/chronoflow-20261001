@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { userFacingError } from '../domain/errors';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -13,12 +14,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { OrgCurrent, OrgEvent } from '../api/types';
 import type { Endpoints } from '../api/endpoints';
-import { ApiError } from '../api/client';
 import { MonthCalendar } from '../components/MonthCalendar';
 import { Card, EmptyState, Screen } from '../components/ui';
 import { WheelDatePicker } from '../components/WheelDatePicker';
 import { useAppTheme } from '../context/AppContext';
-import { dayHeading, formatTimeRange, localDateKey, locationLabel } from '../domain/agenda';
+import { dayHeading, formatEventTime, localDateKey, locationLabel } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 import { canDispatch } from '../domain/orgDispatch';
 
@@ -33,9 +33,9 @@ function pad(value: number): string {
 /**
  * 组织日程：骨架与「日历」页完全一致——月视图 + 当日日程（spec §7.6 黑白极简）。
  *
- * 差异只在内容语义：组织日程对成员只读，卡片上多一个「我的回执」状态与回执按钮；
- * 悬浮按钮也与日历页同一套，但**新建入口按权限出现**——只有能下发的人（组织管理员、
- * 部门管理员）才看得到「新建组织日程」，普通成员依旧只读（spec §4.2.3）。
+ * 差异只在内容语义：组织日程对成员只读，卡片与日历页长得一样（首版不收集回执，spec §4.2.2），
+ * 发起人自己那条多一个「编辑」；悬浮按钮也与日历页同一套，但**新建入口按权限出现**——
+ * 只有能下发的人（组织管理员、部门管理员）才看得到「新建组织日程」，普通成员依旧只读（spec §4.2.3）。
  */
 export function OrgEventsScreen({
   api,
@@ -84,7 +84,7 @@ export function OrgEventsScreen({
       const grid = buildMonthGrid(year, month);
       setItems(await api.orgEvents(dateKeyToIso(grid.startDateKey), dateKeyToIso(grid.endDateKey, true)));
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '加载失败');
+      setError(userFacingError(cause, '加载失败'));
     } finally {
       setLoading(false);
     }
@@ -126,15 +126,15 @@ export function OrgEventsScreen({
   }, [focusDateKey, onFocusApplied]);
 
   const eventDates = useMemo(
-    () => new Set(items.map((item) => localDateKey(item.startAt, APP_TIMEZONE))),
+    () => new Set(items.map((item) => localDateKey(item.at, APP_TIMEZONE))),
     [items],
   );
 
   const dayEvents = useMemo(
     () =>
       items
-        .filter((item) => localDateKey(item.startAt, APP_TIMEZONE) === selectedDateKey)
-        .sort((a, b) => a.startAt.localeCompare(b.startAt)),
+        .filter((item) => localDateKey(item.at, APP_TIMEZONE) === selectedDateKey)
+        .sort((a, b) => a.at.localeCompare(b.at)),
     [items, selectedDateKey],
   );
 
@@ -203,7 +203,7 @@ export function OrgEventsScreen({
         ) : null}
 
         {dayEvents.map((item) => (
-          <View key={`${item.eventId}-${item.startAt}`} style={{ marginBottom: theme.spacing.sm }}>
+          <View key={`${item.eventId}-${item.at}`} style={{ marginBottom: theme.spacing.sm }}>
             <Card>
               <View style={styles.eventRow}>
                 <View style={{ flex: 1 }}>
@@ -211,10 +211,12 @@ export function OrgEventsScreen({
                     {item.title}
                   </Text>
                   <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 2 }}>
-                    {formatTimeRange(item.startAt, item.endAt, item.allDay, item.timezone || APP_TIMEZONE)}
-                    {locationLabel(item.location, item.locationDetail)
-                      ? ` · ${locationLabel(item.location, item.locationDetail)}`
-                      : ''}
+                    {[
+                      formatEventTime(item.at, item.timezone || APP_TIMEZONE),
+                      locationLabel(item.location, item.locationDetail),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </Text>
                 </View>
                 <View style={styles.pills}>

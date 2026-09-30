@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ApiError } from '../api/client';
 import { EditorHeader } from '../components/form';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
 import { Card, EmptyState, Pill } from '../components/ui';
@@ -37,7 +37,7 @@ export function OrgAccountsScreen({ onBack }: { onBack: () => void }) {
     try {
       await refreshOrgAccounts();
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '加载组织账号失败');
+      setError(userFacingError(cause, '加载组织账号失败'));
     }
   }, [refreshOrgAccounts]);
 
@@ -59,7 +59,7 @@ export function OrgAccountsScreen({ onBack }: { onBack: () => void }) {
       setMemberKey('');
       onBack();
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '添加组织账号失败');
+      setError(userFacingError(cause, '添加组织账号失败'));
     } finally {
       setBusy(false);
     }
@@ -79,7 +79,7 @@ export function OrgAccountsScreen({ onBack }: { onBack: () => void }) {
               try {
                 await unlinkOrgAccount(account.identityId);
               } catch (cause) {
-                setError(cause instanceof ApiError ? cause.message : '删除失败');
+                setError(userFacingError(cause, '删除失败'));
               }
             })();
           },

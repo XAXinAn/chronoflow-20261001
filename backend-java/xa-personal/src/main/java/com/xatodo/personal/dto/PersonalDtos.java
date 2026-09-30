@@ -61,9 +61,8 @@ public final class PersonalDtos {
             java.math.BigDecimal latitude,
             java.math.BigDecimal longitude,
             @Size(max = 64) String poiId,
-            @NotNull(message = "开始时间不能为空") OffsetDateTime startAt,
-            @NotNull(message = "结束时间不能为空") OffsetDateTime endAt,
-            Boolean allDay,
+            // 日程只有一个时间点（spec §4.1.2）。只说了哪天的，给当天 00:00
+            @NotNull(message = "日程时间不能为空") OffsetDateTime at,
             @Size(max = 64) String timezone,
             @Size(max = 512) String rrule,
             @Size(max = 16) String status,
@@ -84,9 +83,7 @@ public final class PersonalDtos {
             java.math.BigDecimal latitude,
             java.math.BigDecimal longitude,
             @Size(max = 64) String poiId,
-            OffsetDateTime startAt,
-            OffsetDateTime endAt,
-            Boolean allDay,
+            OffsetDateTime at,
             @Size(max = 64) String timezone,
             @Size(max = 512) String rrule,
             @Size(max = 16) String status,
@@ -111,9 +108,7 @@ public final class PersonalDtos {
                                 java.math.BigDecimal longitude,
                                 String poiId,
                                 String coordinateSystem,
-                                OffsetDateTime startAt,
-                                OffsetDateTime endAt,
-                                Boolean allDay,
+                                OffsetDateTime at,
                                 String timezone,
                                 String rrule,
                                 String status,
@@ -133,7 +128,7 @@ public final class PersonalDtos {
                     event.getId(), event.getCalendarId(), event.getTitle(), event.getDescription(),
                     event.getLocationName(), event.getLocationAddress(), event.getLocationDetail(),
                     event.getLatitude(), event.getLongitude(), event.getPoiId(), event.getCoordinateSystem(),
-                    event.getStartAt(), event.getEndAt(), event.getAllDay(), event.getTimezone(),
+                    event.getAt(), event.getTimezone(),
                     event.getRrule(), event.getStatus(), event.getAvailability(), event.getColor(),
                     event.getPriority(), event.getCategory(), event.getUrl(), event.getTravelTimeMinutes());
         }
@@ -150,7 +145,6 @@ public final class PersonalDtos {
             @Size(max = 200, message = "标题最长 200 个字符") String title,
             String description,
             OffsetDateTime dueAt,
-            Boolean allDay,
             String priority,
             /** 图片附件的相对 URL 数组（§4.1.3）：日历页「拍照」直接带一张进来 */
             java.util.List<String> images,
@@ -172,7 +166,6 @@ public final class PersonalDtos {
             Long eventId,
             /** 显式解除日程关联：null 在 PATCH 里是「不修改」，解绑必须靠这个开关 */
             Boolean clearEvent,
-            Boolean allDay,
             String priority,
             String status,
             java.util.List<String> images,
@@ -196,7 +189,6 @@ public final class PersonalDtos {
                                String title,
                                String description,
                                OffsetDateTime dueAt,
-                               Boolean allDay,
                                String status,
                                OffsetDateTime completedAt,
                                String priority,
@@ -217,7 +209,7 @@ public final class PersonalDtos {
             return new TaskResponse(
                     task.getId(), task.getCalendarId(), task.getParentTaskId(),
                     task.getEventId(), eventTitle,
-                    task.getTitle(), task.getDescription(), task.getDueAt(), task.getAllDay(),
+                    task.getTitle(), task.getDescription(), task.getDueAt(),
                     task.getStatus(), task.getCompletedAt(), task.getPriority(), images,
                     task.getRrule(),
                     task.getSortOrder());
@@ -225,8 +217,8 @@ public final class PersonalDtos {
     }
 
     /**
-     * 待办转日程：需补齐起止时间；只给 startAt 时默认时长 1 小时（spec §4.1.1）。
+     * 待办转日程：需要给一个时间（不传就用待办自己的截止时间，spec §4.1.1）。
      */
-    public record TaskToEventRequest(OffsetDateTime startAt, OffsetDateTime endAt) {
+    public record TaskToEventRequest(OffsetDateTime at) {
     }
 }

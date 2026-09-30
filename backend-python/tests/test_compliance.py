@@ -61,8 +61,7 @@ def test_self_service_deletion_purges_personal_data(client) -> None:
         tokens,
         {
             "title": "要消失的日程",
-            "startAt": "2026-10-01T09:00:00+08:00",
-            "endAt": "2026-10-01T10:00:00+08:00",
+            "at": "2026-10-01T09:00:00+08:00",
         },
     )
     task = client.post(

@@ -153,8 +153,8 @@ class SearchAndHolidayTest {
     void searchSpansEventsAndTasksOrderedByTimeDesc() throws Exception {
         String token = registerAccount("13800000401");
 
-        createEvent(token, "评审会彩排", "2026-10-05T10:00:00+08:00", "2026-10-05T11:00:00+08:00");
-        createEvent(token, "技术评审会", "2026-09-20T10:00:00+08:00", "2026-09-20T11:00:00+08:00");
+        createEvent(token, "评审会彩排", "2026-10-05T10:00:00+08:00");
+        createEvent(token, "技术评审会", "2026-09-20T10:00:00+08:00");
         createTask(token, "写评审会纪要", "2026-09-25T18:00:00+08:00");
         createTask(token, "评审会后续跟进", null);
 
@@ -173,8 +173,8 @@ class SearchAndHolidayTest {
         String mine = registerAccount("13800000402");
         String others = registerAccount("13800000403");
 
-        createEvent(mine, "我的评审会", "2026-10-05T10:00:00+08:00", "2026-10-05T11:00:00+08:00");
-        createEvent(others, "别人的评审会", "2026-10-06T10:00:00+08:00", "2026-10-06T11:00:00+08:00");
+        createEvent(mine, "我的评审会", "2026-10-05T10:00:00+08:00");
+        createEvent(others, "别人的评审会", "2026-10-06T10:00:00+08:00");
         createTask(mine, "评审会待办", null);
 
         assertThat(titles(search(mine, "评审会").path("data"))).containsExactly("我的评审会", "评审会待办");
@@ -187,8 +187,8 @@ class SearchAndHolidayTest {
     void searchEscapesWildcards() throws Exception {
         String token = registerAccount("13800000404");
 
-        createEvent(token, "50% 折扣复盘", "2026-10-05T10:00:00+08:00", "2026-10-05T11:00:00+08:00");
-        createEvent(token, "普通复盘", "2026-10-06T10:00:00+08:00", "2026-10-06T11:00:00+08:00");
+        createEvent(token, "50% 折扣复盘", "2026-10-05T10:00:00+08:00");
+        createEvent(token, "普通复盘", "2026-10-06T10:00:00+08:00");
 
         // 不转义时 `%` 会匹配到所有日程——那就成了「搜什么都灵」，用户反而找不到目标
         assertThat(titles(search(token, "50%").path("data"))).containsExactly("50% 折扣复盘");
@@ -202,8 +202,8 @@ class SearchAndHolidayTest {
 
         // 从 2026-09-07（周一）起的每周一 09:00，永不结束
         postJson("/api/v1/events", token,
-                "{\"title\":\"周会\",\"startAt\":\"2026-09-07T09:00:00+08:00\","
-                        + "\"endAt\":\"2026-09-07T10:00:00+08:00\",\"timezone\":\"Asia/Shanghai\","
+                "{\"title\":\"周会\",\"at\":\"2026-09-07T09:00:00+08:00\","
+                        + "\"timezone\":\"Asia/Shanghai\","
                         + "\"rrule\":\"FREQ=WEEKLY;BYDAY=MO\"}");
 
         JsonNode item = search(token, "周会").path("data").get(0);
@@ -212,7 +212,7 @@ class SearchAndHolidayTest {
         assertThat(item.path("occurrenceDate").isMissingNode()).as("重复命中必须带本次实例日期").isFalse();
         // 断言「形态」而不是「具体哪一天」：最近一次实例随运行日期变化，
         // 写死日期会让测试明天就红，而这里真正要守住的是「落在周一 09:00 的本地墙上时间」
-        ZonedDateTime start = ZonedDateTime.parse(item.path("startAt").asText()).withZoneSameInstant(SHANGHAI);
+        ZonedDateTime start = ZonedDateTime.parse(item.path("at").asText()).withZoneSameInstant(SHANGHAI);
         assertThat(start.getHour()).isEqualTo(9);
         assertThat(start.getMinute()).isZero();
         assertThat(start.getDayOfWeek().getValue()).isEqualTo(1);
@@ -356,9 +356,9 @@ class SearchAndHolidayTest {
                 "zh-CN", date, name, dayType);
     }
 
-    private void createEvent(String token, String title, String startAt, String endAt) throws Exception {
+    private void createEvent(String token, String title, String at) throws Exception {
         postJson("/api/v1/events", token,
-                "{\"title\":\"" + title + "\",\"startAt\":\"" + startAt + "\",\"endAt\":\"" + endAt + "\"}");
+                "{\"title\":\"" + title + "\",\"at\":\"" + at + "\"}");
     }
 
     private void createTask(String token, String title, String dueAt) throws Exception {

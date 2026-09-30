@@ -38,7 +38,7 @@
 | 组织唯一 ID | Org Unique ID（`organization.code`） | 组织的全局唯一编号（组织编码，如 `XATECH`）。**成员登录组织账号时必须提供它**：成员标识只在组织内唯一，跨组织会重名，必须先定位到组织 |
 | 部门 | Department | 组织内的树形组织结构，最多 5 层。 |
 | 部门管理员 | Dept Admin | 被授权管理某部门（及其所有下级部门）的成员与日程下发的成员。 |
-| 日程 | Event | 有起止时间的日历事件，占用时间段。 |
+| 日程 | Event | **只有一个时间点**的日历事件（`at`）：到点办事，不占时间段，也就没有时长。 |
 | 待办 | Task | 有完成状态的任务，可不带时间。 |
 | 个人日历 | Personal Calendar | 归属个人身份的日历，私有。 |
 | 组织日历 | Org Calendar | 归属组织的日历，成员只读，由管理员下发。 |
@@ -287,21 +287,20 @@
 
 | 维度 | 日程 Event | 待办 Task |
 | --- | --- | --- |
-| 时间 | 必有起止时间，占用时间段 | `due_at` 可为空（无具体时间） |
+| 时间 | **必有唯一时间点** `at`（无起止、无时长） | `due_at` 可为空（无具体时间） |
 | 完成态 | 无 | 必有 `status`（TODO / DONE / CANCELLED） |
-| 全天 | 支持 | 支持（`all_day`） |
 | 重复 | 支持 RRULE | 支持 RRULE（如「每周五交周报」） |
 | 子项 | 无 | 支持一层子任务（`parent_task_id`） |
 | 视图 | 日 / 周 / 月视图 + 详情 | 列表视图（按截止时间/优先级分组）+ 详情 |
 
 **互相转换**：
 
-- 「日程 → 待办」：保留标题、描述、起止时间（结束时间转为 `due_at`），原日程标记取消。
-- 「待办 → 日程」：需补齐起止时间，默认时长 1 小时。
+- 「日程 → 待办」：保留标题、描述与**时间点**（直接搬成 `due_at`），原日程标记取消。
+- 「待办 → 日程」：把待办的截止时间搬成日程的时间；待办没有截止时间时必须让用户给一个。
 
 #### 4.1.2 日历能力
 
-- 全天事件与跨天事件；跨时区事件的时区正确渲染。
+- 只说了哪一天的事件（`at` 落在当地 00:00）与跨时区事件的渲染都要正确。
 - 标准 **RRULE** 重复规则：`DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY` + 间隔、星期集合、结束条件（永不 / 指定日期 / 次数）。
 - **重复例外**：支持修改或取消某一次实例，不影响其余实例。
 - **月视图行数按实际需要**：只画含有本月日期的周（5 行或 6 行），不补一整周都属于邻月的行。
@@ -325,7 +324,7 @@
 | 字段 | 说明 | 首版 |
 | --- | --- | --- |
 | 标题 | 必填 | ✔ |
-| 起止时间 | 含跨天与全天 | ✔ |
+| 时间 | 单一时间点 `at`；只说了哪一天 = 当天 00:00（不再支持跨天，也**没有 all_day 字段**） | ✔ |
 | 时区 | 默认取身份时区 | ✔ |
 | 重复规则 | RRULE + 结束条件（永不 / 指定日期 / 次数） | ✔ |
 | 提醒 | 可配置多个，提前量自定义 | ✔ |
@@ -376,7 +375,7 @@
 - **一个日程可关联多个待办**；一个待办**至多关联一个日程**（一对多，不设多对多）。
 - 关联在**待办侧建立**：在待办的新建/编辑页选择一条日程。
 - **候选范围 = 我的全部日程**（2026-09-27 定稿，走 `GET /events/all`），不受时间窗口限制：
-  待办和日程是对等的东西，「上个月那个会」也可能需要挂一条待办上去。列表按开始时间倒序
+  待办和日程是对等的东西，「上个月那个会」也可能需要挂一条待办上去。列表按时间倒序
   （最近的在前），每个重复序列只出现一次（关联的就是序列本身，`task.event_id` 指向它）。
   曾被实现成「此刻起 120 天」，结果用户早上建的日程晚上就关联不上，界面还说「没有可关联的日程」。
 - **候选列表要能搜**：顶部常驻搜索框，按标题 / 描述 / 地点做服务端子串检索（大小写不敏感），
@@ -398,7 +397,7 @@
   ——用户脑子里没有「这条是哪个模块的数据」，只有「我要找的那件事在什么时候」。
 - 匹配字段：日程的标题 / 描述 / 地点名，待办的标题 / 描述；大小写不敏感的子串匹配。
 - 排序：按时间倒序（最近的排在前面）；**没有时间的待办排在最后**。
-- 命中重复日程时，结果带回**最近一次实例**的日期与起止时间（`occurrenceDate`），点进去直接是那一次而不是整条序列。
+- 命中重复日程时，结果带回**最近一次实例**的日期与时间（`occurrenceDate`），点进去直接是那一次而不是整条序列。
 - 结果为空时明确提示「没有找到」，不要静默留白。
 
 **跳到指定日期**：
@@ -493,7 +492,7 @@
 
 **下发方（部门管理员 / 组织管理员 / 拥有者）**：
 
-- 创建组织日程：标题、描述、起止时间、全天、重复规则、地点、下发目标。
+- 创建组织日程：标题、描述、时间（单一时间点）、重复规则、地点、下发目标。
 - **入口有两处，能力一致**：Web 组织管理端（§4.3）与 App 组织 tab 的悬浮按钮（§4.2.3）。
   App 里这个入口**按权限出现**——只有能下发的人看得到，普通成员看不到（组织日程对他只读）。
 - **下发目标三种粒度**：
@@ -738,10 +737,10 @@ erDiagram
 | 表 | 关键字段 | 约束 / 说明 |
 | --- | --- | --- |
 | `calendar` | `id`、`calendar_type`、`owner_identity_id`(可空)、`org_id`(可空)、`department_id`(可空)、`name`、`color`、`timezone`、`is_default`、`status`、`created_at`、`updated_at` | `PERSONAL` 时 `owner_identity_id` 必填；`ORG`/`ORG_DEPARTMENT` 时 `org_id` 必填 |
-| `event` | `id`、`calendar_id`、`org_id`(可空)、`creator_identity_id`、`source_type`、`title`、`description`、`location_name`、`location_address`、`latitude`、`longitude`、`poi_id`、`coordinate_system`、`start_at`、`end_at`、`all_day`、`timezone`、`rrule`、`rrule_until`、`status`、`availability`、`color`、`priority`、`category`、`url`、`travel_time_minutes`、`dispatch_id`(可空)、`updated_after_dispatch`、`created_at`、`updated_at`、`deleted_at` | 索引 `idx_calendar_range(calendar_id, start_at, end_at)`；`end_at > start_at`；`status` ∈ `CONFIRMED`/`TENTATIVE`/`CANCELLED`；`availability` ∈ `BUSY`/`FREE`；地点字段语义见 §5.9 |
+| `event` | `id`、`calendar_id`、`org_id`(可空)、`creator_identity_id`、`source_type`、`title`、`description`、`location_name`、`location_address`、`latitude`、`longitude`、`poi_id`、`coordinate_system`、**`at`（唯一时间点，NOT NULL）**、`timezone`、`rrule`、`rrule_until`、`status`、`availability`、`color`、`priority`、`category`、`url`、`travel_time_minutes`、`dispatch_id`(可空)、`updated_after_dispatch`、`created_at`、`updated_at`、`deleted_at` | **没有 `start_at` / `end_at`**（V18 已真删列，见 §4.1.1）；索引 `idx_event_calendar_at(calendar_id, at)`、`idx_event_org_at(org_id, at)`；`at` 落在当地 00:00 表示「只说了哪一天」（V19 已删 `all_day`）；`status` ∈ `CONFIRMED`/`TENTATIVE`/`CANCELLED`；`availability` ∈ `BUSY`/`FREE`；地点字段语义见 §5.9 |
 | | | `creator_identity_id` **可空**：个人日程必填；组织日程由 Web 组织管理端下发时没有 C 端身份，此时为空，发起方记在 `event_dispatch.created_by_admin_id` |
-| `event_exception` | `id`、`event_id`、`occurrence_date`、`exception_type`(MODIFIED/CANCELLED)、`override_start_at`、`override_end_at`、`override_title`、`created_at` | `(event_id, occurrence_date)` 唯一 |
-| `task` | `id`、`calendar_id`、`owner_identity_id`、`org_id`(可空)、`parent_task_id`(可空)、`event_id`(可空)、`title`、`description`、`due_at`(可空)、`all_day`、`status`、`completed_at`、`priority`、`rrule`、`images`(jsonb)、`sort_order`、`created_at`、`updated_at`、`deleted_at` | 仅两层（父/子）；父任务与子任务须同 `calendar_id`；`event_id` 指向关联日程（一个日程可关联多个待办，见 §4.1.6），删除日程时置空而非级联删除；`images` 存上传后的相对 URL 数组（≤9，与 `feedback.images` 同一套写法） |
+| `event_exception` | `id`、`event_id`、`occurrence_date`、`exception_type`(MODIFIED/CANCELLED)、`override_at`、`override_title`、`created_at` | `(event_id, occurrence_date)` 唯一；`override_at` 是这个时间点被单独改成了什么 |
+| `task` | `id`、`calendar_id`、`owner_identity_id`、`org_id`(可空)、`parent_task_id`(可空)、`event_id`(可空)、`title`、`description`、`due_at`(可空)、`status`、`completed_at`、`priority`、`rrule`、`images`(jsonb)、`sort_order`、`created_at`、`updated_at`、`deleted_at` | 仅两层（父/子）；父任务与子任务须同 `calendar_id`；`event_id` 指向关联日程（一个日程可关联多个待办，见 §4.1.6），删除日程时置空而非级联删除；`images` 存上传后的相对 URL 数组（≤9，与 `feedback.images` 同一套写法） |
 | `reminder` | `id`、`target_type`(EVENT/TASK)、`target_id`、`identity_id`、`occurrence_date`(可空)、`minutes_before`、`channel`、`enabled`、`sent_at`、`created_at` | `(target_type, target_id, identity_id, occurrence_date, minutes_before)` 唯一 |
 
 ### 5.6 组织日历下发
@@ -769,7 +768,7 @@ erDiagram
 - 时间列统一 `timestamptz`，写入前转 UTC。
 - 逻辑删除统一使用 `deleted_at`，查询默认过滤。
 - 所有表带 `created_at` / `updated_at`，由框架自动填充。
-- 高频查询索引：`event(calendar_id, start_at, end_at)`、`event(org_id, start_at)`、`task(owner_identity_id, status, due_at)`、`org_member(org_id, department_id, status)`、`department(org_id, path)`、`event_recipient(org_member_id, receipt_status)`。
+- 高频查询索引：`event(calendar_id, at)`、`event(org_id, at)`、`task(owner_identity_id, status, due_at)`、`org_member(org_id, department_id, status)`、`department(org_id, path)`、`event_recipient(org_member_id, receipt_status)`。
 
 ### 5.9 地点与地图（geo）
 
@@ -949,7 +948,7 @@ erDiagram
 | GET / PATCH / DELETE | `/calendars/{id}` | 详情 / 编辑 / 删除 |
 | GET | `/events` | 范围查询 `start`、`end`、`calendarIds`，含重复实例展开 |
 | POST | `/events` | 创建日程 |
-| GET | `/events/all` | 我的**全部日程**（每个重复序列只出现一次，不展开），按开始时间倒序；可选 `keyword`（标题/描述/地点，大小写不敏感子串）与 `limit`（默认 200、上限 500）。「待办 → 关联日程」的候选列表用它（§4.1.6）：候选不受时间窗口限制，并且可搜索 |
+| GET | `/events/all` | 我的**全部日程**（每个重复序列只出现一次，不展开），按时间倒序；可选 `keyword`（标题/描述/地点，大小写不敏感子串）与 `limit`（默认 200、上限 500）。「待办 → 关联日程」的候选列表用它（§4.1.6）：候选不受时间窗口限制，并且可搜索 |
 | GET / PATCH / DELETE | `/events/{id}` | 详情 / 编辑 / 删除（支持 `scope=THIS/FUTURE/ALL`） |
 | POST | `/events/{id}/exceptions` | 为某次实例创建例外 |
 | POST | `/events/{id}/convert-to-task` | 转为待办 |
@@ -959,22 +958,35 @@ erDiagram
 | POST | `/tasks/{id}/complete` | 完成 / 取消完成 |
 | POST | `/tasks/{id}/convert-to-event` | 转为日程 |
 | PUT | `/reminders` | 批量覆盖某日程/待办的提醒设置。请求体 `{ "targetType": "EVENT" \| "TASK", "targetId": 12, "items": [{ "minutesBefore": 15, "occurrenceDate": null }] }` —— **字段名是 `items`**（传空数组 = 清空全部提醒） |
-| GET | `/reminders/schedule` | 未来一段时间内**所有会响的提醒**（入参 `start` / `end`）。重复日程按**展开后的每一次实例**给出，条目含目标类型 / id / 标题 / 地点 / 开始时刻 / 全天 / 时区 / `minutesBefore[]`。App 冷启动、回到前台、以及每次保存或删除之后用它对齐本机通知（§4.5） |
+| GET | `/reminders/schedule` | 未来一段时间内**所有会响的提醒**（入参 `start` / `end`）。重复日程按**展开后的每一次实例**给出，条目含目标类型 / id / 标题 / 地点 / 时间点 / 时区 / `minutesBefore[]`。App 冷启动、回到前台、以及每次保存或删除之后用它对齐本机通知（§4.5） |
 | GET | `/holidays` | 节假日与调休数据。入参 `year`、可选 `month`（省略返回全年）、可选 `country`（默认 `zh-CN`）；返回 `date` / `name` / `dayType`（`HOLIDAY` 放假 / `WORKDAY` 调休上班），见 §5.11 |
 
 **检索**
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/search` | 跨日程与待办的关键字检索。入参 `keyword`、可选 `types`（`EVENT`/`TASK`/`ORG_EVENT`，默认全部）、可选 `limit`（默认 20，上限 50）；返回统一条目（`type`、`id`、`title`、`startAt`/`endAt` 或 `dueAt`、`locationName`、`timezone`、`recurring`、`occurrenceDate`）。`type=ORG_EVENT` 的条目额外带 `identityId`、`orgId`、`orgName`——它属于某个组织，点开要跳进那个组织的视图。**服务端全量检索**（个人 + 我绑定的所有组织），按时间倒序、无时间待办置末，范围与排序见 §4.1.7 |
+| GET | `/search` | 跨日程与待办的关键字检索。入参 `keyword`、可选 `types`（`EVENT`/`TASK`/`ORG_EVENT`，默认全部）、可选 `limit`（默认 20，上限 50）；返回统一条目（`type`、`id`、`title`、日程条目给 `at` / 待办条目给 `dueAt`、`locationName`、`timezone`、`recurring`、`occurrenceDate`）。`type=ORG_EVENT` 的条目额外带 `identityId`、`orgId`、`orgName`——它属于某个组织，点开要跳进那个组织的视图。**服务端全量检索**（个人 + 我绑定的所有组织），按时间倒序、无时间待办置末，范围与排序见 §4.1.7 |
 
 **拍照识别与上传**
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/ai/events/recognize` | 上传一张图片（`multipart/form-data`，字段 `file`），交给**本地轻量多模态模型**识别其中的日程，返回 `{ provider, imageUrl, items[] }`；`items` 每条含 `title`、`startAt`/`endAt`（可为空，表示没看出时间）、`allDay`、`locationName`（可空）、`confidence`。**一张图可返回多条**；模型未配置或不可用时返回 `90002`（与「图里确实没有日程」是两件事：后者返回空 `items`），见 §4.1.9 |
+| POST | `/ai/events/recognize` | 上传一张图片（`multipart/form-data`，字段 `file`），交给**本地轻量多模态模型**识别其中的日程，返回 `{ provider, imageUrl, items[] }`；`items` 每条含 `title`、`at`（唯一时间点，可为空表示没看出时间）、`locationName`（可空）、`confidence`。**一张图可返回多条**；模型未配置或不可用时返回 `90002`（与「图里确实没有日程」是两件事：后者返回空 `items`），见 §4.1.9 |
 
 > 第一版 App **不调用**这个接口（拍照识别暂缓上线，§4.1.9）；接口与两版实现保留，供后续版本接入。
+
+**智能助手「小安」（阶段三）**
+
+> 这四个端点**已经在 `contract/api-contract.json` 里**：Java 先行做完之后 Python 版已补齐
+> （工具循环、阻塞式授权回路、语音转写用的是同一套协议与同一个提示词文件）。
+> 两版都能独立跑通，所以它们和别的端点一样受契约门禁约束。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/ai/agent/chat` | 小安的对话流，**`text/event-stream`**。请求体：`messages[]`（**带工具往返的完整历史**：`{role:"assistant",content,toolCalls[{id,name,arguments}]}` 后面必须跟 `{role:"tool",toolCallId,content}`，客户端只截最近 10 轮）、可选 `orgIdentityId`（当前组织身份，服务端校验归属）。事件：`status`（`{"stage","label"}`）、`delta`（`{"text"}`）、**`tool`**（`{"toolCallId","name","arguments","result","readOnly","summary","detail"}`：一行**给用户看的**工具记录 + 回放历史用的参数与结果）、`action`（`{"actionId","type","summary","payload"}` **授权请求**，**发出后这条流保持打开**）、`done`、`error`。响应头带 `Cache-Control: no-cache` 与 `X-Accel-Buffering: no`；**模型未配置时不开流**，返回 `90002`。工具（读与写）都在**服务端**执行；写操作先发授权请求并**阻塞等待**用户的答复（上限 90 秒，超时或客户端断开按拒绝），见 §11 |
+| POST | `/ai/agent/approvals` | 用户对一次授权请求的答复（mewcode 的 `PermissionReply`）：`{actionId, allow, feedback?}`。`allow=true` 由服务端调既有 Service 真正写入并把结果作为工具结果写回模型；`false` 则回一条「用户拒绝了、什么都没改」。两条路都让**同一条对话流继续**跑下去 |
+| POST | `/ai/transcribe` | 语音转文字（`multipart/form-data`，字段 `file`，上限 60 秒 / 5 MB），返回 `{ text, language }`。音频只在服务端内存里转 base64 转发给模型服务商，**不落盘、不进对象存储**；结果由 App 填进输入框，**不自动发送** |
+| GET | `/system/info` | 增加 `aiAgentEnabled`：小安有没有接入模型。App 读到缺失或 `false` 就保持「还没有接入模型」的提示——宁可退回老文案，也不要让界面假装能用 |
 
 **上传与反馈**
 
@@ -1039,7 +1051,7 @@ erDiagram
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET / POST | `/admin/organizations` | 组织列表 / 创建（同步创建首位管理员） |
+| GET / POST | `/admin/organizations` | 组织列表 / 创建（同步创建首位管理员）。创建请求体可选带 `ownerMemberKey`（成员唯一识别 ID）与 `ownerRealName`：填了就**同时建一个「总部」根部门与一条 OWNER 成员记录**，组织一建好就能在 App 里被认领（§3.4「预置首位拥有者」）；不填就是空组织，等组织管理员在后台自己建部门加人 |
 | GET / PATCH | `/admin/organizations/{id}` | 详情 / 编辑 |
 | POST | `/admin/organizations/{id}/status` | 停用 / 启用 |
 | DELETE | `/admin/organizations/{id}` | 软删 |
@@ -1072,7 +1084,7 @@ erDiagram
 | GET / POST | `/org-admin/departments` | 部门树 / 新建部门 |
 | PATCH / DELETE | `/org-admin/departments/{id}` | 编辑 / 删除（有成员时禁止删除） |
 | POST | `/org-admin/departments/{id}/managers` | 设置部门管理员 |
-| GET / POST | `/org-admin/events` | 组织日程列表 / 创建并下发 |
+| GET / POST | `/org-admin/events` | 组织日程列表 / 创建并下发。列表默认只列**生效中**的下发；可选 `includeRevoked=true` 把已撤回的一起带上，条目用 `status`（`ACTIVE`/`REVOKED`）区分。每条带 `canEdit`（只有发起人为 true，与 §4.2.2 同一条规则），页面据此决定「撤回 / 删除」显不显示，而不是点下去再收 20003 |
 | PATCH / DELETE | `/org-admin/events/{id}` | 编辑（触发重新下发）/ 删除 |
 | POST | `/org-admin/events/{id}/revoke` | 撤回下发 |
 | GET / PATCH | `/org-admin/settings` | 组织信息读取 / 编辑 |
@@ -1112,17 +1124,13 @@ erDiagram
   "title": "季度全员大会",
   "description": "请全员准时参加",
   "location": "A 座 3F 报告厅",
-  "startAt": "2026-10-08T09:00:00+08:00",
-  "endAt": "2026-10-08T11:00:00+08:00",
-  "allDay": false,
+  "at": "2026-10-08T09:00:00+08:00",
   "rrule": null,
   "scope": {
     "type": "DEPARTMENT",
     "departmentId": "5012",
     "includeSubDepartments": true
-  },
-  "requireReceipt": true,
-  "reminders": [{ "minutesBefore": 60 }, { "minutesBefore": 15 }]
+  }
 }
 ```
 
@@ -1385,7 +1393,7 @@ flowchart LR
 4. 部门管理员只能向本部门及下级下发；跨部门目标 → 拒绝。
 5. 组织日程下发后新入组成员**不补收**历史日程。
 6. 重复日程 `THIS / FUTURE / ALL` 三种编辑范围行为正确。
-7. 跨时区事件的起止时间在 UTC 存储与本地渲染下一致。
+7. 跨时区事件的时间点在 UTC 存储与本地渲染下一致。
 8. 批量导入含重复手机号、缺失必填、非法部门路径时，逐行错误正确回显且成功行已入库。
 9. 账号封禁后所有刷新令牌失效，接口返回 `20001` / `20004`。
 10. 超管停用组织后，该组织成员访问组织接口被拒绝。
@@ -1447,15 +1455,52 @@ flowchart LR
 - 共用同一 PostgreSQL schema 与迁移基线，任选一版部署即可。
 - 验收方式：跑通阶段一全部契约测试与端到端用例。
 
-### 阶段三：AI 能力（预留）
+### 阶段三：AI 能力（「小安」已接入 · 两版后端都有）
 
-- 自然语言创建日程与待办（如「明天下午三点和张总开会」）。
-- 日程冲突检测与空闲时段推荐。
-- 接入位置：后端预留 `ai` 模块边界与 `AiProvider` 接口；前端入口位**已落地** ——
-  底部导航里常驻的**「小安」tab（排在「组织」之后）**，进入对话页。
-- **当前状态：只有入口与骨架，没有接入任何模型**。对话页会明说这一点
-  （`domain/agent.ts` 的 `AGENT_OFFLINE_NOTICE`，并有测试盯着，避免将来接入模型时
-  界面还在说「未接入」）。不假装能用，是因为点两次就会被识破，比直说更伤信任。
+入口是底部导航里常驻的**「小安」tab（排在「组织」之后）**。
+
+**能做到什么**
+
+- 用自然语言**查**日程（个人 + 当前组织下发给我的，只读）；
+- 问「哪天有空 / 能不能加一场会」，由模型按已有日程的时刻自己推断；
+- 用一句话**建 / 删个人日程**，也可以继续提要求改（「改成下午四点」）；
+- **语音输入**：长按说话 → 转成文字填进输入框（不自动发送，让用户看一眼再发）。
+
+**三条硬边界**
+
+1. **写操作必须用户授权（Codex 式、一次一条）**：模型没有直接写权限。写工具先产出**授权请求**，
+   App 把输入框让给一块面板：「创建日程 · 动员大会 · 9/29 13:00」+「允许」「拒绝」。
+   服务端**阻塞等这个答复**（上限 90 秒）：允许 → 由服务端调既有 Service 真正写入，
+   结果是作为**工具结果**写回模型（同一条流继续说结果）；拒绝 → 回一条「用户拒绝了、什么都没改」，
+   同一条流继续。两条路都保证「一次工具调用 = 一条配对的结果」，模型不会重复申请同一个动作。
+2. **工具集只有五个，而且只碰用户个人的日程**：`list_my_events`（时间必填、正序、超过 20 条只回"太多了"让模型缩小范围）、
+   `read_my_event_note`（备注分段读：`offset`+`length`，单次封顶 500 字）、
+   `create_my_event` / `update_my_event` / `delete_my_event`（只产出授权请求）。
+   名字里的 `my_` 是刻意的：**助手的隔离沙盒**——他人的日程一律当"找不到"，
+   组织下发的日程不在范围内（用户问起就请他到「组织」页看或联系发起人）。
+   列表里备注只给 60 字预览，全文要用 `read_my_event_note` 分段读。
+3. **执行语义（对照 mewcode 的 agent 循环）**：模型一轮里的工具调用按声明顺序推进，
+   **读与写都在服务端执行**；写操作在权限层阻塞等待用户答复，拿到结果后写回工具结果、
+   循环继续问模型，直到模型不再调用工具。**历史里 `assistant.tool_calls` 与 `tool` 结果永远配对**
+   （客户端回放 + 服务端发请求前再修一遍：缺结果补 `interrupted`、孤儿结果丢掉）。
+4. **工具调用看得见**：每次调用都会在对话里留一行小字（查询类「已查日程 · 3 条」、
+   写入类「已创建日程 / 已拒绝」），点开是人话明细（最多 3 条），不是原始 JSON。
+   失败/拒绝执行也是同样形状的一行 + 一句用户向原因（不含错误码）。
+5. **聊天记录不落库**：对话只存在于 App 本次运行的内存中；语音转成文字后音频立即丢弃。
+   组织日程的读写留到下一阶段，以**新工具**加入（不改造上面这五个）。
+
+**模型与成本**：默认 `qwen3.6-flash`（阿里云百炼，OpenAI 兼容模式），
+实测在「中文 + 工具 + 流式」这个形状下首字最快、总耗时最短；`XATODO_AGENT_MODEL`
+一行即可切到 `qwen3.7-plus`。关思考（省 reasoning token）、`max_tokens=600`、
+只送最近 10 轮、工具结果紧凑 JSON 且默认 20 条、`stream_options.include_usage=true`
+记录 token 用量——这些都是「跑得起」而不是「跑得爽」的前提。
+**`api-key` 留空 = 未接入**：此时对话接口直接返回 `90002`，App 保持「还没有接入模型」的提示
+（判定依据是 `/system/info` 的 `aiAgentEnabled`，而不是写死的开关）。
+
+**接口**见 §6.2 的「智能助手『小安』（阶段三）」——四个端点都在
+`contract/api-contract.json` 里，Java 与 Python 两版都实现了：
+同一套工具语义、同一份提示词文件（`prompt.md` 逐字节相同，各有测试钉住）、
+同一套 SSE 事件形状。Java 是先做的那一版，Python 是照着补齐的。
 
 ---
 

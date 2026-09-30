@@ -67,7 +67,15 @@ public final class AdminDtos {
             @NotBlank(message = "首位管理员用户名不能为空") @Size(min = 3, max = 64) String adminUsername,
             @NotBlank(message = "首位管理员密码不能为空")
             @Size(min = 8, max = 64, message = "密码长度需在 8-64 之间") String adminPassword,
-            @Size(max = 64) String adminRealName) {
+            @Size(max = 64) String adminRealName,
+            /**
+             * 可选：预置的**首位拥有者**（成员唯一识别 ID，学号/工号）。
+             *
+             * <p>填了就同时建一个「总部」根部门与一条 OWNER 成员记录，组织一建好就能被认领；
+             * 不填就是老行为（空组织，等组织管理员自己建部门、加人）。见 {@code OrgBootstrapService}。
+             */
+            @Size(max = 64) String ownerMemberKey,
+            @Size(max = 64) String ownerRealName) {
     }
 
     public record OrganizationUpdateRequest(@Size(max = 128) String name,

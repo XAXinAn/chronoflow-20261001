@@ -24,6 +24,7 @@
         <module>xa-personal</module>
         <module>xa-org</module>
         <module>xa-support</module>
+        <module>xa-agent</module>
         <module>xa-admin</module>
         <module>xa-bootstrap</module>
     </modules>
@@ -74,6 +75,11 @@
             <dependency>
                 <groupId>com.xatodo</groupId>
                 <artifactId>xa-support</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.xatodo</groupId>
+                <artifactId>xa-agent</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

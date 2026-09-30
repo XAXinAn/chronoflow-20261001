@@ -26,33 +26,30 @@ describe('检索结果展示（spec §4.1.7）', () => {
     expect(subtitle).toContain('18:00');
   });
 
-  it('日程副标题是时间段加地点，并按条目自己的时区展示', () => {
+  it('日程副标题是一个时间点加地点，并按条目自己的时区展示', () => {
     const subtitle = resultSubtitle(
       item({
-        startAt: '2026-10-05T01:00:00Z',
-        endAt: '2026-10-05T02:00:00Z',
+        at: '2026-10-05T01:00:00Z',
         timezone: 'Asia/Shanghai',
         locationName: '会议室 A',
       }),
     );
 
-    expect(subtitle).toBe('09:00 – 10:00 · 会议室 A');
-    // 全天日程不显示具体时刻
+    expect(subtitle).toBe('09:00 · 会议室 A');
+    // 只说了哪一天（当地 00:00）：不显示时刻，只留地点
     expect(
       resultSubtitle(
         item({
-          startAt: '2026-10-05T01:00:00Z',
-          endAt: '2026-10-05T02:00:00Z',
-          allDay: true,
+          at: '2026-10-04T16:00:00Z',
+          locationName: '会议室 A',
         }),
       ),
-    ).toBe('全天');
+    ).toBe('会议室 A');
   });
 
   it('命中重复日程时带「重复」标签，且打开的是最近一次实例的日期', () => {
     const recurring = item({
-      startAt: '2026-09-28T01:00:00Z',
-      endAt: '2026-09-28T02:00:00Z',
+      at: '2026-09-28T01:00:00Z',
       timezone: 'Asia/Shanghai',
       recurring: true,
       occurrenceDate: '2026-09-28',

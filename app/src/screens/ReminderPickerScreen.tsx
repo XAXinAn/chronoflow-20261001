@@ -131,9 +131,10 @@ export function ReminderPickerScreen({
         </Text>
         {/* 说清楚提醒由谁发：用户会以为「没提醒是没网」，实际是本地通知（spec §4.5） */}
         <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: 4 }}>
-          {localNotificationsAvailable()
-            ? '提醒由手机本地发出，不需要联网；日程改动或删除后会自动重排。'
-            : '当前在 Expo Go 里运行：设置会保存到账号，但本机不会真的响 —— 本地提醒需要开发构建。'}
+        {localNotificationsAvailable()
+          ? '提醒由手机本地发出，不需要联网；日程改动或删除后会自动重排。'
+            // 运行环境（Expo Go / 开发构建）是开发者的概念，用户只需要知道「这台设备响不响」
+            : '这台设备暂时不能到点响铃，设置仍会保存到账号。'}
         </Text>
 
         {error ? (

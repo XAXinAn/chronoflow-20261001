@@ -246,6 +246,60 @@ def check_standard_wording() -> None:
     )
 
 
+def check_assistant_disclosure() -> None:
+    """小安接入第三方大模型后必须同步的声明（规范 §2.8-5 / §四 D4、D5、D6）。
+
+    这一类改动最容易漏：功能上「能用了」，但清单里还写着「不申请麦克风、不与第三方共享」，
+    审核按「声明与实际不符」判，一次就够打回。
+    """
+    policy = read(LEGAL / "privacy-policy.md")
+    shared = read(LEGAL / "shared-info-with-third-parties.md")
+    collected = read(LEGAL / "personal-info-collected.md")
+
+    require_contains(
+        policy,
+        ["百炼", "通义千问", "麦克风（RECORD_AUDIO）", "转写完成后音频立即丢弃"],
+        "privacy-policy.md",
+        "接入了第三方模型服务就必须写进 §4.1 共享与 §9.1 第三方 SDK 目录，"
+        "麦克风要进 §9.2 权限清单，并写明「转写完成后音频立即丢弃」",
+    )
+    require_contains(
+        shared,
+        ["百炼", "语音"],
+        "shared-info-with-third-parties.md",
+        "向百炼共享的内容要逐项写进《与第三方共享个人信息清单》",
+    )
+    require_contains(
+        collected,
+        ["小安的对话内容", "语音（录音）"],
+        "personal-info-collected.md",
+        "对话与语音是新的信息收集点，要进《已收集个人信息清单》",
+    )
+    require(
+        "申请相机、麦克风" not in policy,
+        "privacy-policy.md 还在说「不会申请相机、麦克风」——语音输入上线后这句话已经不成立了，"
+        "必须改成只声明不申请相机",
+    )
+    permissions = read(APP_SRC / "domain" / "permissions.ts")
+    require_contains(
+        permissions,
+        ["microphone"],
+        "domain/permissions.ts",
+        "麦克风也要「先说明用途再申请」（规范 §四「未及时明确告知索取权限的目的和用途」）",
+    )
+    system = read(
+        ROOT / "backend-java" / "xa-bootstrap" / "src" / "main" / "java" / "com" / "xatodo"
+        / "bootstrap" / "web" / "SystemController.java"
+    )
+    require_contains(
+        system,
+        ["aiAgentEnabled"],
+        "SystemController.java",
+        "App 靠 /system/info 的 aiAgentEnabled 判断小安能不能用；没有它，"
+        "模型没配置时界面会假装能用（spec §11 阶段三）",
+    )
+
+
 # --------------------------------------------------------------------------------------
 # B. 契约与后端
 # --------------------------------------------------------------------------------------
@@ -465,6 +519,7 @@ CHECKS = [
     ("info-lists", "已收集 / 与第三方共享 双清单", check_info_lists),
     ("no-vague-link-label", "链接名称含关键词", check_no_vague_link_labels),
     ("standard-wording", "个人信息标准表述", check_standard_wording),
+    ("assistant-disclosure", "小安（第三方模型）与麦克风的声明同步", check_assistant_disclosure),
     ("legal-pages-static", "合规页面为纯静态文本", check_legal_pages_are_static),
     ("contract-endpoints", "契约含 /legal 与 /me/deletion", check_contract_endpoints),
     ("backend-legal-endpoints", "两版后端都实现了合规端点", check_backend_implementations),

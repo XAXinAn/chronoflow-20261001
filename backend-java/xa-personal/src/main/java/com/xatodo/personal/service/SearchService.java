@@ -45,7 +45,7 @@ import static com.xatodo.personal.dto.SearchDtos.TYPE_TASK;
  * <p>几个容易做错的地方，这里都单独处理：
  * <ol>
  *   <li><b>不能只搜当前月份</b>：否则「搜上个月那个会」永远搜不到，所以是服务端全量检索；</li>
- *   <li><b>重复日程要给出「最近一次」</b>：命中的是一整条序列，直接回原始 start_at 会把人带回几个月前；</li>
+ *   <li><b>重复日程要给出「最近一次」</b>：命中的是一整条序列，直接回序列起点会把人带回几个月前；</li>
  *   <li><b>关键字里的 % 和 _ 必须转义</b>：不转义就成了通配符，搜「50%」会命中所有日程；</li>
  *   <li><b>撤回过的组织下发不出现</b>：否则用户会搜到一个点开就没了的活动（见 SearchMapper）。</li>
  * </ol>
@@ -124,8 +124,7 @@ public class SearchService {
                     event, exceptionsByEvent.getOrDefault(event.getId(), List.of()), now);
             items.add(new SearchResultItem(
                     TYPE_EVENT, event.getId(), event.getTitle(),
-                    occurrence.start(), occurrence.end(),
-                    Boolean.TRUE.equals(event.getAllDay()),
+                    occurrence.at(),
                     StringUtils.hasText(event.getTimezone()) ? event.getTimezone() : "UTC",
                     event.getLocationName(), null,
                     event.getStatus(), event.getPriority(),
@@ -140,8 +139,8 @@ public class SearchService {
         List<SearchResultItem> items = new ArrayList<>(tasks.size());
         for (Task task : tasks) {
             items.add(new SearchResultItem(
-                    TYPE_TASK, task.getId(), task.getTitle(), null, null,
-                    Boolean.TRUE.equals(task.getAllDay()), null, null,
+                    TYPE_TASK, task.getId(), task.getTitle(), null,
+                    null, null,
                     task.getDueAt(), task.getStatus(), task.getPriority(), null, null,
                     null, null, null));
         }
@@ -184,8 +183,7 @@ public class SearchService {
                     event, exceptionsByEvent.getOrDefault(event.getId(), List.of()), now);
             items.add(new SearchResultItem(
                     TYPE_ORG_EVENT, event.getId(), event.getTitle(),
-                    occurrence.start(), occurrence.end(),
-                    Boolean.TRUE.equals(event.getAllDay()),
+                    occurrence.at(),
                     StringUtils.hasText(event.getTimezone()) ? event.getTimezone() : "UTC",
                     event.getLocationName(), null,
                     event.getStatus(), event.getPriority(),
@@ -207,7 +205,7 @@ public class SearchService {
     }
 
     /**
-     * 命中时间：重复日程给出**最近一次实例**，非重复就用自己的起止时间。
+     * 命中时间：重复日程给出**最近一次实例**，非重复就用自己的时间。
      *
      * <p>序列已经走完（rrule_until 已过）时退回序列起点、occurrenceDate 留空，
      * 让 App 打开整条序列而不是某个不存在的实例。
@@ -215,23 +213,22 @@ public class SearchService {
     private Occurrence resolveOccurrence(Event event, List<EventException> exceptions, Instant now) {
         ZoneId zone = resolveZone(event.getTimezone());
         if (!StringUtils.hasText(event.getRrule())) {
-            return new Occurrence(event.getStartAt(), event.getEndAt(), null);
+            return new Occurrence(event.getAt(), null);
         }
         List<EventOccurrence> upcoming =
                 expander.expand(event, exceptions, now, now.plus(NEXT_OCCURRENCE_WINDOW));
         if (upcoming.isEmpty()) {
-            return new Occurrence(event.getStartAt(), event.getEndAt(), null);
+            return new Occurrence(event.getAt(), null);
         }
         EventOccurrence next = upcoming.getFirst();
         return new Occurrence(
-                OffsetDateTime.ofInstant(next.startAt(), zone),
-                OffsetDateTime.ofInstant(next.endAt(), zone),
+                OffsetDateTime.ofInstant(next.at(), zone),
                 next.occurrenceDate());
     }
 
     /** 排序时刻：日程取开始时间，待办取截止时间；都没有则为 null（排最后）。 */
     private static Instant sortInstant(SearchResultItem item) {
-        OffsetDateTime at = TYPE_TASK.equals(item.type()) ? item.dueAt() : item.startAt();
+        OffsetDateTime at = TYPE_TASK.equals(item.type()) ? item.dueAt() : item.at();
         return at == null ? null : at.toInstant();
     }
 
@@ -272,7 +269,7 @@ public class SearchService {
         }
     }
 
-    private record Occurrence(OffsetDateTime start, OffsetDateTime end, LocalDate occurrenceDate) {
+    private record Occurrence(OffsetDateTime at, LocalDate occurrenceDate) {
     }
 
     private record IdentityRef(Long identityId, Long orgId, String orgName) {

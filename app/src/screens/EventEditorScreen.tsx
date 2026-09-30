@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { userFacingError } from '../domain/errors';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { EventDetail } from '../api/types';
-import { ApiError } from '../api/client';
 import { Card, Screen } from '../components/ui';
 import { WheelLayer } from '../components/WheelLayer';
 import { WheelTimePicker } from '../components/WheelTimePicker';
@@ -16,10 +16,9 @@ import {
 } from '../components/form';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import {
-  addMinutes,
   buildCreatePayload,
   buildUpdatePayload,
-  DEFAULT_START_TIME,
+  DEFAULT_EVENT_TIME,
   draftFromEvent,
   emptyDraft,
   eventDateKey,
@@ -98,8 +97,8 @@ export function EventEditorScreen({
    */
   const [initialReminders, setInitialReminders] = useState<number[]>([]);
   /** 正在用滚轮改哪个时间（null = 没开选择层）；`draft` 是滚轮里的临时值 */
-  const [timeField, setTimeField] = useState<'start' | 'end' | null>(null);
-  const [timeDraft, setTimeDraft] = useState(DEFAULT_START_TIME);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
+  const [timeDraft, setTimeDraft] = useState(DEFAULT_EVENT_TIME);
   const [loading, setLoading] = useState(isEdit);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -140,7 +139,7 @@ export function EventEditorScreen({
         }
       } catch (cause) {
         if (!cancelled) {
-          setError(cause instanceof ApiError ? cause.message : '加载日程失败');
+          setError(userFacingError(cause, '加载日程失败'));
         }
       } finally {
         if (!cancelled) {
@@ -190,18 +189,14 @@ export function EventEditorScreen({
     setDraft((current) => ({ ...current, ...next }));
     setError(null);
   };
-  const openTimePicker = (field: 'start' | 'end') => {
-    setTimeDraft(field === 'start' ? draft.startTime : draft.endTime);
-    setTimeField(field);
+  const openTimePicker = () => {
+    setTimeDraft(draft.time);
+    setTimePickerOpen(true);
   };
   const confirmTimePicker = () => {
-    if (timeField === 'start') {
-      // 结束时间跟随开始 +1 小时，少一次拨动（与手输时代的行为一致）
-      patch({ startTime: timeDraft, endTime: addMinutes(timeDraft, 60) });
-    } else if (timeField === 'end') {
-      patch({ endTime: timeDraft });
-    }
-    setTimeField(null);
+    // 日程只有一个时间（spec §4.1.2）：拨一次就够
+    patch({ time: timeDraft });
+    setTimePickerOpen(false);
   };
 
   const isRecurring = Boolean(detail?.rrule);
@@ -215,9 +210,9 @@ export function EventEditorScreen({
     setError(null);
     try {
       let savedId: number;
-      const timeRange = buildCreatePayload(dateKey, draft);
+      const payload = buildCreatePayload(dateKey, draft);
       if (eventId === undefined) {
-        const created = await api.createEvent(timeRange);
+        const created = await api.createEvent(payload);
         savedId = created.id;
       } else {
         await api.updateEvent(eventId, {
@@ -244,7 +239,7 @@ export function EventEditorScreen({
         // 日程已经存下了。这里**不能**当作「保存失败」整条回滚口吻提示，
         // 也不能直接返回列表（用户看不到问题、更没法重试）
         setError(
-          `日程已保存，但提醒没有存上：${cause instanceof ApiError ? cause.message : '请稍后重试'}`,
+          `日程已保存，但提醒没有存上：${userFacingError(cause, '请稍后重试')}`,
         );
         return;
       }
@@ -265,7 +260,7 @@ export function EventEditorScreen({
       }
       onSaved();
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '保存失败');
+      setError(userFacingError(cause, '保存失败'));
     } finally {
       setSaving(false);
     }
@@ -305,7 +300,7 @@ export function EventEditorScreen({
         await refreshLocalReminders({ api, scheduler: reminders, enabled: notificationEnabled });
         onSaved();
       } catch (cause) {
-        setError(cause instanceof ApiError ? cause.message : '删除失败');
+        setError(userFacingError(cause, '删除失败'));
       } finally {
         setSaving(false);
       }
@@ -367,27 +362,11 @@ export function EventEditorScreen({
               <Text style={{ color: theme.color.textPrimary, fontSize: 15 }}>{dateKey}</Text>
             </FormRow>
 
-            <FormRow label="全天">
-              <Switch
-                value={draft.allDay}
-                onValueChange={(allDay) => patch({ allDay })}
-                accessibilityLabel="全天"
-                trackColor={{ false: theme.color.border, true: theme.color.accent }}
-                thumbColor={theme.color.surfaceRaised}
-              />
+            {/* 时间用滚轮选：手打 HH:mm 在手机上又慢又容易错（spec §4.1.5）。
+                没有「全天」开关：日程只有一个时间点，拨到 00:00 就是「就这一天」。 */}
+            <FormRow label="时间" onPress={openTimePicker}>
+              <FormRowValue text={draft.time} placeholder="09:00" />
             </FormRow>
-
-            {!draft.allDay ? (
-              <>
-                {/* 时间用滚轮选：手打 HH:mm 在手机上又慢又容易错（spec §4.1.5） */}
-                <FormRow label="开始" onPress={() => openTimePicker('start')}>
-                  <FormRowValue text={draft.startTime} placeholder="09:00" />
-                </FormRow>
-                <FormRow label="结束" onPress={() => openTimePicker('end')}>
-                  <FormRowValue text={draft.endTime} placeholder="10:00" />
-                </FormRow>
-              </>
-            ) : null}
 
             {/* 重复与提醒各进一个二级页面：字段多、还要返回栈（spec §4.1.5） */}
             <FormRow
@@ -484,10 +463,10 @@ export function EventEditorScreen({
       </ScrollView>
 
       {/* 时间选择层：贴在底部，不遮全屏，拨滚轮时还能看到上面的表单（spec §7.6.7） */}
-      {timeField ? (
+      {timePickerOpen ? (
         <WheelLayer
-          title={timeField === 'start' ? '开始时间' : '结束时间'}
-          onCancel={() => setTimeField(null)}
+          title="时间"
+          onCancel={() => setTimePickerOpen(false)}
           onConfirm={confirmTimePicker}
         >
           <WheelTimePicker value={timeDraft} onChange={setTimeDraft} />

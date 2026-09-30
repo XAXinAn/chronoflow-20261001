@@ -47,8 +47,7 @@ const request: ReminderRequest = {
   location: '会议室 A',
   occurrences: [
     {
-      startAt: '2026-09-28T10:00:00+08:00',
-      allDay: false,
+      at: '2026-09-28T10:00:00+08:00',
       timezone: 'Asia/Shanghai',
       occurrenceDate: null,
     },
@@ -73,7 +72,7 @@ describe('本地提醒排期', () => {
     expect(scheduled[0]!.title).toBe('周会');
     expect(scheduled[0]!.data).toMatchObject({ targetType: 'EVENT', targetId: 12, minutesBefore: 15 });
     // 正文里要写清「几点、在哪」：通知中心里看不到日程卡片
-    expect(scheduled[0]!.body).toBe('10:00 开始 · 会议室 A');
+    expect(scheduled[0]!.body).toBe('9 月 28 日 10:00 · 会议室 A');
     expect(await store.read()).toEqual({ 'EVENT:12': ['notif-1', 'notif-2'] });
   });
 
@@ -86,8 +85,8 @@ describe('本地提醒排期', () => {
       {
         ...request,
         occurrences: [
-          { startAt: '2026-09-28T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-09-28' },
-          { startAt: '2026-09-30T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-09-30' },
+          { at: '2026-09-28T10:00:00+08:00', timezone: 'Asia/Shanghai', occurrenceDate: '2026-09-28' },
+          { at: '2026-09-30T10:00:00+08:00', timezone: 'Asia/Shanghai', occurrenceDate: '2026-09-30' },
         ],
         minutesBefore: [0],
       },
@@ -133,8 +132,7 @@ describe('本地提醒排期', () => {
         ...request,
         occurrences: [
           {
-            startAt: '2026-09-28T15:00:00+08:00',
-            allDay: false,
+            at: '2026-09-28T15:00:00+08:00',
             timezone: 'Asia/Shanghai',
             occurrenceDate: null,
           },

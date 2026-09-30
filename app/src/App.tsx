@@ -176,7 +176,12 @@ function MainTabs({
       </Tabs.Screen>
       {/* 小安常驻在导航里，位于「组织」之后（spec §11） */}
       <Tabs.Screen name="Agent" options={{ title: '小安', tabBarIcon: tabIcon('Agent') }}>
-        {() => <AgentChatScreen />}
+        {() => (
+          <AgentChatScreen
+            // 确认卡片建好日程后「查看日程」跳到编辑页：走的是与日历页同一条路径
+            onOpenEvent={(eventId, dateKey) => onOpenEvent(eventId, dateKey, null)}
+          />
+        )}
       </Tabs.Screen>
       <Tabs.Screen name="Settings" options={{ title: '我的', tabBarIcon: tabIcon('Settings') }}>
         {() => (
@@ -369,7 +374,7 @@ function MainStack() {
             onCreateOrgEvent={(dateKey) => navigation.navigate('OrgEventEditor', { dateKey })}
             onEditOrgEvent={(event) =>
               navigation.navigate('OrgEventEditor', {
-                dateKey: localDateKey(event.startAt, APP_TIMEZONE),
+                dateKey: localDateKey(event.at, APP_TIMEZONE),
                 event,
               })
             }

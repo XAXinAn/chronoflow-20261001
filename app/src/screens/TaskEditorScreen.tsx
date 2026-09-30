@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
-import { ApiError } from '../api/client';
 import { Card, Screen } from '../components/ui';
 import {
   EditorHeader,
@@ -105,7 +105,7 @@ export function TaskEditorScreen({
         }
       } catch (cause) {
         if (!cancelled) {
-          setError(cause instanceof ApiError ? cause.message : '加载待办失败');
+          setError(userFacingError(cause, '加载待办失败'));
         }
       } finally {
         if (!cancelled) {
@@ -197,7 +197,7 @@ export function TaskEditorScreen({
         setInitialReminders(normalizeReminders(draft.reminders));
       } catch (cause) {
         setError(
-          `待办已保存，但提醒没有存上：${cause instanceof ApiError ? cause.message : '请稍后重试'}`,
+          `待办已保存，但提醒没有存上：${userFacingError(cause, '请稍后重试')}`,
         );
         return;
       }
@@ -211,7 +211,7 @@ export function TaskEditorScreen({
       }
       onSaved();
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '保存失败');
+      setError(userFacingError(cause, '保存失败'));
     } finally {
       setSaving(false);
     }
@@ -236,7 +236,7 @@ export function TaskEditorScreen({
               await refreshLocalReminders({ api, scheduler: reminders, enabled: notificationEnabled });
               onSaved();
             } catch (cause) {
-              setError(cause instanceof ApiError ? cause.message : '删除失败');
+              setError(userFacingError(cause, '删除失败'));
             } finally {
               setSaving(false);
             }
@@ -299,20 +299,10 @@ export function TaskEditorScreen({
                 <FormRow label="日期" onPress={() => openWheel('dueDate')}>
                   <FormRowValue text={draft.dueDate} placeholder="选择日期" />
                 </FormRow>
-                <FormRow label="全天">
-                  <Switch
-                    value={draft.allDay}
-                    onValueChange={(allDay) => patch({ allDay })}
-                    accessibilityLabel="全天待办"
-                    trackColor={{ false: theme.color.border, true: theme.color.accent }}
-                    thumbColor={theme.color.surfaceRaised}
-                  />
+                {/* 没有「全天」开关：拨到 00:00 就是「就这一天」 */}
+                <FormRow label="时间" onPress={() => openWheel('dueTime')}>
+                  <FormRowValue text={draft.dueTime} placeholder="09:00" />
                 </FormRow>
-                {!draft.allDay ? (
-                  <FormRow label="时间" onPress={() => openWheel('dueTime')}>
-                    <FormRowValue text={draft.dueTime} placeholder="09:00" />
-                  </FormRow>
-                ) : null}
               </>
             ) : (
               // 这里原来放了一个叫「归属」的只读行，长得像表单字段却点不动，容易误解。

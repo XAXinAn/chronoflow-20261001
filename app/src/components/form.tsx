@@ -21,6 +21,7 @@ export function EditorHeader({
   saveLabel = '保存',
   savingLabel = '保存中…',
   titleOnly = false,
+  right,
 }: {
   title: string;
   onCancel: () => void;
@@ -33,6 +34,14 @@ export function EditorHeader({
   savingLabel?: string;
   /** 作为一级页面（底部导航的 tab）用时只留标题，不显示取消/保存 */
   titleOnly?: boolean;
+  /**
+   * 标题栏右侧的操作位（一级页面用）。
+   *
+   * <p>给它留的是和左侧占位**等宽**的一格，标题因此仍居中；不传就是原来那样空着。
+   * 页面级的零散操作放这里，比在标题下面单起一行好看得多——那一行会把内容整体往下压，
+   * 而且看起来像是「标题的一部分」。
+   */
+  right?: ReactNode;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -53,7 +62,7 @@ export function EditorHeader({
         <>
           <View style={{ width: 56 }} />
           <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>{title}</Text>
-          <View style={{ width: 56 }} />
+          <View style={{ width: 56, alignItems: 'flex-end' }}>{right}</View>
         </>
       ) : (
         <>

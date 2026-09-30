@@ -22,8 +22,7 @@ function entry(overrides: Partial<ReminderScheduleEntry> = {}): ReminderSchedule
     occurrenceDate: null,
     title: '周会',
     locationName: '会议室 A',
-    startAt: '2026-09-28T10:00:00+08:00',
-    allDay: false,
+    at: '2026-09-28T10:00:00+08:00',
     timezone: 'Asia/Shanghai',
     minutesBefore: [15, 0],
     ...overrides,
@@ -51,7 +50,7 @@ describe('服务端排期清单 → 本机请求', () => {
   it('同一目标的多次出现合并成一条请求（本机是按目标记账的）', () => {
     const requests = groupScheduleEntries([
       entry({ occurrenceDate: '2026-09-28' }),
-      entry({ occurrenceDate: '2026-09-30', startAt: '2026-09-30T10:00:00+08:00' }),
+      entry({ occurrenceDate: '2026-09-30', at: '2026-09-30T10:00:00+08:00' }),
     ]);
 
     expect(requests).toHaveLength(1);

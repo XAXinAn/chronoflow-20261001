@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { EventOccurrence, Task } from '../src/api/types';
 import {
   formatDayLabel,
-  formatTimeRange,
+  formatEventTime,
   groupByDay,
   localDateKey,
   sortTasks,
@@ -40,11 +40,10 @@ describe('日程领域逻辑', () => {
     expect(formatDayLabel('2026-10-20', '2026-10-05')).toBe('10 月 20 日');
   });
 
-  it('formatTimeRange 全天不显示具体时刻', () => {
-    expect(formatTimeRange('2026-10-05T01:00:00Z', '2026-10-05T02:00:00Z', true, 'Asia/Shanghai')).toBe('全天');
-    expect(
-      formatTimeRange('2026-10-05T01:00:00Z', '2026-10-05T02:00:00Z', false, 'Asia/Shanghai'),
-    ).toBe('09:00 – 10:00');
+  it('formatEventTime：有具体时刻给时刻，只说了哪一天（当地 00:00）给 null', () => {
+    expect(formatEventTime('2026-10-05T01:00:00Z', 'Asia/Shanghai')).toBe('09:00');
+    // 16:00Z = 次日 00:00（东八区）→ 没有具体时刻
+    expect(formatEventTime('2026-10-04T16:00:00Z', 'Asia/Shanghai')).toBeNull();
   });
 
   it('sortTasks 未完成在前、按截止时间、无时间排最后', () => {
@@ -54,7 +53,6 @@ describe('日程领域逻辑', () => {
       eventId: null,
       eventTitle: null,
       description: null,
-      allDay: false,
       completedAt: null,
       sortOrder: 0,
     };
@@ -77,9 +75,7 @@ describe('日程领域逻辑', () => {
         locationName: null,
         locationAddress: null,
         locationDetail: null,
-        startAt: '2026-10-05T01:00:00Z',
-        endAt: '2026-10-05T01:30:00Z',
-        allDay: false,
+        at: '2026-10-05T01:00:00Z',
         timezone: 'Asia/Shanghai',
         recurring: true,
         occurrenceDate: '2026-10-05',
@@ -92,9 +88,7 @@ describe('日程领域逻辑', () => {
         locationName: null,
         locationAddress: null,
         locationDetail: null,
-        startAt: '2026-10-07T01:00:00Z',
-        endAt: '2026-10-07T01:30:00Z',
-        allDay: false,
+        at: '2026-10-07T01:00:00Z',
         timezone: 'Asia/Shanghai',
         recurring: true,
         occurrenceDate: '2026-10-07',
@@ -102,7 +96,7 @@ describe('日程领域逻辑', () => {
       },
     ];
 
-    const sections = groupByDay(occurrences, (item) => item.startAt, 'Asia/Shanghai');
+    const sections = groupByDay(occurrences, (item) => item.at, 'Asia/Shanghai');
     expect(sections).toHaveLength(2);
     expect(sections[0]?.items[0]?.occurrenceDate).toBe('2026-10-05');
   });

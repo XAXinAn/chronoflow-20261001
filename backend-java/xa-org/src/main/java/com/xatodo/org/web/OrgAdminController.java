@@ -183,14 +183,19 @@ public class OrgAdminController {
     // -------------------------------------------------------------- 组织日程
 
     /**
-     * 组织管理端的组织日程列表：本组织在时间范围内的全部活跃下发 + 回执分布（spec §6.3）。
+     * 组织管理端的组织日程列表：本组织在时间范围内的下发（spec §6.3）。
+     *
+     * <p>默认只列活跃下发；{@code includeRevoked=true} 时带上已撤回的，用于历史回溯。
+     * 每条带 {@code canEdit}（只有发起人为 true）和 {@code status}（ACTIVE / REVOKED）。
      */
     @GetMapping("/events")
     public ApiResponse<List<OrgEventManageItem>> events(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime start,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime end) {
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime end,
+            @RequestParam(required = false, defaultValue = "false") boolean includeRevoked) {
         OrgActor actor = actor();
-        return ApiResponse.ok(orgEventService.listForAdmin(actor, start.toInstant(), end.toInstant()));
+        return ApiResponse.ok(orgEventService.listForAdmin(
+                actor, start.toInstant(), end.toInstant(), includeRevoked));
     }
 
     @PostMapping("/events")

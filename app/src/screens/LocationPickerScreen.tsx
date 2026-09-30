@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Location from 'expo-location';
 
 import type { GeoPlace, GeoStatus } from '../api/types';
-import { ApiError } from '../api/client';
 import { Card, PrimaryButton, Screen } from '../components/ui';
 import { FormInput } from '../components/form';
 import { askPermission } from '../components/permission';
@@ -158,7 +158,7 @@ export function LocationPickerScreen({
     try {
       setResults(await api.geoPlaces(trimmed));
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '搜索失败');
+      setError(userFacingError(cause, '搜索失败'));
       setResults([]);
     } finally {
       setSearching(false);
@@ -197,7 +197,7 @@ export function LocationPickerScreen({
     try {
       onPick(await api.geoRegeo(center.latitude, center.longitude));
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '该位置解析失败，换个点再试');
+      setError(userFacingError(cause, '该位置解析失败，换个点再试'));
     } finally {
       setSubmitting(false);
     }
@@ -246,7 +246,9 @@ export function LocationPickerScreen({
       if (auto) {
         setError('暂时取不到当前位置，已打开默认位置；可点右下角图标重试');
       } else {
-        setError(cause instanceof Error ? `定位失败：${cause.message}` : '定位失败');
+        // 原生定位报错（权限被系统收回、GPS 没信号…）的原文对用户没有意义，
+        // 直接告诉他可以怎么做：重试或换搜索
+        setError('定位失败，请稍后重试，也可以直接搜索地点');
       }
       return false;
     } finally {

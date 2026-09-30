@@ -3,7 +3,7 @@
 三个容易做错的地方，这里都单独处理：
 
 1. **不能只搜当前月份**：否则「搜上个月那个会」永远搜不到——服务端全量检索，不带时间范围；
-2. **重复日程要给出「最近一次」**：命中的是一整条序列，直接回原始 start_at 会把用户带回几个月前，
+2. **重复日程要给出「最近一次」**：命中的是一整条序列，直接回原始 at 会把用户带回几个月前，
    这里展开出下一次实例，连同 occurrenceDate 一起返回；
 3. **关键字里的 % 和 _ 必须转义**：不转义就成了通配符，搜「50%」会命中所有日程。
 """
@@ -38,7 +38,7 @@ _EVENT_SQL = text(
     " AND (e.title ILIKE :pattern ESCAPE '\\'"
     "      OR e.description ILIKE :pattern ESCAPE '\\'"
     "      OR e.location_name ILIKE :pattern ESCAPE '\\')"
-    " ORDER BY e.start_at DESC"
+    " ORDER BY e.at DESC"
     " LIMIT :limit"
 )
 
@@ -112,7 +112,7 @@ def _sort_key(item: dict) -> tuple[int, float]:
     用「正负号 + 是否为空」两段式元组，比在 sort 里写比较函数更难出错。
     """
     # 待办取截止时间，日程（个人 / 组织）取开始时间
-    at = item["dueAt"] if item["type"] == TYPE_TASK else item["startAt"]
+    at = item["dueAt"] if item["type"] == TYPE_TASK else item["at"]
     if at is None:
         return (1, 0.0)
     return (0, -at.timestamp())
@@ -193,7 +193,7 @@ class SearchService:
         for event in events:
             event_id = event["id"]
             ref = refs[event_id]
-            start, end, occurrence_date = self._resolve_occurrence(
+            at, occurrence_date = self._resolve_occurrence(
                 dict(event), exceptions.get(event_id, []), now
             )
             items.append(
@@ -201,9 +201,7 @@ class SearchService:
                     "type": TYPE_ORG_EVENT,
                     "id": event_id,
                     "title": event["title"],
-                    "startAt": start,
-                    "endAt": end,
-                    "allDay": bool(event["all_day"]),
+                    "at": at,
                     "timezone": event["timezone"] or "UTC",
                     "locationName": event["location_name"],
                     "dueAt": None,
@@ -245,15 +243,13 @@ class SearchService:
 
     def _event_item(self, event: dict, exceptions: list[dict], now: datetime) -> dict:
         recurring = bool(event.get("rrule"))
-        start, end, occurrence_date = self._resolve_occurrence(event, exceptions, now)
+        at, occurrence_date = self._resolve_occurrence(event, exceptions, now)
 
         return {
             "type": TYPE_EVENT,
             "id": event["id"],
             "title": event["title"],
-            "startAt": start,
-            "endAt": end,
-            "allDay": bool(event.get("all_day")),
+            "at": at,
             "timezone": event.get("timezone") or "UTC",
             "locationName": event.get("location_name"),
             "dueAt": None,
@@ -269,19 +265,19 @@ class SearchService:
     @staticmethod
     def _resolve_occurrence(
         event: dict, exceptions: list[dict], now: datetime
-    ) -> tuple[datetime, datetime, object]:
-        """命中时间：重复日程给出**最近一次实例**，非重复用自己的起止时间。
+    ) -> tuple[datetime, object]:
+        """命中时间：重复日程给出**最近一次实例**，非重复用自己的时间点。
 
         序列已经走完（rrule_until 已过）时退回序列起点、occurrenceDate 留空，
         让 App 打开整条序列而不是某个不存在的实例。
         """
         if not event.get("rrule"):
-            return event["start_at"], event["end_at"], None
+            return event["at"], None
         upcoming = recurrence.expand(event, exceptions, now, now + NEXT_OCCURRENCE_WINDOW)
         if not upcoming:
-            return event["start_at"], event["end_at"], None
+            return event["at"], None
         first = upcoming[0]
-        return first["startAt"], first["endAt"], first["occurrenceDate"]
+        return first["at"], first["occurrenceDate"]
 
     def _tasks(self, identity_id: int, pattern: str, limit: int) -> list[dict]:
         rows = (
@@ -296,9 +292,7 @@ class SearchService:
                 "type": TYPE_TASK,
                 "id": row["id"],
                 "title": row["title"],
-                "startAt": None,
-                "endAt": None,
-                "allDay": bool(row["all_day"]),
+                "at": None,
                 "timezone": None,
                 "locationName": None,
                 "dueAt": row["due_at"],

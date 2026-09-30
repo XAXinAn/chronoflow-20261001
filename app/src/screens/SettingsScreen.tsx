@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 
-import { ApiError } from '../api/client';
 import type { IdentityView } from '../api/types';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
 import { askPermission } from '../components/permission';
@@ -85,9 +85,10 @@ export function SettingsScreen({
       setProfile(await api.updateMe({ avatarUrl: uploaded.url }));
     } catch (cause) {
       // 非 ApiError 说明请求根本没到服务端（典型是 RN 的 fetch 在 multipart 上出错），
-      // 这时把原始信息留下来，否则排查只能靠猜
-      console.warn('[avatar] 上传/更新失败', cause);
-      setAvatarError(cause instanceof ApiError ? cause.message : '头像更新失败，请稍后再试');
+      // 这时把原始信息留下来，否则排查只能靠猜。
+      // 用 log 而不是 warn：warn 在 Expo Go 里会弹黄框盖住界面，那是给开发看的，不该出现在用户面前。
+      console.log('[avatar] 上传/更新失败', cause);
+      setAvatarError(userFacingError(cause, '头像更新失败，请稍后再试'));
     } finally {
       setAvatarBusy(false);
     }
@@ -255,7 +256,9 @@ export function SettingsScreen({
           <ListRow
             leading={<RowIcon name="share-social-outline" />}
             title={LEGAL_DOCS['shared-info-with-third-parties'].title}
-            subtitle="高德地图、短信服务"
+            // 接入方变多了（高德 / 短信 / 百炼大模型），这里要跟着走，
+            // 否则用户点进去看到的清单与入口描述对不上，等于「声明与实际不符」
+            subtitle="高德地图、短信服务、通义千问"
             onPress={() => onOpenLegal('shared-info-with-third-parties')}
             trailing={<Chevron />}
           />

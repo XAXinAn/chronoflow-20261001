@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 
-import { ApiError } from '../api/client';
 import type { FeedbackCategory, FeedbackItem } from '../api/types';
 import { EditorHeader, FormTextArea } from '../components/form';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
@@ -81,7 +81,7 @@ export function FeedbackScreen({ onBack }: { onBack: () => void }) {
       }
       setImages((current) => [...current, ...uploaded].slice(0, FEEDBACK_MAX_IMAGES));
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '图片上传失败');
+      setError(userFacingError(cause, '图片上传失败'));
     } finally {
       setUploading(false);
     }
@@ -104,7 +104,7 @@ export function FeedbackScreen({ onBack }: { onBack: () => void }) {
       setNotice('已提交，我们会尽快查看');
       await loadHistory();
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '提交失败');
+      setError(userFacingError(cause, '提交失败'));
     } finally {
       setSubmitting(false);
     }

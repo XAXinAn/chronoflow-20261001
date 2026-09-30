@@ -12,7 +12,6 @@ import org.dmfs.rfc5545.recur.RecurrenceRuleIterator;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -51,28 +50,29 @@ public class RecurrenceExpander {
     }
 
     /**
-     * 展开日程在 [rangeStart, rangeEnd) 内的全部实例，按开始时间升序返回。
+     * 展开日程在 [rangeStart, rangeEnd) 内的全部实例，按时间升序返回。
+     *
+     * <p>日程只有一个**时间点**（spec §4.1.2），所以一次出现就是那一刻；
+     * 判断某次出现是否落在查询窗口里，看它的时刻在不在窗口内。
      */
     public List<EventOccurrence> expand(Event event,
                                         List<EventException> exceptions,
                                         Instant rangeStart,
                                         Instant rangeEnd) {
-        Instant eventStart = event.getStartAt().toInstant();
-        Instant eventEnd = event.getEndAt().toInstant();
+        Instant eventAt = event.getAt().toInstant();
 
         if (!StringUtils.hasText(event.getRrule())) {
-            if (!overlaps(eventStart, eventEnd, rangeStart, rangeEnd)) {
+            if (!inRange(eventAt, rangeStart, rangeEnd)) {
                 return List.of();
             }
             return List.of(new EventOccurrence(
                     event.getId(), event.getCalendarId(), event.getTitle(),
                     event.getLocationName(), event.getLocationAddress(), event.getLocationDetail(),
-                    eventStart, eventEnd, Boolean.TRUE.equals(event.getAllDay()),
+                    eventAt,
                     event.getTimezone(), false, null, false));
         }
 
         ZoneId zone = resolveZone(event.getTimezone());
-        long durationMillis = Duration.between(event.getStartAt(), event.getEndAt()).toMillis();
         Map<LocalDate, EventException> exceptionByDate = indexExceptions(exceptions);
 
         Instant hardStop = event.getRruleUntil() == null
@@ -81,7 +81,7 @@ public class RecurrenceExpander {
 
         RecurrenceRule rule = parse(event.getRrule());
         RecurrenceRuleIterator iterator =
-                rule.iterator(new DateTime(TimeZone.getTimeZone(zone), eventStart.toEpochMilli()));
+                rule.iterator(new DateTime(TimeZone.getTimeZone(zone), eventAt.toEpochMilli()));
 
         List<EventOccurrence> occurrences = new ArrayList<>();
         int guard = 0;
@@ -99,28 +99,25 @@ public class RecurrenceExpander {
             }
 
             boolean modified = exception != null && EventException.MODIFIED.equals(exception.getExceptionType());
-            Instant effectiveStart = modified && exception.getOverrideStartAt() != null
-                    ? exception.getOverrideStartAt().toInstant()
+            Instant effectiveAt = modified && exception.getOverrideAt() != null
+                    ? exception.getOverrideAt().toInstant()
                     : start;
-            Instant effectiveEnd = modified && exception.getOverrideEndAt() != null
-                    ? exception.getOverrideEndAt().toInstant()
-                    : effectiveStart.plusMillis(durationMillis);
             String title = modified && StringUtils.hasText(exception.getOverrideTitle())
                     ? exception.getOverrideTitle()
                     : event.getTitle();
 
-            if (!overlaps(effectiveStart, effectiveEnd, rangeStart, rangeEnd)) {
+            if (!inRange(effectiveAt, rangeStart, rangeEnd)) {
                 continue;
             }
 
             occurrences.add(new EventOccurrence(
                     event.getId(), event.getCalendarId(), title,
                     event.getLocationName(), event.getLocationAddress(), event.getLocationDetail(),
-                    effectiveStart, effectiveEnd, Boolean.TRUE.equals(event.getAllDay()),
+                    effectiveAt,
                     event.getTimezone(), true, occurrenceDate, modified));
         }
 
-        occurrences.sort(Comparator.comparing(EventOccurrence::startAt));
+        occurrences.sort(Comparator.comparing(EventOccurrence::at));
         return occurrences;
     }
 
@@ -158,8 +155,9 @@ public class RecurrenceExpander {
         }
     }
 
-    private static boolean overlaps(Instant start, Instant end, Instant rangeStart, Instant rangeEnd) {
-        return start.isBefore(rangeEnd) && end.isAfter(rangeStart);
+    /** 时间点是否落在 [rangeStart, rangeEnd) 窗口内。 */
+    private static boolean inRange(Instant at, Instant rangeStart, Instant rangeEnd) {
+        return !at.isBefore(rangeStart) && at.isBefore(rangeEnd);
     }
 
     private static Instant min(Instant a, Instant b) {

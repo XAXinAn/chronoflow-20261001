@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addMinutes,
   buildCreatePayload,
   buildUpdatePayload,
   draftFromEvent,
@@ -29,12 +28,6 @@ describe('新建日程草稿', () => {
     expect(toIso('2026-10-05', '9:05')).toBe('2026-10-05T09:05:00+08:00');
   });
 
-  it('addMinutes 默认结束时间，跨午夜会回绕', () => {
-    expect(addMinutes('09:00', 60)).toBe('10:00');
-    expect(addMinutes('23:30', 60)).toBe('00:30');
-    expect(addMinutes('乱写', 60)).toBe('10:00');
-  });
-
   it('validateDraft 要求标题非空', () => {
     expect(validateDraft({ ...emptyDraft(), title: '  ' })).toEqual({
       ok: false,
@@ -43,29 +36,20 @@ describe('新建日程草稿', () => {
     expect(validateDraft({ ...emptyDraft(), title: '开会' })).toEqual({ ok: true });
   });
 
-  it('validateDraft 要求结束晚于开始', () => {
-    expect(validateDraft({ ...emptyDraft(), title: '开会', startTime: '10:00', endTime: '10:00' })).toEqual({
-      ok: false,
-      message: '结束时间需晚于开始时间',
-    });
-    expect(validateDraft({ ...emptyDraft(), title: '开会', startTime: '09:00', endTime: '08:00' }).ok).toBe(
-      false,
-    );
+  it('validateDraft 只校验一个时间，格式不对才报错', () => {
+    expect(validateDraft({ ...emptyDraft(), title: '开会', time: '10:00' })).toEqual({ ok: true });
+    expect(validateDraft({ ...emptyDraft(), title: '开会', time: '乱写' }).ok).toBe(false);
   });
 
-  it('validateDraft 对全天日程不校验时刻', () => {
-    expect(
-      validateDraft({ ...emptyDraft(), title: '年会', startTime: '乱写', endTime: '乱写', allDay: true }),
-    ).toEqual({ ok: true });
+  it('validateDraft 一律校验时刻（没有「全天」这个开关了）', () => {
+    expect(validateDraft({ ...emptyDraft(), title: '年会', time: '乱写' }).ok).toBe(false);
   });
 
   it('buildCreatePayload 定时日程落在同一天', () => {
-    expect(buildCreatePayload('2026-10-05', { ...emptyDraft(), title: ' 评审 ', startTime: '14:00', endTime: '15:30' }))
+    expect(buildCreatePayload('2026-10-05', { ...emptyDraft(), title: ' 评审 ', time: '14:00' }))
       .toEqual({
         title: '评审',
-        startAt: '2026-10-05T14:00:00+08:00',
-        endAt: '2026-10-05T15:30:00+08:00',
-        allDay: false,
+        at: '2026-10-05T14:00:00+08:00',
         description: null,
         locationName: null,
         locationAddress: null,
@@ -83,18 +67,9 @@ describe('新建日程草稿', () => {
       });
   });
 
-  it('buildCreatePayload 全天日程跨到次日 00:00', () => {
-    // 后端约束 end_at > start_at，因此全天不能用同一个时刻
-    const payload = buildCreatePayload('2026-10-05', { ...emptyDraft(), title: '团建', allDay: true });
-    expect(payload.startAt).toBe('2026-10-05T00:00:00+08:00');
-    expect(payload.endAt).toBe('2026-10-06T00:00:00+08:00');
-    expect(payload.allDay).toBe(true);
-  });
-
-  it('buildCreatePayload 全天日程跨月正确进位', () => {
-    expect(buildCreatePayload('2026-10-31', { ...emptyDraft(), title: '月末', allDay: true }).endAt).toBe(
-      '2026-11-01T00:00:00+08:00',
-    );
+  it('时间拨到 00:00 就是「就这一天」（日程只有一个时间）', () => {
+    const payload = buildCreatePayload('2026-10-05', { ...emptyDraft(), title: '团建', time: '00:00' });
+    expect(payload.at).toBe('2026-10-05T00:00:00+08:00');
   });
 
   it('结构化地点与扩展字段原样进载荷，空的文本字段送 null', () => {
@@ -182,9 +157,7 @@ describe('从服务端响应还原草稿（字段可能整个缺失）', () => {
     id: 1,
     calendarId: 1,
     title: 'aaaaa',
-    startAt: '2026-09-27T01:00:00Z',
-    endAt: '2026-09-27T02:00:00Z',
-    allDay: false,
+    at: '2026-09-27T01:00:00Z',
     timezone: 'Asia/Shanghai',
     rrule: null,
     status: 'CONFIRMED',

@@ -23,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -84,7 +83,6 @@ public class EventService {
                 ? calendarService.defaultCalendar(identityId)
                 : calendarService.requireOwned(identityId, request.calendarId());
 
-        requireValidRange(request.startAt(), request.endAt());
         expander.validate(request.rrule());
 
         Event event = new Event();
@@ -99,9 +97,7 @@ public class EventService {
         event.setLocationDetail(blankToNull(request.locationDetail()));
         event.setPoiId(request.poiId());
         applyCoordinates(event, request.latitude(), request.longitude());
-        event.setStartAt(request.startAt());
-        event.setEndAt(request.endAt());
-        event.setAllDay(Boolean.TRUE.equals(request.allDay()));
+        event.setAt(request.at());
         event.setTimezone(StringUtils.hasText(request.timezone()) ? request.timezone() : calendar.getTimezone());
         event.setRrule(request.rrule());
         event.setStatus(choice(request.status(), STATUSES, Event.STATUS_CONFIRMED, "日程状态"));
@@ -131,9 +127,6 @@ public class EventService {
 
         if (scope == EventScope.ALL) {
             expander.validate(request.rrule());
-            OffsetDateTime start = request.startAt() != null ? request.startAt() : event.getStartAt();
-            OffsetDateTime end = request.endAt() != null ? request.endAt() : event.getEndAt();
-            requireValidRange(start, end);
             applyFields(event, request);
             eventMapper.updateById(event);
             return event;
@@ -179,7 +172,7 @@ public class EventService {
     }
 
     /**
-     * 日历视图范围查询：合并展开重复日程，按开始时间升序返回实例。
+     * 日历视图范围查询：合并展开重复日程，按时间升序返回实例。
      */
     public List<EventOccurrence> rangeQuery(Long identityId,
                                             List<Long> calendarIds,
@@ -224,13 +217,13 @@ public class EventService {
                     rangeStart,
                     rangeEnd));
         }
-        occurrences.sort(Comparator.comparing(EventOccurrence::startAt)
+        occurrences.sort(Comparator.comparing(EventOccurrence::at)
                 .thenComparing(EventOccurrence::eventId));
         return occurrences;
     }
 
     /**
-     * 我的**全部日程**（「关联日程」候选，spec §4.1.6），按开始时间倒序，可按关键字过滤。
+     * 我的**全部日程**（「关联日程」候选，spec §4.1.6），按时间倒序，可按关键字过滤。
      *
      * <p>为什么不复用 {@link #rangeQuery}：它必须给时间范围、而且会把重复日程展开成每一次实例 ——
      * 拉一年就是几百条，用来当候选列表既慢又不准（用户要关联的是**那条日程**，
@@ -261,9 +254,7 @@ public class EventService {
                 event.getLocationName(),
                 event.getLocationAddress(),
                 event.getLocationDetail(),
-                event.getStartAt().toInstant(),
-                event.getEndAt().toInstant(),
-                Boolean.TRUE.equals(event.getAllDay()),
+                event.getAt().toInstant(),
                 StringUtils.hasText(event.getTimezone()) ? event.getTimezone() : "Asia/Shanghai",
                 StringUtils.hasText(event.getRrule()),
                 null,
@@ -336,14 +327,8 @@ public class EventService {
         if (request.locationDetail() != null) {
             event.setLocationDetail(blankToNull(request.locationDetail()));
         }
-        if (request.startAt() != null) {
-            event.setStartAt(request.startAt());
-        }
-        if (request.endAt() != null) {
-            event.setEndAt(request.endAt());
-        }
-        if (request.allDay() != null) {
-            event.setAllDay(request.allDay());
+        if (request.at() != null) {
+            event.setAt(request.at());
         }
         if (StringUtils.hasText(request.timezone())) {
             event.setTimezone(request.timezone());
@@ -399,9 +384,6 @@ public class EventService {
     }
 
     private void upsertModifiedException(Event event, LocalDate occurrenceDate, EventUpdateRequest request) {
-        if (request.startAt() != null && request.endAt() != null) {
-            requireValidRange(request.startAt(), request.endAt());
-        }
         EventException exception = findException(event.getId(), occurrenceDate);
         if (exception == null) {
             exception = new EventException();
@@ -410,8 +392,7 @@ public class EventService {
         }
         exception.setExceptionType(EventException.MODIFIED);
         exception.setOverrideTitle(StringUtils.hasText(request.title()) ? request.title() : null);
-        exception.setOverrideStartAt(request.startAt());
-        exception.setOverrideEndAt(request.endAt());
+        exception.setOverrideAt(request.at());
 
         if (exception.getId() == null) {
             eventExceptionMapper.insert(exception);
@@ -429,8 +410,7 @@ public class EventService {
         }
         exception.setExceptionType(EventException.CANCELLED);
         exception.setOverrideTitle(null);
-        exception.setOverrideStartAt(null);
-        exception.setOverrideEndAt(null);
+        exception.setOverrideAt(null);
         if (exception.getId() == null) {
             eventExceptionMapper.insert(exception);
         } else {
@@ -446,8 +426,6 @@ public class EventService {
     private Event splitFuture(Long identityId, Event event, LocalDate occurrenceDate, EventUpdateRequest request) {
         expander.validate(request.rrule());
         OffsetDateTime occurrenceStart = occurrenceStart(event, occurrenceDate);
-        OffsetDateTime occurrenceEnd = occurrenceStart.plus(
-                Duration.between(event.getStartAt(), event.getEndAt()));
 
         Event split = new Event();
         BeanUtils.copyProperties(event, split);
@@ -455,8 +433,7 @@ public class EventService {
         split.setCreatedAt(null);
         split.setUpdatedAt(null);
         split.setDeletedAt(null);
-        split.setStartAt(occurrenceStart);
-        split.setEndAt(occurrenceEnd);
+        split.setAt(occurrenceStart);
         split.setRruleUntil(null);
         split.setCreatorIdentityId(identityId);
         applyFields(split, request);
@@ -479,7 +456,7 @@ public class EventService {
 
     private OffsetDateTime occurrenceStart(Event event, LocalDate occurrenceDate) {
         ZoneId zone = resolveZone(event.getTimezone());
-        LocalTime localTime = event.getStartAt().atZoneSameInstant(zone).toLocalTime();
+        LocalTime localTime = event.getAt().atZoneSameInstant(zone).toLocalTime();
         return occurrenceDate.atTime(localTime).atZone(zone).toOffsetDateTime();
     }
 
@@ -525,9 +502,4 @@ public class EventService {
         return occurrenceDate;
     }
 
-    private void requireValidRange(OffsetDateTime start, OffsetDateTime end) {
-        if (start == null || end == null || !end.isAfter(start)) {
-            throw BizException.of(ErrorCode.EVENT_TIME_INVALID);
-        }
-    }
 }

@@ -141,6 +141,28 @@ xatodo:
       api-key: ${XATODO_VISION_API_KEY:}
       timeout-seconds: ${XATODO_VISION_TIMEOUT_SECONDS:60}
       timezone: Asia/Shanghai
+    # 智能助手「小安」（spec §11 阶段三）。指向阿里云百炼的 OpenAI 兼容地址，
+    # 默认 qwen3.6-flash（实测「中文 + 工具 + 流式」下首字最快、总耗时最短）。
+    # **api-key 留空 = 未接入**：此时 /ai/agent/chat 直接返回 90002，
+    # App 读到 /system/info 的 aiAgentEnabled=false 就保持「还没有接入模型」的提示。
+    agent:
+      base-url: ${XATODO_AGENT_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      api-key: ${XATODO_AGENT_API_KEY:}
+      model: ${XATODO_AGENT_MODEL:qwen3.6-flash}
+      # 关思考：工具都很确定，思考只多花 reasoning token 与首字时间
+      enable-thinking: ${XATODO_AGENT_ENABLE_THINKING:false}
+      max-tokens: ${XATODO_AGENT_MAX_TOKENS:600}
+      timeout-seconds: ${XATODO_AGENT_TIMEOUT_SECONDS:90}
+      max-tool-rounds: ${XATODO_AGENT_MAX_TOOL_ROUNDS:4}
+      max-history-messages: ${XATODO_AGENT_MAX_HISTORY_MESSAGES:10}
+      event-limit: ${XATODO_AGENT_EVENT_LIMIT:20}
+      timezone: Asia/Shanghai
+      # 语音输入（长按说话）：音频只在内存里转 base64 转发，不落盘
+      asr:
+        url: ${XATODO_ASR_URL:https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation}
+        api-key: ${XATODO_ASR_API_KEY:}
+        model: ${XATODO_ASR_MODEL:qwen3-asr-flash}
+        timeout-seconds: ${XATODO_ASR_TIMEOUT_SECONDS:60}
   # 推送（spec §4.5）：组织日程下发/变更走远程推送；日程/待办到点提醒走 App 本地通知，不经服务端。
   # app-key 是公开的（会编进 APK），master-secret 只在服务端用；两者为空时降级为「未配置」并如实上报。
   push:

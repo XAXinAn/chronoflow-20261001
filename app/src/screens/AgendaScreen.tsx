@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
@@ -13,14 +14,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ApiError } from '../api/client';
 import type { EventOccurrence, HolidayResponse, SearchResultItem } from '../api/types';
 import { MonthCalendar } from '../components/MonthCalendar';
 import { WheelDatePicker } from '../components/WheelDatePicker';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
 import { Card, EmptyState, Pill, Screen } from '../components/ui';
 import { useAppTheme, useRuntime } from '../context/AppContext';
-import { dayHeading, formatTimeRange, localDateKey, locationLabel } from '../domain/agenda';
+import { dayHeading, formatEventTime, localDateKey, locationLabel } from '../domain/agenda';
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 import { holidayName, toHolidayMarks, yearsSpanned } from '../domain/holiday';
 import { resultBadges, resultDateKey, resultSubtitle, resultTypeLabel } from '../domain/search';
@@ -106,7 +106,7 @@ export function AgendaScreen({
       setOccurrences(occurrenceList);
       setHolidays(holidayLists);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '加载失败');
+      setError(userFacingError(cause, '加载失败'));
     } finally {
       setLoading(false);
     }
@@ -140,7 +140,7 @@ export function AgendaScreen({
         } catch (cause) {
           if (!cancelled) {
             setResults([]);
-            setSearchError(cause instanceof ApiError ? cause.message : '检索失败');
+            setSearchError(userFacingError(cause, '检索失败'));
           }
         } finally {
           if (!cancelled) {
@@ -156,7 +156,7 @@ export function AgendaScreen({
   }, [api, keyword]);
 
   const eventDates = useMemo(
-    () => new Set(occurrences.map((item) => localDateKey(item.startAt, APP_TIMEZONE))),
+    () => new Set(occurrences.map((item) => localDateKey(item.at, APP_TIMEZONE))),
     [occurrences],
   );
   const holidayMarks = useMemo(() => toHolidayMarks(holidays), [holidays]);
@@ -164,8 +164,8 @@ export function AgendaScreen({
   const dayEvents = useMemo(
     () =>
       occurrences
-        .filter((item) => localDateKey(item.startAt, APP_TIMEZONE) === selectedDateKey)
-        .sort((a, b) => a.startAt.localeCompare(b.startAt)),
+        .filter((item) => localDateKey(item.at, APP_TIMEZONE) === selectedDateKey)
+        .sort((a, b) => a.at.localeCompare(b.at)),
     [occurrences, selectedDateKey],
   );
 
@@ -335,12 +335,12 @@ export function AgendaScreen({
           ) : null}
 
           {dayEvents.map((item) => (
-            <View key={`${item.eventId}-${item.startAt}`} style={{ marginBottom: theme.spacing.sm }}>
+            <View key={`${item.eventId}-${item.at}`} style={{ marginBottom: theme.spacing.sm }}>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`日程-${item.title}`}
                 onPress={() =>
-                  onOpenEvent(item.eventId, localDateKey(item.startAt, APP_TIMEZONE), item.occurrenceDate)
+                  onOpenEvent(item.eventId, localDateKey(item.at, APP_TIMEZONE), item.occurrenceDate)
                 }
               >
                 <Card>
@@ -350,10 +350,12 @@ export function AgendaScreen({
                         {item.title}
                       </Text>
                       <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginTop: 2 }}>
-                        {formatTimeRange(item.startAt, item.endAt, item.allDay, item.timezone || APP_TIMEZONE)}
-                        {locationLabel(item.locationName, item.locationDetail)
-                          ? ` · ${locationLabel(item.locationName, item.locationDetail)}`
-                          : ''}
+                        {[
+                          formatEventTime(item.at, item.timezone || APP_TIMEZONE),
+                          locationLabel(item.locationName, item.locationDetail),
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                       </Text>
                     </View>
                     <View style={styles.pills}>

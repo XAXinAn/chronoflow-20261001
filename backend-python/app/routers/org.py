@@ -55,9 +55,7 @@ class DispatchRequest(BaseModel):
     title: str
     description: str | None = None
     location: str | None = None
-    startAt: datetime
-    endAt: datetime
-    allDay: bool | None = None
+    at: datetime
     timezone: str | None = None
     rrule: str | None = None
     scopeType: str
@@ -70,9 +68,7 @@ class OrgEventUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     location: str | None = None
-    startAt: datetime | None = None
-    endAt: datetime | None = None
-    allDay: bool | None = None
+    at: datetime | None = None
     timezone: str | None = None
     redispatch: bool | None = None
 
@@ -321,12 +317,13 @@ def import_failures(
 def admin_events(
     start: datetime = Query(...),
     end: datetime = Query(...),
+    includeRevoked: bool = Query(default=False),
     principal=Depends(current_org_actor),
     service=Depends(_service),
 ) -> dict:
-    """组织管理端的组织日程列表（spec §6.3）：本组织的活跃下发 + 回执分布。"""
+    """组织管理端的组织日程列表（spec §6.3）：默认只列活跃下发；`includeRevoked=true` 带上已撤回的。"""
     actor = _actor(principal, service)
-    return envelope(service.admin_event_list(actor, start, end))
+    return envelope(service.admin_event_list(actor, start, end, include_revoked=includeRevoked))
 
 
 @router.post("/org-admin/events")

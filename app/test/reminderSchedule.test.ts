@@ -21,7 +21,7 @@ import {
 /**
  * 本地提醒排期（spec §4.5：日程/待办的到点提醒走本地通知）。
  *
- * 盯三件事：过去的时刻不排、全天日程基准算对、超过上限要截断（iOS 待触发通知上限 64）。
+ * 盯三件事：过去的时刻不排、「只说了哪一天」的基准算对、超过上限要截断（iOS 触发上限 64）。
  */
 describe('提醒排期', () => {
   it('时区偏移换算（东八区 +480 分钟）', () => {
@@ -35,20 +35,19 @@ describe('提醒排期', () => {
       .toBe('2026-09-28T01:00:00.000Z');
   });
 
-  it('全天日程的基准是当地 09:00（不是 00:00）', () => {
-    const base = reminderBase({ startAt: '2026-09-28T00:00:00+08:00', allDay: true, timezone: 'Asia/Shanghai' });
+  it('只说了哪一天的基准是当地 09:00（不是 00:00，别在午夜弹通知）', () => {
+    const base = reminderBase({ at: '2026-09-28T00:00:00+08:00', timezone: 'Asia/Shanghai' });
     expect(base.toISOString()).toBe('2026-09-28T01:00:00.000Z');
   });
 
   it('普通日程的基准就是开始时刻', () => {
-    const base = reminderBase({ startAt: '2026-09-28T14:30:00+08:00', allDay: false, timezone: 'Asia/Shanghai' });
+    const base = reminderBase({ at: '2026-09-28T14:30:00+08:00', timezone: 'Asia/Shanghai' });
     expect(base.toISOString()).toBe('2026-09-28T06:30:00.000Z');
   });
 
   it('提前量换算成绝对时刻，并按时间升序', () => {
     const planned = planReminders({
-      startAt: '2026-09-28T14:30:00+08:00',
-      allDay: false,
+      at: '2026-09-28T14:30:00+08:00',
       timezone: 'Asia/Shanghai',
       minutesBefore: [60, 0, 15],
       now: new Date('2026-09-28T00:00:00Z'),
@@ -60,8 +59,7 @@ describe('提醒排期', () => {
 
   it('已经过去的时刻不排（否则保存后立刻弹一堆过期提醒）', () => {
     const planned = planReminders({
-      startAt: '2026-09-28T14:30:00+08:00',
-      allDay: false,
+      at: '2026-09-28T14:30:00+08:00',
       timezone: 'Asia/Shanghai',
       minutesBefore: [1440, 60, 0],
       // 已经是当天 14:00（UTC 06:00）：提前一天（前日 06:30）与提前一小时（05:30）都过去了，
@@ -73,8 +71,7 @@ describe('提醒排期', () => {
 
   it('重复的提前量只排一次', () => {
     const planned = planReminders({
-      startAt: '2026-09-28T14:30:00+08:00',
-      allDay: false,
+      at: '2026-09-28T14:30:00+08:00',
       timezone: 'Asia/Shanghai',
       minutesBefore: [15, 15, 15],
       now: new Date('2026-09-28T00:00:00Z'),
@@ -85,8 +82,7 @@ describe('提醒排期', () => {
   it('超过上限要截断（iOS 待触发通知上限 64，这里留余量到 60）', () => {
     const many = Array.from({ length: 200 }, (_, index) => index + 1);
     const planned = planReminders({
-      startAt: '2026-10-28T14:30:00+08:00',
-      allDay: false,
+      at: '2026-10-28T14:30:00+08:00',
       timezone: 'Asia/Shanghai',
       minutesBefore: many,
       now: new Date('2026-09-28T00:00:00Z'),
@@ -147,19 +143,19 @@ describe('提醒的界面值', () => {
   });
 
   it('通知正文说清「几点、在哪」（通知里看不到日程卡片）', () => {
-    expect(reminderNotificationBody({ allDay: false, startTime: '10:00', location: '会议室 A' }))
-      .toBe('10:00 开始 · 会议室 A');
-    expect(reminderNotificationBody({ allDay: false, startTime: '10:00', location: null }))
-      .toBe('10:00 开始');
-    // 全天日程没有时刻可写，写「全天」而不是 00:00
-    expect(reminderNotificationBody({ allDay: true, startTime: '09:00' })).toBe('全天');
+    expect(reminderNotificationBody({ when: '9 月 28 日 10:00', location: '会议室 A' }))
+      .toBe('9 月 28 日 10:00 · 会议室 A');
+    expect(reminderNotificationBody({ when: '9 月 28 日 10:00', location: null }))
+      .toBe('9 月 28 日 10:00');
+    // 只说了哪一天：没有时刻可写，就只写日期
+    expect(reminderNotificationBody({ when: '9 月 28 日' })).toBe('9 月 28 日');
   });
 
   it('重复日程的多次出现：跨出现按时刻升序，并按总数截断', () => {
     const planned = planOccurrenceReminders({
       occurrences: [
-        { startAt: '2026-10-07T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-10-07' },
-        { startAt: '2026-10-05T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-10-05' },
+        { at: '2026-10-07T10:00:00+08:00', timezone: 'Asia/Shanghai', occurrenceDate: '2026-10-07' },
+        { at: '2026-10-05T10:00:00+08:00', timezone: 'Asia/Shanghai', occurrenceDate: '2026-10-05' },
       ],
       minutesBefore: [60],
       now: new Date('2026-10-01T00:00:00Z'),
@@ -175,8 +171,8 @@ describe('提醒的界面值', () => {
   it('已经过去的那些出现不排（补排历史提醒只会骚扰用户）', () => {
     const planned = planOccurrenceReminders({
       occurrences: [
-        { startAt: '2026-09-28T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-09-28' },
-        { startAt: '2026-10-05T10:00:00+08:00', allDay: false, timezone: 'Asia/Shanghai', occurrenceDate: '2026-10-05' },
+        { at: '2026-09-28T10:00:00+08:00', timezone: 'Asia/Shanghai', occurrenceDate: '2026-09-28' },
+        { at: '2026-10-05T10:00:00+08:00', timezone: 'Asia/Shanghai', occurrenceDate: '2026-10-05' },
       ],
       minutesBefore: [0],
       now: new Date('2026-10-01T00:00:00Z'),

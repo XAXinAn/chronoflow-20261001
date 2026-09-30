@@ -5,6 +5,22 @@ export interface ApiEnvelope<T> {
   traceId?: string;
 }
 
+/**
+ * `GET /system/info`（免登录）。
+ *
+ * <p>App 只用它判断能力：`aiAgentEnabled` 缺失（老版本后端）或 false 时，
+ * 小安保持「还没有接入模型」的老文案。
+ */
+export interface SystemInfo {
+  name: string;
+  version: string;
+  serverTime: string;
+  geoProvider?: string;
+  geoDegraded?: boolean;
+  aiAgentEnabled?: boolean;
+  holidaySync?: unknown;
+}
+
 export type IdentityType = 'PERSONAL' | 'ORG_MEMBER';
 
 export interface IdentitySummary {
@@ -77,9 +93,8 @@ export interface EventOccurrence {
   locationAddress: string | null;
   /** 详细地址：地图定位不到的那一层（教室 / 门牌）由用户手填，与地点都可空（spec §5.9） */
   locationDetail: string | null;
-  startAt: string;
-  endAt: string;
-  allDay: boolean;
+  /** 日程只有一个时间点（spec §4.1.2） */
+  at: string;
   timezone: string;
   recurring: boolean;
   occurrenceDate: string | null;
@@ -104,9 +119,8 @@ export interface EventDetail {
   longitude: number | null;
   poiId: string | null;
   coordinateSystem: string | null;
-  startAt: string;
-  endAt: string;
-  allDay: boolean;
+  /** 日程只有一个时间点（spec §4.1.2） */
+  at: string;
   timezone: string;
   rrule: string | null;
   status: EventStatus;
@@ -152,7 +166,6 @@ export interface Task {
   title: string;
   description: string | null;
   dueAt: string | null;
-  allDay: boolean;
   status: 'TODO' | 'DONE' | 'CANCELLED';
   completedAt: string | null;
   priority: Priority;
@@ -174,8 +187,7 @@ export interface ReminderScheduleEntry {
   occurrenceDate: string | null;
   title: string;
   locationName: string | null;
-  startAt: string;
-  allDay: boolean;
+  at: string;
   timezone: string;
   minutesBefore: number[];
 }
@@ -194,10 +206,8 @@ export interface SearchResultItem {
   type: 'EVENT' | 'TASK' | 'ORG_EVENT';
   id: number;
   title: string;
-  /** 日程开始时间；重复日程给的是最近一次实例 */
-  startAt?: string | null;
-  endAt?: string | null;
-  allDay?: boolean | null;
+  /** 日程时间点；重复日程给的是最近一次实例 */
+  at?: string | null;
   timezone?: string | null;
   locationName?: string | null;
   /** 待办截止时间；为空表示「待安排」 */
@@ -258,9 +268,8 @@ export interface OrgEvent {
   description: string | null;
   location: string | null;
   locationDetail: string | null;
-  startAt: string;
-  endAt: string;
-  allDay: boolean;
+  /** 日程只有一个时间点（spec §4.1.2） */
+  at: string;
   timezone: string;
   rrule: string | null;
   read: boolean;
@@ -330,9 +339,8 @@ export interface OrgDispatchRequest {
   location?: string | null;
   /** 详细地址：地图只到「教学楼」时的补充（教室 / 门牌），与地点都可空（spec §5.9） */
   locationDetail?: string | null;
-  startAt: string;
-  endAt: string;
-  allDay?: boolean;
+  /** 日程只有一个时间点（spec §4.1.2） */
+  at: string;
   timezone?: string;
   scopeType: 'ALL' | 'DEPARTMENT' | 'MEMBER';
   departmentId?: number | null;

@@ -42,10 +42,7 @@ class RecognizedEvent:
 
     title: str
     kind: str
-    start_at: datetime | None
-    end_at: datetime | None
-    due_at: datetime | None
-    all_day: bool
+    at: datetime | None
     location_name: str | None
     description: str | None
     confidence: float | None
@@ -54,10 +51,7 @@ class RecognizedEvent:
         return {
             "title": self.title,
             "kind": self.kind,
-            "startAt": self.start_at,
-            "endAt": self.end_at,
-            "dueAt": self.due_at,
-            "allDay": self.all_day,
+            "at": self.at,
             "locationName": self.location_name,
             "description": self.description,
             "confidence": self.confidence,
@@ -174,18 +168,17 @@ def _prompt(today: str, timezone: str, previous_reply: str | None) -> str:
     base = (
         f"你是日程识别助手。今天是 {today}，时区是 {timezone}。\n"
         "从图片里找出**所有**日程与待办事项，只输出 JSON，不要解释、不要 markdown 代码块：\n"
-        '{"events":[{"title":"...","kind":"EVENT","startAt":"YYYY-MM-DDTHH:mm:ss+08:00",'
-        '"endAt":"...","dueAt":"","allDay":false,"location":"...","description":"...",'
-        '"confidence":0.9}]}\n'
+        '{"events":[{"title":"...","kind":"EVENT","at":"YYYY-MM-DDTHH:mm:ss+08:00",'
+        '"location":"...","description":"...","confidence":0.9}]}\n'
         "规则：\n"
         "1. 一张图里可能有多场活动，**全部列出**，不要合并成一条；\n"
-        "2. kind 只能是 EVENT（占一段时间的日程）或 TASK（一件要去做的事）：\n"
+        "2. kind 只能是 EVENT（日程）或 TASK（一件要去做的事）：\n"
         "   通知里的「假期 9/25–9/27」是 EVENT，「登记截止 9/24」「提交材料」这类是 TASK；\n"
-        "3. EVENT 的时间放 startAt / endAt；TASK 的截止时间放 dueAt"
-        "（「登记截止 9/24」→ 2026-09-24T23:59:00+08:00）；时间看不清就留空字符串，**不要猜**；\n"
+        "3. **日程与待办都只有一个时间**，放 at：「明天下午三点开会」→ at 给那天的 15:00；"
+        "「登记截止 9/24」→ 2026-09-24T23:59:00+08:00；时间看不清就留空字符串，**不要猜**；\n"
         "4. 「明天下午三点」这类相对时间，按上面的今天与时区换算成绝对时间；\n"
-        "5. **全天 / 跨天区间**把 allDay 置 true：startAt 给第一天 00:00，"
-        "endAt 给**最后一天的次日 00:00**（iCalendar 约定：9/25–9/27 写成 09-25 → 09-28 00:00）；\n"
+        "5. **时间段**（「假期 9/25–9/27」「下午三点到五点」）只记**起始那一刻**："
+        "at 给 09-25T00:00:00+08:00 或 15:00（只说了哪天的，给当天 00:00）；\n"
         "6. 通知正文里的地址、网址、要求放进 description，标题只写这件事本身；\n"
         "7. 认不出的字段留空字符串，**不要编造**。\n"
     )
@@ -276,11 +269,8 @@ def _parse_items(raw_reply: str, timezone: str) -> list[RecognizedEvent]:
         items.append(
             RecognizedEvent(
                 title=title,
-                kind=_parse_kind(node.get("kind"), node.get("startAt")),
-                start_at=_parse_time(node.get("startAt"), zone),
-                end_at=_parse_time(node.get("endAt"), zone),
-                due_at=_parse_time(node.get("dueAt"), zone),
-                all_day=_parse_bool(node.get("allDay")),
+                kind=_parse_kind(node.get("kind"), node.get("at")),
+                at=_parse_time(node.get("at") or node.get("startAt"), zone),
                 location_name=_blank_to_none(node.get("location")),
                 description=_blank_to_none(node.get("description")),
                 confidence=_parse_float(node.get("confidence")),
@@ -289,14 +279,14 @@ def _parse_items(raw_reply: str, timezone: str) -> list[RecognizedEvent]:
     return items
 
 
-def _parse_kind(value, start_at) -> str:
+def _parse_kind(value, at) -> str:
     """模型给了 kind 就用它；没给才按有没有开始时间兜底。"""
     text = str(value or "").strip().upper()
     if "TASK" in text or "待办" in text:
         return "TASK"
     if "EVENT" in text or "日程" in text:
         return "EVENT"
-    return "EVENT" if str(start_at or "").strip() else "TASK"
+    return "EVENT" if str(at or "").strip() else "TASK"
 
 
 def _parse_time(value, zone: ZoneInfo) -> datetime | None:
@@ -319,18 +309,11 @@ def _parse_time(value, zone: ZoneInfo) -> datetime | None:
             return datetime.strptime(text, fmt).replace(tzinfo=zone)
         except ValueError:
             continue
-    try:  # 只给了日期 → 当天 00:00（allDay 场景）
+    try:  # 只给了日期 → 当天 00:00（只说了哪一天）
         return datetime.combine(date.fromisoformat(text[:10]), datetime.min.time(), zone)
     except ValueError:
         # 实在解析不了就当「没看出时间」，让用户补，而不是丢掉整条
         return None
-
-
-def _parse_bool(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    text = str(value or "").strip().lower()
-    return text in {"true", "1", "是", "yes"}
 
 
 def _parse_float(value) -> float | None:

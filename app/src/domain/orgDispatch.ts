@@ -1,5 +1,5 @@
 import type { OrgDispatchRequest } from '../api/types';
-import { addMinutes, toIso, type DraftValidation } from './eventDraft';
+import { parseTime, toIso, type DraftValidation } from './eventDraft';
 
 /**
  * 新建组织日程的表单逻辑（spec §4.2.2 / §4.2.3）。
@@ -16,9 +16,8 @@ export interface DispatchForm {
   /** 详细地址：地图定位不到的那一层，由用户手填（与地点都可空，spec §5.9） */
   locationDetail: string;
   dateKey: string;
-  allDay: boolean;
-  startTime: string;
-  endTime: string;
+  /** 组织日程的唯一时间（HH:mm）；拨到 00:00 就是「就这一天」 */
+  time: string;
   /** 下发对象：成员 id 列表（在选人页里挑好后回填） */
   memberIds: number[];
 }
@@ -39,15 +38,9 @@ export function validateDispatchForm(form: DispatchForm): DraftValidation {
   if (form.memberIds.length === 0) {
     return { ok: false, message: '请选择下发对象' };
   }
-  if (!form.allDay) {
-    const start = toIso(form.dateKey, form.startTime);
-    const end = toIso(form.dateKey, form.endTime);
-    if (!start || !end) {
-      return { ok: false, message: '开始与结束时间要写成 09:00 这样的格式' };
-    }
-    if (end <= start) {
-      return { ok: false, message: '结束时间要晚于开始时间' };
-    }
+  // 用 parseTime 而不是 toIso：非法时刻 toIso 会抛，抛出去就变成崩溃而不是表单错误
+  if (!parseTime(form.time)) {
+    return { ok: false, message: '时间要写成 09:00 这样的格式' };
   }
   return { ok: true };
 }
@@ -55,20 +48,14 @@ export function validateDispatchForm(form: DispatchForm): DraftValidation {
 /**
  * 表单 → 下发请求体。
  *
- * 全天日程按「当天 00:00 到次日 00:00」提交：后端只认 startAt/endAt，
- * 而 `allDay` 是展示语义——不把跨度写成整天，成员端就会显示成 00:00–00:00 的零长日程。
+ * 组织日程与个人日程一样只有**一个时间点**（spec §4.1.2）；时间拨到 00:00 就是「就这一天」。
  */
 export function buildDispatchPayload(form: DispatchForm, timezone: string): OrgDispatchRequest {
-  const startAt = form.allDay ? toIso(form.dateKey, '00:00') : toIso(form.dateKey, form.startTime);
-  const endAt = form.allDay
-    ? toIso(nextDateKey(form.dateKey), '00:00')
-    : toIso(form.dateKey, form.endTime);
+  const at = toIso(form.dateKey, form.time);
 
   const payload: OrgDispatchRequest = {
     title: form.title.trim(),
-    startAt,
-    endAt,
-    allDay: form.allDay,
+    at,
     timezone,
     // 下发对象就是人名单：服务端按 MEMBER 范围逐个校验「这个人我能不能下发」
     scopeType: 'MEMBER',
@@ -86,10 +73,7 @@ export function buildDispatchPayload(form: DispatchForm, timezone: string): OrgD
   return payload;
 }
 
-/** 结束时间跟随开始 +1 小时：少让用户手打一次时间（与个人日程编辑页同一套交互）。 */
-export function withStartTime(form: DispatchForm, startTime: string): DispatchForm {
-  return { ...form, startTime, endTime: addMinutes(startTime, 60) };
-}
+
 
 /**
  * 编辑组织日程的请求体（只有发起人能改，spec §4.2.2）。
@@ -104,16 +88,7 @@ export function buildUpdatePayload(form: DispatchForm, timezone: string) {
     description: form.description.trim(),
     location: form.location.trim(),
     locationDetail: form.locationDetail.trim(),
-    startAt: form.allDay ? toIso(form.dateKey, '00:00') : toIso(form.dateKey, form.startTime),
-    endAt: form.allDay ? toIso(nextDateKey(form.dateKey), '00:00') : toIso(form.dateKey, form.endTime),
-    allDay: form.allDay,
+    at: toIso(form.dateKey, form.time),
     timezone,
   };
-}
-
-export function nextDateKey(dateKey: string): string {
-  const [year, month, day] = dateKey.split('-').map(Number) as [number, number, number];
-  const next = new Date(Date.UTC(year, month - 1, day + 1));
-  const pad = (value: number) => (value < 10 ? `0${value}` : `${value}`);
-  return `${next.getUTCFullYear()}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}`;
 }

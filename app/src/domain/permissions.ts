@@ -20,7 +20,7 @@
  * 通知（`POST_NOTIFICATIONS`）是 2026-09-27 新加的：日程/待办的到点提醒走本地通知
  * （spec §4.5），因此必须在申请前说明用途，隐私政策 §9.2 的权限清单也要同步列出。
  */
-export type PermissionKind = 'photo' | 'location' | 'notification';
+export type PermissionKind = 'photo' | 'location' | 'notification' | 'microphone';
 
 export interface PermissionRationale {
   /** 说明弹窗标题 */
@@ -55,6 +55,14 @@ export const PERMISSION_RATIONALE: Record<PermissionKind, PermissionRationale> =
       + '提醒由您的手机在本地发出，我们不通过服务端推送，也不会把日程内容交给第三方。\n\n'
       + '您也可以选择「不允许」，日程与待办照常使用，只是到点不会有提醒。',
     deniedHint: '未获得通知权限，日程与待办照常使用；如需提醒可在系统设置里打开通知，其他功能不受影响。',
+  },
+  microphone: {
+    title: '需要使用麦克风',
+    message:
+      '用于在「小安」里长按说话（使用麦克风）、把您说的话转成文字（例如「明天下午三点和张总开会」）。\n\n'
+      + '录音只在您按住期间进行，会上传用于转成文字，**转完即丢弃，我们不会保存音频**。\n\n'
+      + '您也可以选择「不允许」，直接键入文字来和小安对话，其他功能不受影响。',
+    deniedHint: '未获得麦克风权限，您可以改为直接输入文字，其他功能不受影响。',
   },
 };
 

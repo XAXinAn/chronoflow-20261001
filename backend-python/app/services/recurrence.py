@@ -41,23 +41,25 @@ def validate_rrule(rule_text: str | None) -> None:
 
 
 def expand(event: dict, exceptions: list[dict], range_start: datetime, range_end: datetime) -> list[dict]:
-    """展开日程在 [range_start, range_end) 内的实例，按开始时间升序。"""
+    """展开日程在 [range_start, range_end) 内的实例，按时间升序。
+
+    日程只有一个**时间点**（spec §4.1.2）：一次出现就是那一刻，
+    落在窗口里就算命中（`range_start <= at < range_end`）。
+    """
     zone = resolve_zone(event.get("timezone"))
-    start_at: datetime = event["start_at"]
-    end_at: datetime = event["end_at"]
+    at: datetime = event["at"]
 
     if not event.get("rrule"):
-        if start_at < range_end and end_at > range_start:
-            return [_occurrence(event, start_at, end_at, None, False)]
+        if range_start <= at < range_end:
+            return [_occurrence(event, at, None, False)]
         return []
 
-    duration = end_at - start_at
     by_date = {row["occurrence_date"]: row for row in exceptions}
     hard_stop = range_end
     if event.get("rrule_until"):
         hard_stop = min(hard_stop, event["rrule_until"])
 
-    start_local = start_at.astimezone(zone)
+    start_local = at.astimezone(zone)
     try:
         rule = rrulestr(event["rrule"], dtstart=start_local)
     except Exception as exc:  # noqa: BLE001
@@ -77,15 +79,10 @@ def expand(event: dict, exceptions: list[dict], range_start: datetime, range_end
             continue
 
         modified = bool(exception and exception["exception_type"] == "MODIFIED")
-        effective_start = (
-            exception["override_start_at"]
-            if modified and exception.get("override_start_at")
+        effective_at = (
+            exception["override_at"]
+            if modified and exception.get("override_at")
             else occurrence_start
-        )
-        effective_end = (
-            exception["override_end_at"]
-            if modified and exception.get("override_end_at")
-            else effective_start + duration
         )
         title = (
             exception["override_title"]
@@ -93,28 +90,25 @@ def expand(event: dict, exceptions: list[dict], range_start: datetime, range_end
             else event["title"]
         )
 
-        if not (effective_start < range_end and effective_end > range_start):
+        if not (range_start <= effective_at < range_end):
             continue
 
-        results.append(
-            _occurrence(event, effective_start, effective_end, occurrence_date, modified, title)
-        )
+        results.append(_occurrence(event, effective_at, occurrence_date, modified, title))
 
-    results.sort(key=lambda item: (item["startAt"], item["eventId"]))
+    results.sort(key=lambda item: (item["at"], item["eventId"]))
     return results
 
 
 def occurrence_start(event: dict, occurrence_date) -> datetime:
     """由本地日期还原该次出现的开始时刻（用于 THIS / FUTURE 定位）。"""
     zone = resolve_zone(event.get("timezone"))
-    local = event["start_at"].astimezone(zone)
+    local = event["at"].astimezone(zone)
     return datetime.combine(occurrence_date, local.time(), tzinfo=zone)
 
 
 def _occurrence(
     event: dict,
-    start: datetime,
-    end: datetime,
+    at: datetime,
     occurrence_date,
     modified: bool,
     title: str | None = None,
@@ -127,9 +121,7 @@ def _occurrence(
         "locationName": event.get("location_name"),
         "locationDetail": event.get("location_detail"),
         "locationAddress": event.get("location_address"),
-        "startAt": start,
-        "endAt": end,
-        "allDay": bool(event.get("all_day")),
+        "at": at,
         "timezone": event.get("timezone"),
         "recurring": bool(event.get("rrule")),
         "occurrenceDate": occurrence_date,

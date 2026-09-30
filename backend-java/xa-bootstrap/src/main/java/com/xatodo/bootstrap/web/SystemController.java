@@ -2,6 +2,7 @@ package com.xatodo.bootstrap.web;
 
 import com.xatodo.common.api.ApiResponse;
 import com.xatodo.common.web.TraceIds;
+import com.xatodo.agent.service.AgentChatService;
 import com.xatodo.personal.geo.GeoService;
 import com.xatodo.personal.service.HolidaySyncStatus;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,10 +28,14 @@ public class SystemController {
 
     private final GeoService geoService;
     private final HolidaySyncStatus holidaySyncStatus;
+    private final AgentChatService agentChatService;
 
-    public SystemController(GeoService geoService, HolidaySyncStatus holidaySyncStatus) {
+    public SystemController(GeoService geoService,
+                            HolidaySyncStatus holidaySyncStatus,
+                            AgentChatService agentChatService) {
         this.geoService = geoService;
         this.holidaySyncStatus = holidaySyncStatus;
+        this.agentChatService = agentChatService;
     }
 
     @GetMapping("/info")
@@ -41,6 +46,7 @@ public class SystemController {
                 OffsetDateTime.now(ZoneOffset.UTC).toString(),
                 geoService.providerName(),
                 geoService.degraded(),
+                agentChatService.enabled(),
                 HolidaySyncInfo.from(holidaySyncStatus.snapshot())));
     }
 
@@ -52,11 +58,14 @@ public class SystemController {
     /**
      * @param geoProvider     当前生效的地点服务商（amap / local）
      * @param geoDegraded     是否处于降级态；App 据此提示「当前是内置地点集」而不是当成网络故障
+     * @param aiAgentEnabled  小安（智能助手）是否已接入模型（spec §11 阶段三）。
+     *                        App 读到缺失或 false 就保持「还没有接入模型」的提示，
+     *                        而不是让用户对着输入框发消息、等一个永远不来的回答。
      * @param holidaySync     节假日数据自动同步的运行状态（spec §5.11）
      */
     public record SystemInfo(String name, String version, String serverTime,
                              String geoProvider, boolean geoDegraded,
-                             HolidaySyncInfo holidaySync) {
+                             boolean aiAgentEnabled, HolidaySyncInfo holidaySync) {
     }
 
     /**

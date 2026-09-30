@@ -49,6 +49,15 @@
         }
       ],
       [
+        "expo-audio",
+        {
+          "microphonePermission": "用于在「小安」里长按说话并把您说的话转成文字",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
         "./plugins/withJpush",
         {
           "appKey": "e45cb28aabd482c0dcc6ab42",

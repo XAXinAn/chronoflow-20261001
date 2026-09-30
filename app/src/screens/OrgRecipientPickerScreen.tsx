@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import {
   Pressable,
   ScrollView,
@@ -9,7 +10,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ApiError } from '../api/client';
 import type { OrgCurrent, OrgDepartmentNode, OrgMemberItem } from '../api/types';
 import { EditorHeader } from '../components/form';
 import { Card, EmptyState, Screen } from '../components/ui';
@@ -73,9 +73,11 @@ export function OrgRecipientPickerScreen({
         setTree(departments);
         setOrg(current);
       } catch (cause) {
-        console.warn('[org-recipients] 成员/部门加载失败', cause);
+        // 用 log 而不是 warn：Expo Go 里 warn/error 会弹一个黄框/红框盖住界面，
+        // 那是开发提示，不该出现在演示与用户面前。日志留在 Metro 终端里足够排查。
+        console.log('[org-recipients] 成员/部门加载失败', cause);
         if (active) {
-          setError(cause instanceof ApiError ? cause.message : '成员列表加载失败，请重试');
+          setError(userFacingError(cause, '成员列表加载失败，请重试'));
         }
       } finally {
         if (active) {

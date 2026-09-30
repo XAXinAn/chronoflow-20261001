@@ -18,9 +18,8 @@ export interface EventPlace {
  */
 export interface EventDraft {
   title: string;
-  startTime: string;
-  endTime: string;
-  allDay: boolean;
+  /** 日程的唯一时间（HH:mm）。要「就这一天」就把时间拨到 00:00 */
+  time: string;
   place: EventPlace | null;
   /** 详细地址：地图只到「教学楼」，教室号由用户手填（与地点都可空，spec §5.9） */
   locationDetail: string;
@@ -43,8 +42,7 @@ export interface EventDraft {
   reminders: number[];
 }
 
-export const DEFAULT_START_TIME = '09:00';
-export const DEFAULT_END_TIME = '10:00';
+export const DEFAULT_EVENT_TIME = '09:00';
 
 export const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
   { value: 'LOW', label: '低' },
@@ -66,9 +64,7 @@ export const STATUS_OPTIONS: { value: EventStatus; label: string }[] = [
 export function emptyDraft(): EventDraft {
   return {
     title: '',
-    startTime: DEFAULT_START_TIME,
-    endTime: DEFAULT_END_TIME,
-    allDay: false,
+    time: DEFAULT_EVENT_TIME,
     place: null,
     locationDetail: '',
     description: '',
@@ -126,20 +122,10 @@ export function toIso(dateKey: string, time: string): string {
   return `${dateKey}T${pad(parsed.hour)}:${pad(parsed.minute)}:00${APP_UTC_OFFSET}`;
 }
 
-/** 开始时间 + 分钟数，得到默认结束时间。 */
-export function addMinutes(time: string, minutes: number): string {
-  const parsed = parseTime(time);
-  if (!parsed) {
-    return DEFAULT_END_TIME;
-  }
-  const total = parsed.hour * 60 + parsed.minute + minutes;
-  return `${pad(Math.floor((total % 1440) / 60))}:${pad(total % 60)}`;
-}
-
 export type DraftValidation = { ok: true } | { ok: false; message: string };
 
 /**
- * 校验草稿。全天日程不校验时刻，只要求标题非空。
+ * 校验草稿。标题必填，时刻要写成 HH:mm（拨到 00:00 就是「就这一天」）。
  */
 export function validateDraft(draft: EventDraft): DraftValidation {
   if (!draft.title.trim()) {
@@ -153,19 +139,8 @@ export function validateDraft(draft: EventDraft): DraftValidation {
   if (!travel.ok) {
     return { ok: false, message: '出行时间需为 0-1440 的分钟数' };
   }
-  if (draft.allDay) {
-    return { ok: true };
-  }
-  const start = parseTime(draft.startTime);
-  const end = parseTime(draft.endTime);
-  if (!start) {
-    return { ok: false, message: '开始时间格式应为 HH:mm' };
-  }
-  if (!end) {
-    return { ok: false, message: '结束时间格式应为 HH:mm' };
-  }
-  if (end.hour * 60 + end.minute <= start.hour * 60 + start.minute) {
-    return { ok: false, message: '结束时间需晚于开始时间' };
+  if (!parseTime(draft.time)) {
+    return { ok: false, message: '时间格式应为 HH:mm' };
   }
   return { ok: true };
 }
@@ -173,26 +148,15 @@ export function validateDraft(draft: EventDraft): DraftValidation {
 /**
  * 组装创建日程的请求体。
  *
- * 全天日程按「当天 00:00 到次日 00:00」提交，与后端 end_at > start_at 的约束一致。
+ * 日程只有一个时间点 `at`（spec §4.1.2）；把时间拨到 00:00 就是「就这一天」。
  * 空的文本字段统一送 null：后端用 null 表示「未设置」，空串会被当成有效值存进去。
  */
 export function buildCreatePayload(dateKey: string, draft: EventDraft) {
   const travel = parseTravelTime(draft.travelTimeMinutes);
-  const timeRange = draft.allDay
-    ? {
-        startAt: toIso(dateKey, '00:00'),
-        endAt: toIso(nextDateKey(dateKey), '00:00'),
-        allDay: true,
-      }
-    : {
-        startAt: toIso(dateKey, draft.startTime),
-        endAt: toIso(dateKey, draft.endTime),
-        allDay: false,
-      };
 
   return {
     title: draft.title.trim(),
-    ...timeRange,
+    at: toIso(dateKey, draft.time),
     description: blankToNull(draft.description),
     locationName: draft.place?.name ?? null,
     locationAddress: draft.place?.address ?? null,
@@ -218,9 +182,7 @@ export function draftFromEvent(event: EventDetail): EventDraft {
   const zone = event.timezone || 'Asia/Shanghai';
   return {
     title: event.title,
-    startTime: timeInZone(event.startAt, zone),
-    endTime: timeInZone(event.endAt, zone),
-    allDay: event.allDay,
+    time: timeInZone(event.at, zone),
     locationDetail: event.locationDetail ?? '',
     /**
      * 判断「有没有地点」必须用 `== null`（同时覆盖 null 与 undefined）：
@@ -259,7 +221,7 @@ export function draftFromEvent(event: EventDetail): EventDraft {
 
 /** 该日程落在哪一天（用于编辑时定位日期）。 */
 export function eventDateKey(event: EventDetail): string {
-  return localDateKey(event.startAt, event.timezone || 'Asia/Shanghai');
+  return localDateKey(event.at, event.timezone || 'Asia/Shanghai');
 }
 
 /**
@@ -295,11 +257,4 @@ export function timeInZone(iso: string, timeZone: string): string {
 function blankToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
-}
-
-/** 全天日程的结束时间落在次日，跨月跨年都要正确进位。 */
-function nextDateKey(dateKey: string): string {
-  const [year, month, day] = dateKey.split('-').map(Number) as [number, number, number];
-  const next = new Date(Date.UTC(year, month - 1, day + 1));
-  return `${next.getUTCFullYear()}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}`;
 }

@@ -19,6 +19,8 @@ interface CreateForm {
   adminUsername: string;
   adminPassword: string;
   adminRealName?: string;
+  ownerMemberKey?: string;
+  ownerRealName?: string;
 }
 
 export function OrganizationsPage() {
@@ -149,6 +151,18 @@ export function OrganizationsPage() {
           </Form.Item>
           <Form.Item name="adminRealName" label="管理员姓名">
             <Input placeholder="选填" />
+          </Form.Item>
+          {/* 选填：预置首位拥有者（spec §3.4）。填了组织一建好就能在 App 里被认领，
+              不用先进后台手动建「总部」再加人 */}
+          <Form.Item
+            name="ownerMemberKey"
+            label="首位拥有者唯一识别 ID"
+            tooltip="选填。填了就同时建「总部」根部门与一条拥有者成员记录；成员在 App「组织 → 账户管理」里用它认领组织账号"
+          >
+            <Input placeholder="学号 / 工号，例如 2023210704127" />
+          </Form.Item>
+          <Form.Item name="ownerRealName" label="拥有者姓名">
+            <Input placeholder="选填，默认用上面的唯一识别 ID" />
           </Form.Item>
         </Form>
       </Modal>

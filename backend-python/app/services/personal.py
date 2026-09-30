@@ -230,8 +230,8 @@ class PersonalService:
                 "SELECT * FROM event WHERE deleted_at IS NULL AND status <> 'CANCELLED'"
                 " AND calendar_id = ANY(:calendar_ids)"
                 " AND ((rrule IS NOT NULL AND (rrule_until IS NULL OR rrule_until > :start))"
-                "   OR (rrule IS NULL AND start_at < :end AND end_at > :start))"
-                " ORDER BY start_at"
+                "   OR (rrule IS NULL AND at >= :start AND at < :end))"
+                " ORDER BY at"
             ),
             {"calendar_ids": targets, "start": start, "end": end},
         ).mappings().all()
@@ -250,11 +250,11 @@ class PersonalService:
             results.extend(
                 recurrence.expand(dict(event), exceptions.get(event["id"], []), start, end)
             )
-        results.sort(key=lambda item: (item["startAt"], item["eventId"]))
+        results.sort(key=lambda item: (item["at"], item["eventId"]))
         return results
 
     def list_all_events(self, identity_id: int, keyword: str | None, limit: int | None) -> list[dict]:
-        """我的**全部日程**（「关联日程」候选，spec §4.1.6），按开始时间倒序，可按关键字过滤。
+        """我的**全部日程**（「关联日程」候选，spec §4.1.6），按时间倒序，可按关键字过滤。
 
         不复用 `list_events`：它必须给时间范围、而且会把重复日程展开成每一次实例 ——
         拉一年就是几百条，当候选列表既慢又不准（用户要关联的是**那条日程**，
@@ -274,7 +274,7 @@ class PersonalService:
                 " AND (e.title ILIKE :pattern ESCAPE '\\'"
                 "      OR e.description ILIKE :pattern ESCAPE '\\'"
                 "      OR e.location_name ILIKE :pattern ESCAPE '\\')"
-                " ORDER BY e.start_at DESC"
+                " ORDER BY e.at DESC"
                 " LIMIT :limit"
             ),
             {
@@ -291,9 +291,7 @@ class PersonalService:
                 "locationName": row["location_name"],
                 "locationDetail": row["location_detail"],
                 "locationAddress": row["location_address"],
-                "startAt": row["start_at"],
-                "endAt": row["end_at"],
-                "allDay": bool(row["all_day"]),
+                "at": row["at"],
                 "timezone": row["timezone"] or DEFAULT_TIMEZONE,
                 # 一条重复序列只出现一次：它不是「某一次出现」
                 "recurring": bool(row["rrule"]),
@@ -315,20 +313,19 @@ class PersonalService:
     def create_event(self, identity_id: int, payload: dict) -> dict:
         calendar_id = payload.get("calendarId") or self.default_calendar_id(identity_id)
         calendar = self.require_calendar(identity_id, calendar_id)
-        _validate_range(payload["startAt"], payload["endAt"])
         recurrence.validate_rrule(payload.get("rrule"))
         row = self._session.execute(
             text(
                 "INSERT INTO event (calendar_id, creator_identity_id, source_type, title,"
                 " description, location_name, location_address, location_detail,"
                 " latitude, longitude, poi_id,"
-                " coordinate_system, start_at, end_at, all_day, timezone, rrule, status,"
+                " coordinate_system, at, timezone, rrule, status,"
                 " availability, color, priority, category, url, travel_time_minutes,"
                 " updated_after_dispatch)"
                 " VALUES (:calendar_id, :identity, 'PERSONAL', :title, :description, :location_name,"
                 " :location_address, :location_detail, :latitude, :longitude, :poi_id,"
                 " :coordinate_system,"
-                " :start_at, :end_at, :all_day, :timezone, :rrule, :status,"
+                " :at, :timezone, :rrule, :status,"
                 " :availability, :color, :priority, :category, :url, :travel_time_minutes, false)"
                 " RETURNING *"
             ),
@@ -337,9 +334,7 @@ class PersonalService:
                 "identity": identity_id,
                 "title": payload["title"],
                 "description": payload.get("description"),
-                "start_at": payload["startAt"],
-                "end_at": payload["endAt"],
-                "all_day": bool(payload.get("allDay")),
+                "at": payload["at"],
                 "timezone": payload.get("timezone") or calendar["timezone"],
                 "rrule": payload.get("rrule"),
                 **_event_columns(payload, defaults=True),
@@ -353,9 +348,6 @@ class PersonalService:
         scope = (payload.get("scope") or "ALL").upper()
         if scope == "ALL":
             recurrence.validate_rrule(payload.get("rrule"))
-            start = payload.get("startAt") or event["start_at"]
-            end = payload.get("endAt") or event["end_at"]
-            _validate_range(start, end)
             row = self._session.execute(
                 text(
                     "UPDATE event SET title = COALESCE(:title, title),"
@@ -373,8 +365,7 @@ class PersonalService:
                     " longitude = CASE WHEN :clear_place THEN NULL ELSE COALESCE(:longitude, longitude) END,"
                     " coordinate_system = CASE WHEN :clear_place THEN NULL"
                     "   ELSE COALESCE(:coordinate_system, coordinate_system) END,"
-                    " start_at = :start_at, end_at = :end_at,"
-                    " all_day = COALESCE(:all_day, all_day),"
+                    " at = COALESCE(:at, at),"
                     " timezone = COALESCE(:timezone, timezone),"
                     " rrule = COALESCE(:rrule, rrule),"
                     " status = COALESCE(:status, status),"
@@ -391,9 +382,7 @@ class PersonalService:
                     "id": event_id,
                     "title": payload.get("title"),
                     "description": payload.get("description"),
-                    "start_at": start,
-                    "end_at": end,
-                    "all_day": payload.get("allDay"),
+                    "at": payload.get("at"),
                     "timezone": payload.get("timezone"),
                     "rrule": payload.get("rrule"),
                     # 只有「显式送了空串」才清空地点；字段缺失或为 null 一律视为不修改，
@@ -448,19 +437,18 @@ class PersonalService:
 
     def _split_future(self, identity_id: int, event: dict, occurrence_date, payload: dict) -> dict:
         start = recurrence.occurrence_start(event, occurrence_date)
-        end = start + (event["end_at"] - event["start_at"])
         row = self._session.execute(
             text(
                 "INSERT INTO event (calendar_id, creator_identity_id, source_type, title,"
                 " description, location_name, location_address, location_detail,"
                 " latitude, longitude, poi_id,"
-                " coordinate_system, start_at, end_at, all_day, timezone, rrule, status,"
+                " coordinate_system, at, timezone, rrule, status,"
                 " availability, color, priority, category, url, travel_time_minutes,"
                 " updated_after_dispatch)"
                 " VALUES (:calendar_id, :identity, 'PERSONAL', :title, :description, :location_name,"
                 " :location_address, :location_detail, :latitude, :longitude, :poi_id,"
                 " :coordinate_system,"
-                " :start_at, :end_at, :all_day, :timezone, :rrule, :status,"
+                " :at, :timezone, :rrule, :status,"
                 " :availability, :color, :priority, :category, :url, :travel_time_minutes, false)"
                 " RETURNING *"
             ),
@@ -484,9 +472,7 @@ class PersonalService:
                 "category": _coalesce(payload.get("category"), event["category"]),
                 "url": _coalesce(payload.get("url"), event["url"]),
                 "travel_time_minutes": _coalesce(payload.get("travelTimeMinutes"), event["travel_time_minutes"]),
-                "start_at": payload.get("startAt") or start,
-                "end_at": payload.get("endAt") or end,
-                "all_day": _coalesce(payload.get("allDay"), event["all_day"]),
+                "at": payload.get("at") or start,
                 "timezone": payload.get("timezone") or event["timezone"],
                 "rrule": payload.get("rrule") or event["rrule"],
             },
@@ -509,21 +495,19 @@ class PersonalService:
         self._session.execute(
             text(
                 "INSERT INTO event_exception (event_id, occurrence_date, exception_type,"
-                " override_title, override_start_at, override_end_at)"
-                " VALUES (:event_id, :date, :type, :title, :start_at, :end_at)"
+                " override_title, override_at)"
+                " VALUES (:event_id, :date, :type, :title, :at)"
                 " ON CONFLICT (event_id, occurrence_date) DO UPDATE SET"
                 " exception_type = EXCLUDED.exception_type,"
                 " override_title = EXCLUDED.override_title,"
-                " override_start_at = EXCLUDED.override_start_at,"
-                " override_end_at = EXCLUDED.override_end_at"
+                " override_at = EXCLUDED.override_at"
             ),
             {
                 "event_id": event_id,
                 "date": occurrence_date,
                 "type": exception_type,
                 "title": payload.get("title") if modified else None,
-                "start_at": payload.get("startAt") if modified else None,
-                "end_at": payload.get("endAt") if modified else None,
+                "at": payload.get("at") if modified else None,
             },
         )
 
@@ -595,9 +579,9 @@ class PersonalService:
         row = self._session.execute(
             text(
                 "INSERT INTO task (calendar_id, owner_identity_id, parent_task_id, title,"
-                " description, event_id, due_at, all_day, status, priority, rrule, images, sort_order)"
+                " description, event_id, due_at, status, priority, rrule, images, sort_order)"
                 " VALUES (:calendar_id, :identity, :parent_id, :title, :description, :event_id,"
-                " :due_at, :all_day, 'TODO', :priority, :rrule, CAST(:images AS jsonb), 0)"
+                " :due_at, 'TODO', :priority, :rrule, CAST(:images AS jsonb), 0)"
                 " RETURNING *"
             ),
             {
@@ -608,7 +592,6 @@ class PersonalService:
                 "title": payload["title"],
                 "description": payload.get("description"),
                 "due_at": payload.get("dueAt"),
-                "all_day": bool(payload.get("allDay")),
                 "priority": payload.get("priority") or "NORMAL",
                 "rrule": rrule,
                 # jsonb 列不能用数组适配器直接塞：显式序列化再 CAST
@@ -643,7 +626,6 @@ class PersonalService:
                 " description = COALESCE(:description, description),"
                 " event_id = CASE WHEN :clear_event THEN NULL ELSE COALESCE(:event_id, event_id) END,"
                 " due_at = CASE WHEN :clear_due THEN NULL ELSE COALESCE(:due_at, due_at) END,"
-                " all_day = CASE WHEN :clear_due THEN false ELSE COALESCE(:all_day, all_day) END,"
                 " priority = COALESCE(:priority, priority), status = COALESCE(:status, status),"
                 " rrule = CASE WHEN :rrule_set THEN :rrule ELSE rrule END,"
                 # 图片：null = 不修改；传空数组才是「删光所有图片」
@@ -661,7 +643,6 @@ class PersonalService:
                 "title": payload.get("title"),
                 "description": payload.get("description"),
                 "due_at": payload.get("dueAt"),
-                "all_day": payload.get("allDay"),
                 "priority": payload.get("priority"),
                 "status": payload.get("status"),
                 "rrule": rrule,
@@ -709,8 +690,8 @@ class PersonalService:
         row = self._session.execute(
             text(
                 "INSERT INTO task (calendar_id, owner_identity_id, title, description, due_at,"
-                " all_day, status, priority, sort_order)"
-                " VALUES (:calendar_id, :identity, :title, :description, :due_at, :all_day,"
+                " status, priority, sort_order)"
+                " VALUES (:calendar_id, :identity, :title, :description, :due_at,"
                 " 'TODO', 'NORMAL', 0) RETURNING *"
             ),
             {
@@ -718,8 +699,7 @@ class PersonalService:
                 "identity": identity_id,
                 "title": event["title"],
                 "description": event["description"],
-                "due_at": event["end_at"],
-                "all_day": event["all_day"],
+                "due_at": event["at"],
             },
         ).mappings().one()
         self._session.execute(
@@ -732,26 +712,22 @@ class PersonalService:
     def convert_task_to_event(self, identity_id: int, task_id: int, payload: dict) -> dict:
         task = self.require_task(identity_id, task_id)
         calendar = self.require_calendar(identity_id, task["calendar_id"])
-        start = payload.get("startAt") or task["due_at"]
-        if start is None:
-            raise ApiError(ErrorCode.PARAM_INVALID, "该待办没有截止时间，请提供 startAt")
-        end = payload.get("endAt") or (start + _ONE_HOUR())
-        _validate_range(start, end)
+        at = payload.get("at") or task["due_at"]
+        if at is None:
+            raise ApiError(ErrorCode.PARAM_INVALID, "该待办没有截止时间，请提供 at")
         row = self._session.execute(
             text(
                 "INSERT INTO event (calendar_id, creator_identity_id, source_type, title,"
-                " description, start_at, end_at, all_day, timezone, status, updated_after_dispatch)"
-                " VALUES (:calendar_id, :identity, 'PERSONAL', :title, :description, :start_at,"
-                " :end_at, :all_day, :timezone, 'CONFIRMED', false) RETURNING *"
+                " description, at, timezone, status, updated_after_dispatch)"
+                " VALUES (:calendar_id, :identity, 'PERSONAL', :title, :description, :at,"
+                " :timezone, 'CONFIRMED', false) RETURNING *"
             ),
             {
                 "calendar_id": calendar["id"],
                 "identity": identity_id,
                 "title": task["title"],
                 "description": task["description"],
-                "start_at": start,
-                "end_at": end,
-                "all_day": task["all_day"],
+                "at": at,
                 "timezone": calendar["timezone"],
             },
         ).mappings().one()
@@ -838,8 +814,7 @@ class PersonalService:
                         "occurrenceDate": occurrence["occurrenceDate"],
                         "title": occurrence["title"],
                         "locationName": occurrence.get("locationName"),
-                        "startAt": occurrence["startAt"],
-                        "allDay": occurrence["allDay"],
+                        "at": occurrence["at"],
                         "timezone": occurrence.get("timezone") or DEFAULT_TIMEZONE,
                         "minutesBefore": sorted(set(minutes)),
                     }
@@ -847,7 +822,7 @@ class PersonalService:
         if task_minutes:
             entries.extend(self._task_reminder_entries(identity_id, start, end, task_minutes))
 
-        entries.sort(key=lambda item: (item["startAt"], item["targetType"], item["targetId"]))
+        entries.sort(key=lambda item: (item["at"], item["targetType"], item["targetId"]))
         return entries
 
     def _task_reminder_entries(
@@ -857,7 +832,7 @@ class PersonalService:
 
         只取「待办中（TODO）且有截止时间」的：已完成 / 已取消的待办再到点提醒一次，
         只会让用户觉得提醒不准（与列表里不展示它们是一个口径）。
-        时区取所在日历的时区 —— 待办自己没有时区列，而全天待办的提醒基准（当地 09:00）
+        时区取所在日历的时区 —— 待办自己没有时区列，而「只说了哪一天」的提醒基准（当地 09:00）
         需要一个时区才算得对。
         """
         rows = self._session.execute(
@@ -881,8 +856,7 @@ class PersonalService:
                 "occurrenceDate": None,
                 "title": row["title"],
                 "locationName": None,
-                "startAt": row["due_at"],
-                "allDay": bool(row["all_day"]),
+                "at": row["due_at"],
                 "timezone": zones.get(row["calendar_id"], DEFAULT_TIMEZONE),
                 "minutesBefore": sorted(set(task_minutes[row["id"]])),
             }
@@ -922,9 +896,7 @@ def _event_view(row) -> dict:
         "longitude": _num(row["longitude"]),
         "poiId": row["poi_id"],
         "coordinateSystem": row["coordinate_system"],
-        "startAt": row["start_at"],
-        "endAt": row["end_at"],
-        "allDay": bool(row["all_day"]),
+        "at": row["at"],
         "timezone": row["timezone"],
         "rrule": row["rrule"],
         "status": row["status"],
@@ -959,7 +931,6 @@ def _task_view(row) -> dict:
         "title": row["title"],
         "description": row["description"],
         "dueAt": row["due_at"],
-        "allDay": bool(row["all_day"]),
         "status": row["status"],
         "completedAt": row["completed_at"],
         "priority": row["priority"],
@@ -984,6 +955,7 @@ def _reminder_view(row) -> dict:
 
 
 def _validate_range(start, end) -> None:
+    """查询窗口校验（日程本身只有一个时间点，不存在"起止"合法性问题）。"""
     if start is None or end is None or end <= start:
         raise ApiError(ErrorCode.EVENT_TIME_INVALID)
 

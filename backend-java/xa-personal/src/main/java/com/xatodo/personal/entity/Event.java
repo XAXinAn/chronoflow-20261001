@@ -84,11 +84,8 @@ public class Event {
     /** 出行时间（分钟），用于出发提醒 */
     private Integer travelTimeMinutes;
 
-    private OffsetDateTime startAt;
+    private OffsetDateTime at;
 
-    private OffsetDateTime endAt;
-
-    private Boolean allDay;
 
     private String timezone;
 
@@ -268,28 +265,12 @@ public class Event {
         this.travelTimeMinutes = travelTimeMinutes;
     }
 
-    public OffsetDateTime getStartAt() {
-        return startAt;
+    public OffsetDateTime getAt() {
+        return at;
     }
 
-    public void setStartAt(OffsetDateTime startAt) {
-        this.startAt = startAt;
-    }
-
-    public OffsetDateTime getEndAt() {
-        return endAt;
-    }
-
-    public void setEndAt(OffsetDateTime endAt) {
-        this.endAt = endAt;
-    }
-
-    public Boolean getAllDay() {
-        return allDay;
-    }
-
-    public void setAllDay(Boolean allDay) {
-        this.allDay = allDay;
+    public void setAt(OffsetDateTime at) {
+        this.at = at;
     }
 
     public String getTimezone() {

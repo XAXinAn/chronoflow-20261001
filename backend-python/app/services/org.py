@@ -17,7 +17,7 @@ MAX_DEPARTMENT_LEVEL = 5
 
 def _push_body(event: dict) -> str:
     """通知正文：把时间写进去，用户不解锁就能判断要不要马上看。"""
-    start = event["start_at"]
+    start = event["at"]
     try:
         local = start.astimezone(ZoneInfo(event.get("timezone") or "Asia/Shanghai"))
         return "组织日程 · " + local.strftime("%m月%d日 %H:%M").replace(" 0", " ")
@@ -449,8 +449,6 @@ class OrgService:
 
     # ------------------------------------------------------------ 组织日程
     def dispatch(self, member: dict, payload: dict) -> dict:
-        if payload["endAt"] <= payload["startAt"]:
-            raise ApiError(ErrorCode.EVENT_TIME_INVALID)
         if payload.get("rrule"):
             raise ApiError(ErrorCode.PARAM_INVALID, "首版组织日程暂不支持重复规则")
         recipients = self._with_initiator(self._resolve_recipients(member, payload), member)
@@ -460,11 +458,11 @@ class OrgService:
         event = self._session.execute(
             text(
                 "INSERT INTO event (calendar_id, org_id, creator_identity_id, source_type, title,"
-                " description, location_name, location_detail, start_at, end_at, all_day,"
+                " description, location_name, location_detail, at,"
                 " timezone, status,"
                 " updated_after_dispatch) VALUES (:calendar_id, :org_id, :identity, 'ORG_DISPATCH',"
-                " :title, :description, :location_name, :location_detail, :start_at, :end_at,"
-                " :all_day, :timezone,"
+                " :title, :description, :location_name, :location_detail, :at,"
+                " :timezone,"
                 " 'CONFIRMED', false) RETURNING *"
             ),
             {
@@ -476,9 +474,7 @@ class OrgService:
                 # 组织日程只用手填的地点名 + 详细地址（结构化地址留给后续的组织日程编辑器，spec §5.9）
                 "location_name": payload.get("location"),
                 "location_detail": (payload.get("locationDetail") or "").strip() or None,
-                "start_at": payload["startAt"],
-                "end_at": payload["endAt"],
-                "all_day": bool(payload.get("allDay")),
+                "at": payload["at"],
                 "timezone": payload.get("timezone") or member["org_timezone"],
             },
         ).mappings().one()
@@ -637,9 +633,7 @@ class OrgService:
                 "title": row["title"],
                 "location_name": row["location_name"],
                 "location_detail": row["location_detail"],
-                "start_at": row["start_at"],
-                "end_at": row["end_at"],
-                "all_day": row["all_day"],
+                "at": row["at"],
                 "timezone": row["timezone"],
                 "rrule": row["rrule"],
                 "description": row["description"],
@@ -653,16 +647,14 @@ class OrgService:
                         "description": event["description"],
                         "location": occurrence["locationName"],
                         "locationDetail": occurrence["locationDetail"],
-                        "startAt": occurrence["startAt"],
-                        "endAt": occurrence["endAt"],
-                        "allDay": occurrence["allDay"],
+                        "at": occurrence["at"],
                         "timezone": occurrence["timezone"],
                         "rrule": event["rrule"],
                         "read": row["read_at"] is not None,
                         "canEdit": can_edit,
                     }
                 )
-        result.sort(key=lambda item: (item["startAt"], item["eventId"]))
+        result.sort(key=lambda item: (item["at"], item["eventId"]))
         return result
 
     def mark_read(self, member: dict, event_id: int) -> None:
@@ -709,8 +701,7 @@ class OrgService:
                 "UPDATE event SET title = COALESCE(:title, title),"
                 " description = COALESCE(:description, description),"
                 " location_name = COALESCE(:location_name, location_name),"
-                " start_at = COALESCE(:start_at, start_at), end_at = COALESCE(:end_at, end_at),"
-                " all_day = COALESCE(:all_day, all_day),"
+                " at = COALESCE(:at, at),"
                 " timezone = COALESCE(:timezone, timezone), updated_after_dispatch = true,"
                 " updated_at = now() WHERE id = :id RETURNING *"
             ),
@@ -720,9 +711,7 @@ class OrgService:
                 "description": payload.get("description"),
                 "location_name": payload.get("location"),
                 "location_detail": (payload.get("locationDetail") or "").strip() or None,
-                "start_at": payload.get("startAt"),
-                "end_at": payload.get("endAt"),
-                "all_day": payload.get("allDay"),
+                "at": payload.get("at"),
                 "timezone": payload.get("timezone"),
             },
         ).mappings().one()
@@ -756,19 +745,29 @@ class OrgService:
         if not self.is_initiator(member, dispatch):
             raise ApiError(ErrorCode.FORBIDDEN, "只有下发者本人可以修改这条组织日程")
 
-    def admin_event_list(self, member: dict, start: datetime, end: datetime) -> list[dict]:
+    def admin_event_list(
+        self, member: dict, start: datetime, end: datetime, include_revoked: bool = False
+    ) -> list[dict]:
         """组织管理端的组织日程列表（spec §6.3 `GET /org-admin/events`）。
 
-        只列**活跃下发**（首版不收集回执，spec §4.2.2）。
+        默认只列**活跃下发**（和成员端展示口径一致）；`include_revoked=True` 时把已撤回的
+        一起带上，靠 `status` 区分，用于「这条当初发给谁了」的历史回溯。删除过的日程
+        （`deleted_at` 非空）两种情形都不列——那是「取消并删除」，不是「撤回」。
+
+        条目带 `canEdit`（只有发起人为 true），页面据此决定按钮显不显示，
+        而不是点下去再收 20003（spec §4.2.2）。
         """
         self.require_org_admin(member)
+        # 状态集合由布尔开关决定，不来自外部输入 —— 直接拼进 SQL 没有注入面
+        status_clause = "d.status IN ('ACTIVE', 'REVOKED')" if include_revoked else "d.status = 'ACTIVE'"
         rows = self._session.execute(
             text(
                 "SELECT e.*, d.id AS dispatch_id, d.scope_type, d.department_id,"
-                " d.recipient_count FROM event e"
-                " JOIN event_dispatch d ON d.event_id = e.id AND d.status = 'ACTIVE'"
+                " d.recipient_count, d.status AS dispatch_status,"
+                " d.created_by_member_id, d.created_by_admin_id FROM event e"
+                " JOIN event_dispatch d ON d.event_id = e.id AND " + status_clause +
                 " WHERE e.org_id = :org_id AND e.deleted_at IS NULL"
-                " AND e.start_at < :end AND e.end_at > :start ORDER BY e.start_at"
+                " AND e.at < :end AND e.at > :start ORDER BY e.at"
             ),
             {"org_id": member["org_id"], "start": start, "end": end},
         ).mappings().all()
@@ -783,13 +782,13 @@ class OrgService:
                     "title": row["title"],
                     "description": row["description"],
                     "location": row["location_name"],
-                    "startAt": row["start_at"],
-                    "endAt": row["end_at"],
-                    "allDay": bool(row["all_day"]),
+                    "at": row["at"],
                     "timezone": row["timezone"],
                     "scopeType": row["scope_type"],
                     "departmentId": row["department_id"],
                     "recipientCount": row["recipient_count"],
+                    "status": row["dispatch_status"],
+                    "canEdit": self.is_initiator(member, row),
                 }
             )
         return result
@@ -1237,9 +1236,7 @@ def _org_event_view(event, dispatch, recipient, can_edit: bool = True) -> dict:
         "title": event["title"],
         "description": event["description"],
         "location": event["location_name"],
-        "startAt": event["start_at"],
-        "endAt": event["end_at"],
-        "allDay": bool(event["all_day"]),
+        "at": event["at"],
         "timezone": event["timezone"],
         "rrule": event["rrule"],
         "read": bool(recipient and recipient["read_at"]),

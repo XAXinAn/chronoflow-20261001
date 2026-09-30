@@ -94,12 +94,20 @@ describe('合规文本入口（规范 §一）', () => {
 
 describe('权限申请（规范 §四 D6）', () => {
   it('三类权限都要有话术，且必须说清「拒绝了也能用」', () => {
-    for (const kind of ['photo', 'location', 'notification'] as const) {
+    for (const kind of ['photo', 'location', 'notification', 'microphone'] as const) {
       const rationale = PERMISSION_RATIONALE[kind];
       expect(rationale.title.length).toBeGreaterThan(0);
       expect(rationale.message).toContain('不允许');
       expect(rationale.deniedHint).toContain('其他功能不受影响');
     }
+  });
+
+  it('麦克风话术必须写明「录音转成文字后即丢弃、不保存音频」', () => {
+    // 隐私政策 §2 与第九章的权限清单都这么写；话术与文本不一致就是「声明与实际不符」
+    const rationale = PERMISSION_RATIONALE.microphone;
+    expect(rationale.message).toContain('麦克风');
+    expect(rationale.message).toContain('转完即丢弃');
+    expect(rationale.message).toContain('直接键入文字');
   });
 
   it('已经有权限就不再解释、也不再弹系统窗（否则就是「频繁弹窗」）', async () => {

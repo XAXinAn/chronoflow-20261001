@@ -198,19 +198,18 @@ public class LocalVisionEventRecognizer implements VisionEventRecognizer {
         String base = """
                 你是日程识别助手。今天是 %s，时区是 %s。
                 从图片里找出**所有**日程与待办事项，只输出 JSON，不要解释、不要 markdown 代码块：
-                {"events":[{"title":"...","kind":"EVENT","startAt":"YYYY-MM-DDTHH:mm:ss+08:00",\
-                "endAt":"...","allDay":false,"location":"...","description":"...","confidence":0.9}]}
+                {"events":[{"title":"...","kind":"EVENT","at":"YYYY-MM-DDTHH:mm:ss+08:00",\
+                "location":"...","description":"...","confidence":0.9}]}
                 规则：
                 1. 一张图里可能有多场活动，**全部列出**，不要合并成一条；
-                2. kind 只能是 EVENT（占一段时间的日程）或 TASK（一件要去做的事）：
+                2. kind 只能是 EVENT（日程）或 TASK（一件要去做的事）：
                    通知里的「假期 9/25–9/27」是 EVENT，「登记截止 9/24」「提交材料」这类是 TASK；
-                3. EVENT 的时间放 startAt / endAt；TASK 的截止时间放 dueAt
-                   （「登记截止 9/24」→ dueAt 给 2026-09-24T23:59:00+08:00）；
+                3. **日程与待办都只有一个时间**，放 at：「明天下午三点开会」→ at 给那天的 15:00；
+                   「登记截止 9/24」→ at 给 2026-09-24T23:59:00+08:00；
                    时间看不清就留空字符串，**不要猜**；
                 4. 「明天下午三点」这类相对时间，按上面的今天与时区换算成绝对时间；
-                5. **全天 / 跨天区间**把 allDay 置 true：startAt 给第一天 00:00，
-                   endAt 给**最后一天的次日 00:00**（iCalendar 约定：9/25–9/27 写成
-                   09-25T00:00:00+08:00 → 09-28T00:00:00+08:00）；
+                5. **时间段**（「假期 9/25–9/27」「下午三点到五点」）只记**起始那一刻**：
+                   at 给 09-25T00:00:00+08:00 或 15:00（只说了哪天的，给当天 00:00）；
                 6. 通知正文里的地址、网址、要求放进 description，标题只写这件事本身；
                 7. 认不出的字段留空字符串。
                 """.formatted(today, timezone);
@@ -249,13 +248,13 @@ public class LocalVisionEventRecognizer implements VisionEventRecognizer {
             if (title == null || title.isBlank()) {
                 continue;
             }
+            String atText = text(node, "at") != null ? text(node, "at")
+                    // 老模型仍会按 startAt 回：兼容一下，别丢整条
+                    : text(node, "startAt");
             result.add(new RecognizedEvent(
                     title.trim(),
-                    parseKind(text(node, "kind"), node.path("startAt")),
-                    parseTime(text(node, "startAt"), zone),
-                    parseTime(text(node, "endAt"), zone),
-                    parseTime(text(node, "dueAt"), zone),
-                    parseBoolean(node.path("allDay")),
+                    parseKind(text(node, "kind"), node.path("at")),
+                    parseTime(atText, zone),
                     blankToNull(text(node, "location")),
                     blankToNull(text(node, "description")),
                     parseDouble(node.path("confidence"))));
@@ -306,7 +305,7 @@ public class LocalVisionEventRecognizer implements VisionEventRecognizer {
         try {
             return LocalDateTime.parse(value.replace(' ', 'T')).atZone(zone).toOffsetDateTime();
         } catch (Exception ignored) {
-            // 再试「只给日期」的形式（allDay 场景）
+            // 再试「只给日期」的形式（只说了哪天的）
         }
         try {
             return LocalDate.parse(value.substring(0, 10)).atStartOfDay(zone).toOffsetDateTime();
@@ -329,17 +328,6 @@ public class LocalVisionEventRecognizer implements VisionEventRecognizer {
         }
         // 模型有时把数字/布尔写成字符串，有时反过来：统一按文本取
         return value.isValueNode() ? value.asText() : null;
-    }
-
-    private static Boolean parseBoolean(JsonNode value) {
-        if (value.isBoolean()) {
-            return value.asBoolean();
-        }
-        String text = value.isValueNode() ? value.asText("").trim().toLowerCase() : "";
-        if (text.isEmpty()) {
-            return false;
-        }
-        return text.equals("true") || text.equals("1") || text.equals("是");
     }
 
     private static Double parseDouble(JsonNode value) {

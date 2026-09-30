@@ -84,6 +84,21 @@ function gatewayFor(
       reject,
     };
   }
+  if (kind === 'microphone') {
+    /**
+     * 录音走 expo-audio（与申请权限同一个模块）。
+     *
+     * <p>动态 import：原生模块缺失的构建（Web 预览 / 缺模块的真机包）里顶层 import
+     * 会让整个 App 起不来，而这只是「语音输入」一个功能，不该有这种代价。
+     */
+    const api = () => import('expo-audio');
+    return {
+      current: async () => (await (await api()).getRecordingPermissionsAsync()).granted,
+      request: async () => (await (await api()).requestRecordingPermissionsAsync()).granted,
+      explain,
+      reject,
+    };
+  }
   return {
     current: async () => (await ImagePicker.getMediaLibraryPermissionsAsync()).granted,
     request: async () => (await ImagePicker.requestMediaLibraryPermissionsAsync()).granted,

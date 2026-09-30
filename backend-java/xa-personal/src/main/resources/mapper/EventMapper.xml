@@ -3,6 +3,10 @@
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.xatodo.personal.mapper.EventMapper">
 
+    <!--
+      单时间点（spec §4.1.2）：日程只有一个 at，判断是否与查询窗口相交就是「这个点落不落在窗口里」。
+      重复日程：只要序列还没结束（rrule_until 晚于窗口起点），就交给 RecurrenceExpander 展开后再筛。
+    -->
     <select id="selectInRange" resultType="com.xatodo.personal.entity.Event">
         SELECT *
         FROM event
@@ -14,9 +18,9 @@
         </foreach>
           AND (
             (rrule IS NOT NULL AND (rrule_until IS NULL OR rrule_until &gt; #{rangeStart}))
-            OR (rrule IS NULL AND start_at &lt; #{rangeEnd} AND end_at &gt; #{rangeStart})
+            OR (rrule IS NULL AND at &gt;= #{rangeStart} AND at &lt; #{rangeEnd})
           )
-        ORDER BY start_at
+        ORDER BY at
     </select>
 
 </mapper>

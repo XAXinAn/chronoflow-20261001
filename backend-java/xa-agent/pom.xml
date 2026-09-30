@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.xatodo</groupId>
+        <artifactId>xa-todo-backend</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>xa-agent</artifactId>
+    <name>xa-agent</name>
+    <description>智能助手「小安」：流式对话、日程工具调用与语音转写（spec §11 阶段三）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.xatodo</groupId>
+            <artifactId>xa-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.xatodo</groupId>
+            <artifactId>xa-auth</artifactId>
+        </dependency>
+        <!-- 个人日程：助手要能查、能建、能删 -->
+        <dependency>
+            <groupId>com.xatodo</groupId>
+            <artifactId>xa-personal</artifactId>
+        </dependency>
+        <!--
+            组织日程：助手只看得到当前组织下发给我的那部分，且只读。
+            因为 xa-org 已经依赖 xa-personal，助手模块只能单独成模块，不能塞进 xa-personal
+            （那样会形成 xa-personal → xa-org → xa-personal 的循环依赖）。
+        -->
+        <dependency>
+            <groupId>com.xatodo</groupId>
+            <artifactId>xa-org</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.xatodo</groupId>
+            <artifactId>xa-support</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

@@ -41,9 +41,8 @@ class EventCreate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     poiId: str | None = Field(default=None, max_length=64)
-    startAt: datetime
-    endAt: datetime
-    allDay: bool | None = None
+    # 日程只有一个时间点（spec §4.1.2）；只说哪一天的给当天 00:00
+    at: datetime
     timezone: str | None = None
     rrule: str | None = None
     status: str | None = None
@@ -63,9 +62,7 @@ class EventUpdate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     poiId: str | None = None
-    startAt: datetime | None = None
-    endAt: datetime | None = None
-    allDay: bool | None = None
+    at: datetime | None = None
     timezone: str | None = None
     rrule: str | None = None
     status: str | None = None
@@ -87,7 +84,6 @@ class TaskCreate(BaseModel):
     title: str
     description: str | None = None
     dueAt: datetime | None = None
-    allDay: bool | None = None
     priority: str | None = None
     # 图片附件的相对 URL（§4.1.3）：日历页「拍照」会直接带一张进来
     images: list[str] | None = None
@@ -104,7 +100,6 @@ class TaskUpdate(BaseModel):
     # 显式清空截止时间（回到「待安排」）。null 在 PATCH 里表示「不修改」，
     # 只靠 dueAt=null 的话，用户一旦设过截止时间就再也去不掉了。
     clearDueAt: bool | None = None
-    allDay: bool | None = None
     priority: str | None = None
     status: str | None = None
     images: list[str] | None = None
@@ -118,8 +113,7 @@ class TaskComplete(BaseModel):
 
 
 class TaskToEvent(BaseModel):
-    startAt: datetime | None = None
-    endAt: datetime | None = None
+    at: datetime
 
 
 class ReminderItem(BaseModel):
@@ -205,7 +199,7 @@ def list_all_events(
     principal: IdentityPrincipal = Depends(current_identity),
     service=Depends(_service),
 ) -> dict:
-    """我的全部日程（每个重复序列只出现一次），按开始时间倒序，可用关键字过滤。
+    """我的全部日程（每个重复序列只出现一次），按时间倒序，可用关键字过滤。
 
     给「待办 → 关联日程」用（spec §4.1.6）。**必须声明在 `/events/{id}` 之前**：
     FastAPI 按声明顺序匹配，反过来的话 `/events/all` 会被当成 id 解析。

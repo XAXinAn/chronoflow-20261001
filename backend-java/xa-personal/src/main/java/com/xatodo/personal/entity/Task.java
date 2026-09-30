@@ -51,8 +51,6 @@ public class Task {
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private OffsetDateTime dueAt;
 
-    private Boolean allDay;
-
     private String status;
 
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
@@ -144,14 +142,6 @@ public class Task {
 
     public void setDueAt(OffsetDateTime dueAt) {
         this.dueAt = dueAt;
-    }
-
-    public Boolean getAllDay() {
-        return allDay;
-    }
-
-    public void setAllDay(Boolean allDay) {
-        this.allDay = allDay;
     }
 
     public String getStatus() {

@@ -59,6 +59,9 @@ export const api = {
     adminUsername: string;
     adminPassword: string;
     adminRealName?: string;
+    /** 选填：首位拥有者的成员唯一识别 ID（学号/工号）；填了就同时建「总部」+ 一条 OWNER 成员 */
+    ownerMemberKey?: string;
+    ownerRealName?: string;
   }) => client.post<Organization>('/api/v1/admin/organizations', payload),
   updateOrganization: (id: number, payload: Record<string, unknown>) =>
     client.patch<Organization>(`/api/v1/admin/organizations/${id}`, payload),
@@ -154,15 +157,17 @@ export const api = {
   revokeDepartmentManager: (id: number, orgMemberId: number) =>
     client.del<void>(`/api/v1/org-admin/departments/${id}/managers/${orgMemberId}`),
 
-  orgEvents: (start: string, end: string) =>
-    client.get<OrgEventItem[]>('/api/v1/org-admin/events', { start, end }),
+  orgEvents: (start: string, end: string, includeRevoked = false) =>
+    client.get<OrgEventItem[]>('/api/v1/org-admin/events', {
+      start,
+      end,
+      includeRevoked: includeRevoked ? true : undefined,
+    }),
   dispatchOrgEvent: (payload: {
     title: string;
     description?: string;
     location?: string;
-    startAt: string;
-    endAt: string;
-    allDay?: boolean;
+    at: string;
     timezone?: string;
     scopeType: string;
     departmentId?: number;
@@ -171,7 +176,7 @@ export const api = {
   }) => client.post<OrgEventItem>('/api/v1/org-admin/events', payload),
   updateOrgEvent: (
     eventId: number,
-    payload: { title?: string; location?: string; startAt?: string; endAt?: string; redispatch?: boolean },
+    payload: { title?: string; location?: string; at?: string; redispatch?: boolean },
   ) => client.patch<OrgEventItem>(`/api/v1/org-admin/events/${eventId}`, payload),
   revokeOrgEvent: (eventId: number) =>
     client.post<void>(`/api/v1/org-admin/events/${eventId}/revoke`),

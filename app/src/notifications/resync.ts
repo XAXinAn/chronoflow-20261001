@@ -23,8 +23,7 @@ export function groupScheduleEntries(entries: ReminderScheduleEntry[]): Reminder
     const key = `${entry.targetType}:${entry.targetId}`;
     const existing = grouped.get(key);
     const occurrence = {
-      startAt: entry.startAt,
-      allDay: entry.allDay,
+      at: entry.at,
       timezone: entry.timezone,
       occurrenceDate: entry.occurrenceDate ?? null,
     };

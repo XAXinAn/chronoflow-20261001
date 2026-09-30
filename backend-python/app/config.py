@@ -61,6 +61,24 @@ class Settings:
     vision_timeout: float
     vision_structured_output: str
     vision_max_attempts: int
+    # 智能助手「小安」（spec §11 阶段三）。环境变量名与 Java 版一字不差，
+    # 两版可以指向同一个模型、共用同一份 .env。
+    agent_base_url: str
+    agent_api_key: str
+    agent_model: str
+    agent_enable_thinking: bool
+    agent_max_tokens: int
+    agent_timeout: float
+    agent_max_tool_rounds: int
+    agent_max_history_messages: int
+    agent_event_limit: int
+    agent_timezone: str
+    agent_asr_url: str
+    agent_asr_api_key: str
+    agent_asr_model: str
+    agent_asr_timeout: float
+    agent_asr_language: str
+    agent_asr_max_bytes: int
 
 
 def load_settings() -> Settings:
@@ -121,6 +139,31 @@ def load_settings() -> Settings:
         # json_object（支持面最广）/ json_schema（约束最强）/ none（只靠提示词，排查用）
         vision_structured_output=os.getenv("XATODO_VISION_STRUCTURED_OUTPUT", "json_object"),
         vision_max_attempts=_int("XATODO_VISION_MAX_ATTEMPTS", 2),
+        # 智能助手「小安」（spec §11 阶段三）。api-key 留空 = 未接入：
+        # /ai/agent/chat 直接返回 90002，/system/info 的 aiAgentEnabled=false。
+        agent_base_url=os.getenv(
+            "XATODO_AGENT_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        ),
+        agent_api_key=os.getenv("XATODO_AGENT_API_KEY", ""),
+        agent_model=os.getenv("XATODO_AGENT_MODEL", "qwen3.6-flash"),
+        agent_enable_thinking=_bool("XATODO_AGENT_ENABLE_THINKING", False),
+        agent_max_tokens=_int("XATODO_AGENT_MAX_TOKENS", 600),
+        agent_timeout=float(os.getenv("XATODO_AGENT_TIMEOUT_SECONDS", "90")),
+        agent_max_tool_rounds=_int("XATODO_AGENT_MAX_TOOL_ROUNDS", 4),
+        agent_max_history_messages=_int("XATODO_AGENT_MAX_HISTORY_MESSAGES", 10),
+        agent_event_limit=_int("XATODO_AGENT_EVENT_LIMIT", 20),
+        # 解释「明天下午三点」这类相对时间用的时区，与 Java 版一致
+        agent_timezone=os.getenv("XATODO_AGENT_TIMEZONE", "Asia/Shanghai"),
+        agent_asr_url=os.getenv(
+            "XATODO_ASR_URL",
+            "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+        ),
+        agent_asr_api_key=os.getenv("XATODO_ASR_API_KEY", ""),
+        agent_asr_model=os.getenv("XATODO_ASR_MODEL", "qwen3-asr-flash"),
+        agent_asr_timeout=float(os.getenv("XATODO_ASR_TIMEOUT_SECONDS", "60")),
+        agent_asr_language=os.getenv("XATODO_ASR_LANGUAGE", ""),
+        # 录音上限 60 秒，正常也就几百 KB；超了多半是传错了文件
+        agent_asr_max_bytes=_int("XATODO_ASR_MAX_BYTES", 5 * 1024 * 1024),
     )
 
 

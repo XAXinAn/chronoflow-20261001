@@ -1,4 +1,4 @@
-import { timeInZone } from '../domain/eventDraft';
+import { formatEventWhen } from '../domain/agenda';
 import {
   planOccurrenceReminders,
   reminderNotificationBody,
@@ -115,8 +115,7 @@ export function createReminderScheduler({
                   at: reminder.at,
                   title: request.title,
                   body: reminderNotificationBody({
-                    allDay: reminder.allDay,
-                    startTime: timeInZone(reminder.startAt, reminder.timezone),
+                    when: formatEventWhen(reminder.atIso, reminder.timezone),
                     location: request.location ?? null,
                   }),
                   data: {

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { userFacingError } from '../domain/errors';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ApiError } from '../api/client';
 import { EmptyState, PrimaryButton, Screen } from '../components/ui';
 import { useAppSessionState, useAppTheme } from '../context/AppContext';
 import { OrgEventsScreen } from './OrgEventsScreen';
@@ -61,7 +61,7 @@ export function OrgTabScreen({
     try {
       await claimOrgAccount(active.orgCode, active.memberKey);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : '进入组织失败，请重新添加组织账号');
+      setError(userFacingError(cause, '进入组织失败，请重新添加组织账号'));
     }
   }, [active, claimOrgAccount]);
 

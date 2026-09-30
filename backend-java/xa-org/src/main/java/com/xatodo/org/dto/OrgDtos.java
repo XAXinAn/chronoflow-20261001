@@ -141,9 +141,8 @@ public final class OrgDtos {
             @Size(max = 255) String location,
             /** 详细地址：地图只能定位到楼，教室/门牌由用户手填，与地点都可空（spec §5.9） */
             @Size(max = 255) String locationDetail,
-            @NotNull(message = "开始时间不能为空") OffsetDateTime startAt,
-            @NotNull(message = "结束时间不能为空") OffsetDateTime endAt,
-            Boolean allDay,
+            // 单时间点：只说了哪天的给当天 00:00（spec §4.1.2）
+            @NotNull(message = "日程时间不能为空") OffsetDateTime at,
             @Size(max = 64) String timezone,
             @Size(max = 512) String rrule,
             @NotBlank(message = "下发范围不能为空") String scopeType,
@@ -164,9 +163,7 @@ public final class OrgDtos {
                                    String description,
                                    String location,
                                    String locationDetail,
-                                   OffsetDateTime startAt,
-                                   OffsetDateTime endAt,
-                                   Boolean allDay,
+                                   OffsetDateTime at,
                                    String timezone,
                                    String rrule,
                                    boolean read,
@@ -214,15 +211,16 @@ public final class OrgDtos {
                                         String description,
                                         @Size(max = 255) String location,
                                         @Size(max = 255) String locationDetail,
-                                        OffsetDateTime startAt,
-                                        OffsetDateTime endAt,
-                                        Boolean allDay,
+                                        OffsetDateTime at,
                                         @Size(max = 64) String timezone,
                                         Boolean redispatch) {
     }
 
     /**
      * 组织管理端（Web）的组织日程条目：比成员侧多出下发范围与回执统计（spec §4.3 组织日历管理）。
+     *
+     * <p>撤回的下发默认不出现在列表里（与成员端展示口径一致）；带 {@code includeRevoked} 查历史时
+     * 会一起返回，靠 {@link #status()} 区分。
      */
     public record OrgEventManageItem(Long eventId,
                                      Long dispatchId,
@@ -230,13 +228,23 @@ public final class OrgDtos {
                                      String description,
                                      String location,
                                      String locationDetail,
-                                     OffsetDateTime startAt,
-                                     OffsetDateTime endAt,
-                                     Boolean allDay,
+                                     OffsetDateTime at,
                                      String timezone,
                                      String scopeType,
                                      Long departmentId,
-                                     int recipientCount) {
+                                     int recipientCount,
+                                     /**
+                                      * 下发状态：`ACTIVE`（生效中）/ `REVOKED`（已撤回，仅历史视图可见）。
+                                      */
+                                     String status,
+                                     /**
+                                      * 当前身份能不能改 / 撤 / 删这条。
+                                      *
+                                      * <p>与成员侧 {@link OrgEventResponse#canEdit()} 同一条规则：只有**发起人本人**为
+                                      * true（组织管理员也不行，spec §4.2.2）。页面据此决定「撤回 / 删除」显不显示，
+                                      * 而不是点下去再收 20003。
+                                      */
+                                     boolean canEdit) {
     }
 
     // -------------------------------------------------------------- 组织设置

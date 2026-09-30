@@ -45,7 +45,7 @@ public final class ReminderDtos {
      * 哪些日程/待办要在什么时刻响几声」——重复日程必须按**展开后的每一次实例**给，
      * 否则「每周五交周报」在客户端只排得到第一次。
      *
-     * <p>业务对象的时间信息一并返回（标题 / 地点 / 开始时刻 / 全天 / 时区），
+     * <p>业务对象的时间信息一并返回（标题 / 地点 / 时间点 / 时区），
      * 这样 App 一次请求就能把通知排完，不必再逐条去查日程详情。
      */
     public record ReminderScheduleEntry(String targetType,
@@ -54,8 +54,7 @@ public final class ReminderDtos {
                                         LocalDate occurrenceDate,
                                         String title,
                                         String locationName,
-                                        java.time.Instant startAt,
-                                        boolean allDay,
+                                        java.time.Instant at,
                                         String timezone,
                                         java.util.List<Integer> minutesBefore) {
     }

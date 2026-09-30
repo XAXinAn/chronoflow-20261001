@@ -1,3 +1,4 @@
+import type { AgentApprovalPayload } from './agent';
 import type { ApiClient } from './client';
 import { File } from 'expo-file-system';
 import type {
@@ -19,6 +20,7 @@ import type {
   ReminderScheduleEntry,
   SearchResultItem,
   SmsLoginResponse,
+  SystemInfo,
   Task,
   TokenResponse,
   UploadedImage,
@@ -36,9 +38,8 @@ export interface CalendarSummary {
 /** 日程的写请求体。新建与编辑共用，避免两边字段漂移（spec §4.1.4）。 */
 export interface EventWritePayload {
   title: string;
-  startAt: string;
-  endAt: string;
-  allDay?: boolean;
+  /** 日程只有一个时间点（spec §4.1.2）；只说哪天的给当天 00:00 */
+  at: string;
   timezone?: string;
   rrule?: string | null;
   description?: string | null;
@@ -75,7 +76,6 @@ export interface TaskWritePayload {
    * 否则用户设过截止时间后就再也去不掉了。
    */
   clearDueAt?: boolean;
-  allDay?: boolean;
   priority?: string;
   status?: string;
   /** 重复规则 RRULE；空串表示「不重复」（服务端把空白一律存成 null） */
@@ -84,6 +84,13 @@ export interface TaskWritePayload {
 
 export function createEndpoints(client: ApiClient) {
   return {
+    /**
+     * 授权答复：写工具在对话流里**阻塞等这个答复**，答复进来它才继续跑。
+     * 所以这条请求要能在流还没结束时发出去。
+     */
+    approveAgentAction: (payload: AgentApprovalPayload) =>
+      client.post<void>('/api/v1/ai/agent/approvals', payload),
+
     // ------------------------------------------------------------- 认证
     sendSmsCode: (phone: string) =>
       client.post<{ expiresIn: number; debugCode?: string }>(
@@ -179,7 +186,7 @@ export function createEndpoints(client: ApiClient) {
     eventsInRange: (start: string, end: string) =>
       client.get<EventOccurrence[]>('/api/v1/events', { start, end }),
     /**
-     * 我的**全部日程**（每个重复序列只出现一次），按开始时间倒序，可按关键字搜。
+     * 我的**全部日程**（每个重复序列只出现一次），按时间倒序，可按关键字搜。
      *
      * 「待办 → 关联日程」的候选列表用它（spec §4.1.6）：候选不受时间窗口限制
      * ——「上个月那个会」也可能要挂一条待办上去 —— 并且列表长了必须能搜。
@@ -196,7 +203,11 @@ export function createEndpoints(client: ApiClient) {
      */
     createEvent: (payload: EventWritePayload) => client.post<EventDetail>('/api/v1/events', payload),
     eventDetail: (eventId: number) => client.get<EventDetail>(`/api/v1/events/${eventId}`),
-    updateEvent: (eventId: number, payload: EventWritePayload) =>
+    /**
+     * 编辑日程。PATCH 的语义是「只改给到的字段」，所以这里收的是**部分**字段：
+     * 助手改一条日程时只会带上真正要改的那几项（不传的字段保持原样）。
+     */
+    updateEvent: (eventId: number, payload: Partial<EventWritePayload>) =>
       client.patch<EventDetail>(`/api/v1/events/${eventId}`, payload),
     deleteEvent: (eventId: number, scope?: 'THIS' | 'FUTURE' | 'ALL', occurrenceDate?: string) =>
       client.del<void>(`/api/v1/events/${eventId}`, {
@@ -248,6 +259,20 @@ export function createEndpoints(client: ApiClient) {
       form.append('file', new File(uri) as unknown as Blob);
       return client.upload<UploadedImage>('/api/v1/uploads/images', form);
     },
+    /**
+     * 系统元信息（免登录）。App 用它判断「小安」有没有接入模型（aiAgentEnabled），
+     * 避免界面看起来能用、点了却装死（spec §11 阶段三）。
+     */
+    systemInfo: () => client.get<SystemInfo>('/api/v1/system/info'),
+    /**
+     * 语音转文字（spec §11 阶段三）。录音上限 60 秒；音频只在服务端内存里转 base64
+     * 转发给百炼，**不落盘**。返回的文本由 App 填进输入框，不自动发送。
+     */
+    transcribe: (uri: string) => {
+      const form = new FormData();
+      form.append('file', new File(uri) as unknown as Blob);
+      return client.upload<{ text: string; language: string | null }>('/api/v1/ai/transcribe', form);
+    },
     /** 提交意见反馈（spec §4.1.9）。images 是上传通道返回的相对 URL 数组。 */
     submitFeedback: (payload: {
       category: FeedbackCategory;
@@ -293,16 +318,14 @@ export function createEndpoints(client: ApiClient) {
         title?: string;
         description?: string;
         location?: string;
-        startAt?: string;
-        endAt?: string;
-        allDay?: boolean;
+        at?: string;
         timezone?: string;
       },
     ) => client.patch<OrgEvent>(`/api/v1/org-admin/events/${eventId}`, payload),
     /** 删组织日程（软删 + 下发记录置为已撤回）；同样只有发起人能删。 */
     deleteOrgEvent: (eventId: number) =>
       client.del<void>(`/api/v1/org-admin/events/${eventId}`),
-    /** 撤回下发：成员端随即不再展示。已有回执时服务端会拒绝（spec §4.2.2）。 */
+    /** 撤回下发：成员端随即不再展示；管理端带 `includeRevoked` 仍能翻到这条历史（spec §4.2.2）。 */
     revokeOrgEvent: (eventId: number) =>
       client.post<void>(`/api/v1/org-admin/events/${eventId}/revoke`),
     markOrgEventRead: (eventId: number) =>
