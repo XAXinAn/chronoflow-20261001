@@ -19,10 +19,13 @@
 
 set -euo pipefail
 
-SSH_KEY="${CHRONOFLOW_DEPLOY_KEY:-$HOME/develop/workspace/XAXINAN.pem}"
-SSH_HOST="${CHRONOFLOW_DEPLOY_HOST:-root@8.136.20.182}"
-REMOTE_DIR="/opt/chronoflow/web/downloads"
-PUBLIC_BASE="${CHRONOFLOW_PUBLIC_BASE:-http://8.136.20.182:8088}"
+# 默认指向**新环境**（2026-10-01 建，新标识那套）。要往老环境发就覆盖：
+#   CHRONOFLOW_DEPLOY_KEY=~/develop/workspace/XAXINAN.pem \
+#   CHRONOFLOW_DEPLOY_HOST=root@8.136.20.182 CHRONOFLOW_PUBLIC_BASE=http://8.136.20.182:8088
+SSH_KEY="${CHRONOFLOW_DEPLOY_KEY:-$HOME/.ssh/xaxinan-new.pem}"
+SSH_HOST="${CHRONOFLOW_DEPLOY_HOST:-root@60.205.142.205}"
+REMOTE_DIR="${CHRONOFLOW_DOWNLOAD_DIR:-/opt/chronoflow/web/downloads}"
+PUBLIC_BASE="${CHRONOFLOW_PUBLIC_BASE:-http://60.205.142.205:8080}"
 
 APK="${1:-}"
 VERSION_NAME="${2:-}"
@@ -40,7 +43,9 @@ fi
 [ -f "$APK" ] || { echo "找不到安装包：$APK" >&2; exit 1; }
 case "$VERSION_CODE" in (*[!0-9]*) echo "版本号必须是整数：$VERSION_CODE" >&2; exit 2;; esac
 
-FILE_NAME="app-${VERSION_NAME}.apk"
+# 文件名要能自证身份：**产品名 + 版本名**。以前叫 `app-0.0.0.apk`，
+# 下载下来一堆包根本分不清是哪个软件的哪一版（用户当场问过）。
+FILE_NAME="${CHRONOFLOW_APK_NAME:-chronoflow-${VERSION_NAME}.apk}"
 SIZE_BYTES=$(stat -c%s "$APK")
 SHA256=$(sha256sum "$APK" | awk '{print $1}')
 

@@ -34,7 +34,7 @@ chronoflow/
 | 阶段二 backend-python | 完成（契约覆盖率 100%，**76 项**测试） |
 | CI 与 API 契约测试 | 完成（GitHub Actions） |
 | 上架合规（隐私政策 / 注销 / 权限告知） | 完成（spec §12，`scripts/check_compliance.py` 20 项门禁已进 CI） |
-| 生产部署编排（Dockerfile / docker-compose / Nginx） | 完成，已部署到 `http://8.136.20.182:8088` |
+| 生产部署编排（Dockerfile / docker-compose / Nginx） | 完成，新环境已部署到 `http://60.205.142.205:8080`（老环境 `http://8.136.20.182:8088` 仍在跑，见 AGENTS §9.0） |
 
 ## API 契约
 

@@ -120,6 +120,10 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+    volumes:
+      # 应用内更新的安装包（spec §4.1.11）：挂在静态目录下，换包不用重建镜像。
+      # 宿主目录 = ./web/downloads（发布用 scripts/publish_apk.sh 往这里传）。
+      - ./web/downloads:/usr/share/nginx/html/downloads:ro
     ports:
       - "${WEB_HOST_PORT:-8088}:80"
 

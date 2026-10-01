@@ -117,8 +117,8 @@ adb.exe reverse tcp:8081 tcp:8081
 adb.exe reverse tcp:8080 tcp:8080
 ```
 
-后端地址在 `app.json` 的 `extra.apiBaseUrl`，当前指向线上演示环境
-`http://8.136.20.182:8088`（与 Web 后台同源）。本地联调时改成
+后端地址在 `app.json` 的 `extra.apiBaseUrl`，当前指向**新环境**
+`http://60.205.142.205:8080`（与 Web 后台同源；老环境是 `http://8.136.20.182:8088`，见 AGENTS §9.0）。本地联调时改成
 `http://localhost:8080`（配合上面的 `adb reverse`）或 `http://10.0.2.2:8080`。
 
 **iOS 模拟器在当前环境不可用**（需要 macOS + Xcode），只能走真机 Expo Go 或 EAS 云构建。

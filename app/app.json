@@ -68,7 +68,7 @@
       "./plugins/withCleartextHttp"
     ],
     "extra": {
-      "apiBaseUrl": "http://8.136.20.182:8088"
+      "apiBaseUrl": "http://60.205.142.205:8080"
     }
   }
 }
