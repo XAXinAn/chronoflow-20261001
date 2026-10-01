@@ -71,6 +71,12 @@ Kotlin/Swift 原生模块。
 （4.7MB / 10.9MB / 586KB / 26KB，md5 与源文件一致）——**不用出整包就能确认「模型进没进包」**，
 以后每次改资源都值得先跑这一遍。release 包也出好了：**166MB**（上一版 149MB + 模型 16MB），
 桌面文件 `chronoflow-0.0.2.apk`（versionCode 3），模型确实在包里（见坑 9）。
+**已发布上线**：包传到新服务器 `/opt/chronoflow/web/downloads/chronoflow-0.0.2.apk`
+（sha256 与本地一致），`.env` 里 9 行 `CHRONOFLOW_APP_RELEASE_*` 换成 0.0.2 / versionCode 3
+（旧值备份在 `/opt/chronoflow/.env.bak.20261001T134943Z`），重启后端后
+`GET /api/v1/system/app-release` 已返回 0.0.2、`/downloads/chronoflow-0.0.2.apk` 返回 200。
+⚠️ **新服务器上是 `docker compose`（v2 插件），没有 `docker-compose`**——AGENTS 第十五轮写的
+`docker-compose up -d backend` 只适用于老服务器，敲错了会报 `command not found`。
 
 ### 还没做
 
