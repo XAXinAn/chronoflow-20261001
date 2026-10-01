@@ -1408,7 +1408,32 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 
 ## 9. 快速自检
 
-### 9.0 已部署环境（2026-09-27）
+### 9.0 已部署环境
+
+**两台都在跑，用的是同一份代码的两个版本（注意别搞混）**：
+
+| | 新环境（**推荐用它**，2026-10-01 建） | 老环境（2026-09-27 建） |
+| --- | --- | --- |
+| 地址 | **http://60.205.142.205:8080** | http://8.136.20.182:8088 |
+| SSH | `~/.ssh/xaxinan-new.pem`（另一把密钥；`/mnt/c/Users/jiang/Downloads/XAXINAN.pem` 拷来的） | `~/develop/workspace/XAXINAN.pem` |
+| 标识 | **新名字那套**：`/opt/chronoflow`、容器 `chronoflow-*`、库/用户 `chronoflow`、环境变量 `CHRONOFLOW_*`、jar `chronoflow-bootstrap-*.jar` | 旧名字那套：`/opt/xatodo`、`xatodo-*`、`XATODO_*`、`xa-bootstrap-*.jar` |
+| 前端 | **容器里的 nginx**（`chronoflow-web`，宿主 8080→容器 80） | 宿主 nginx（80/443 被宝塔占着，才用 8088） |
+| 机器 | Ubuntu 26.04，**2C/1.7G**（已加 2G swap） | Ubuntu 22.04，2C/3.4G |
+| 数据 | 干净环境（0 组织 / 0 账号 / 1 超管）；节假日 39 条 | C 方案已清空（0 组织 / 0 账号 / 1 超管） |
+
+**新环境特有的三件事（都踩过）**：
+
+1. **Docker Hub 拉不动** → `/etc/docker/daemon.json` 配了国内加速
+   `{"registry-mirrors":["https://docker.1ms.run","https://docker.xuanyuan.me"]}`（老服务器也是这两个）。
+2. **GitHub 完全不可达**（raw / release 都连不上）→ 节假日数据源换成了 jsdelivr 镜像
+   （`.env` 里的 `HOLIDAY_SYNC_BASE_URL=https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master`）。
+3. **机器没有 IPv6 出口，而 CDN 域名常常只回 AAAA** → JVM 直接 `ConnectException`（同机 `curl -4` 却是 200，
+   极易误判成对方挂了）。`deploy/backend/Dockerfile` 的 `JAVA_OPTS` 已加 `-Djava.net.preferIPv4Stack=true`。
+
+**安全组**：阿里云入方向只需要放通 Web 端口（新环境是 **8080/8080**，源 `0.0.0.0/0`）。
+**放行前先在机器上自测**（`curl 127.0.0.1:8080`），能区分「服务没起来」还是「安全组没放」。
+
+老环境（8.136.20.182）的详情：
 
 线上演示环境：**http://8.136.20.182:8088**（Web 后台与 API 同源；App 的 `apiBaseUrl` 也指这里）。
 
