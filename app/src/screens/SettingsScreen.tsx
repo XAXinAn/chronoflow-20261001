@@ -224,6 +224,19 @@ export function SettingsScreen({
             subtitle="实名认证、邮箱绑定（两个都可选）"
             onPress={onOpenAccountSecurity}
           />
+          <ListSeparator inset={52} />
+          {/*
+            账号注销放这一组、而不是原来的「隐私与合规」：它是**账号操作**，不是读文档。
+            夹在五份协议中间时，找它像在翻条款。
+          */}
+          <ListRow
+            leading={<RowIcon name="trash-outline" tone="danger" />}
+            title="账号注销"
+            subtitle="删除个人信息并停用账号"
+            tone="danger"
+            onPress={onOpenDeletion}
+            trailing={<Chevron />}
+          />
         </ListGroup>
       </View>
 
@@ -330,19 +343,10 @@ export function SettingsScreen({
           <ListRow
             leading={<RowIcon name="share-social-outline" />}
             title={LEGAL_DOCS['shared-info-with-third-parties'].title}
-            // 接入方变多了（高德 / 短信 / 百炼大模型），这里要跟着走，
+            // 接入方变多了（高德 / 短信 / 邮件推送 / 实人认证 / 百炼大模型），这里要跟着走，
             // 否则用户点进去看到的清单与入口描述对不上，等于「声明与实际不符」
-            subtitle="高德地图、短信服务、通义千问"
+            subtitle="高德地图、短信与邮件推送、实人认证、通义千问"
             onPress={() => onOpenLegal('shared-info-with-third-parties')}
-            trailing={<Chevron />}
-          />
-          <ListSeparator inset={52} />
-          <ListRow
-            leading={<RowIcon name="trash-outline" tone="danger" />}
-            title="账号注销"
-            subtitle="删除个人信息并停用账号"
-            tone="danger"
-            onPress={onOpenDeletion}
             trailing={<Chevron />}
           />
         </ListGroup>
