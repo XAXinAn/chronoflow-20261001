@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   binarize,
+  clampRect,
   connectedComponents,
   filterBoxes,
   mapBoxToImage,
@@ -30,6 +31,8 @@ describe('DB 检测后处理', () => {
   it('检测输入规划：等比缩到最长边 + 补边到 32 的倍数', () => {
     const plan = planDetInput(1920, 1080, 960, 32);
     expect(plan.scale).toBeCloseTo(0.5);
+    expect(plan.scaledWidth).toBe(960);
+    expect(plan.scaledHeight).toBe(540);
     expect(plan.inputWidth).toBe(960);
     expect(plan.inputHeight).toBe(544); // 540 → 补到 544
     expect(plan.padX).toBe(0);
@@ -38,8 +41,24 @@ describe('DB 检测后处理', () => {
     // 小图不放大（宁可保持原尺寸，也不要把噪声放大成字）
     const small = planDetInput(320, 200, 960, 32);
     expect(small.scale).toBe(1);
+    expect(small.scaledWidth).toBe(320);
+    expect(small.scaledHeight).toBe(200);
     expect(small.inputWidth).toBe(320);
     expect(small.inputHeight).toBe(224);
+  });
+
+  it('夹取坐标：探出边界的框要夹回来，起点取整、长宽至少 1', () => {
+    const bounds = { width: 100, height: 50 };
+    // 左上探出去（外扩的常见结果）：起点变 0、右下角不变
+    expect(clampRect({ x: -8.4, y: -3.2, width: 40, height: 20 }, bounds))
+      .toEqual({ x: 0, y: 0, width: 40, height: 20 });
+    // 右下探出去：宽度收到边界（100 - 20），起点带小数要向下取整
+    expect(clampRect({ x: 20.7, y: 10.9, width: 200, height: 200 }, bounds))
+      .toEqual({ x: 20, y: 10, width: 80, height: 40 });
+    // 起点已经贴在右下角：也不能给出 0 宽 / 0 高（裁剪器不接受空框）
+    const pinned = clampRect({ x: 100, y: 50, width: 10, height: 10 }, bounds);
+    expect(pinned.width).toBe(1);
+    expect(pinned.height).toBe(1);
   });
 
   it('二值化 + 连通域：两块分开的字各成一个框，边界对得上', () => {

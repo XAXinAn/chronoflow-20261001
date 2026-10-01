@@ -45,7 +45,7 @@ public class AgentTextParseController {
     }
 
     /**
-     * @param text     OCR 出来的文字（手机端 ML Kit 的结果）
+     * @param text     OCR 出来的文字（手机端 PaddleOCR 的结果）
      * @param today    客户端认为的「今天」（`YYYY-MM-DD`）；不给就按服务端日期算
      * @param timezone 时区；不给按 Asia/Shanghai
      */

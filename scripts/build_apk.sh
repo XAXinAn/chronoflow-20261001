@@ -88,6 +88,12 @@ PY
 # 每次构建前重新打一遍补丁：node_modules 会被 npm 重装覆盖，补丁不能只打一次。
 bash "$ROOT/scripts/patch-third-party-gradle.sh"
 
+# 端侧 OCR 的 PaddleOCR 模型（16MB）不进版本库（见 .gitignore 与 fetch_ppocr_models.sh）。
+# 缺了它们，Metro 会在打包阶段报 `Unable to resolve module ...onnx`，看着像代码问题。
+# 这个脚本是幂等的：文件齐了只做体积校验（不联网），缺了才下载。
+echo "→ 确认端侧 OCR 模型（PaddleOCR PP-OCRv4）"
+bash "$ROOT/scripts/fetch_ppocr_models.sh"
+
 if [ "$BUILD_TYPE" = "release" ]; then
   TASK=":app:assembleRelease"
   OUT="$ANDROID/app/build/outputs/apk/release/app-release.apk"

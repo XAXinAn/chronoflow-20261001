@@ -34,7 +34,7 @@ import {
 import { APP_TIMEZONE, buildMonthGrid, dateKeyToIso } from '../domain/calendar';
 import { holidayName, toHolidayMarks, yearsSpanned } from '../domain/holiday';
 import { resultBadges, resultDateKey, resultSubtitle, resultTypeLabel } from '../domain/search';
-import { DeviceRecognitionUnavailable, ocrImageText } from '../vision/onDevice';
+import { DeviceRecognitionUnavailable, ocrImageText, warmUpOcrEngine } from '../vision/onDevice';
 
 /** 检索防抖：每敲一个字就发一次请求既费流量，也会让结果闪。 */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -102,6 +102,9 @@ export function AgendaScreen({
 
   const openSourceSheet = useCallback(() => {
     setSourceOpen(true);
+    // 用户已经明确要识别图片了：趁「选相册还是拍照」这段交互把模型 load 起来，
+    // 别让十几 MB 的 session 全落在「拍完照等结果」那几秒里（失败也无所谓，识别时会重试）
+    void warmUpOcrEngine();
     sheetAnim.setValue(0);
     Animated.timing(sheetAnim, {
       toValue: 1,
@@ -255,7 +258,7 @@ export function AgendaScreen({
     let ocrMs = 0;
     let parseMs = 0;
     try {
-      // ① 端侧 OCR：中文通知这类图，手机本地的 ML Kit 又准又不花钱
+      // ① 端侧 OCR：中文通知这类图，手机本地的 PaddleOCR 又准又不花钱（图片不出手机）
       const ocrStart = Date.now();
       const ocrText = await ocrImageText(picked.assets[0].uri);
       ocrMs = Date.now() - ocrStart;

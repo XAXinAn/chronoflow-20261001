@@ -43,6 +43,9 @@ export interface DetBox extends Rect {
  */
 export interface DetPlan {
   scale: number;
+  /** 等比缩放后的尺寸（送进原生缩放器读像素用，比调用方自己按 scale 算更不容易算错） */
+  scaledWidth: number;
+  scaledHeight: number;
   inputWidth: number;
   inputHeight: number;
   /** 左边 / 上边补了多少像素（识别框映射回原图时要减掉） */
@@ -63,6 +66,8 @@ export function planDetInput(
   const inputHeight = Math.ceil(scaledHeight / stride) * stride;
   return {
     scale,
+    scaledWidth,
+    scaledHeight,
     inputWidth,
     inputHeight,
     padX: Math.floor((inputWidth - scaledWidth) / 2),
@@ -200,6 +205,29 @@ export function mapBoxToImage(box: Rect, plan: DetPlan): Rect {
     y: (box.y - plan.padY) / plan.scale,
     width: box.width / plan.scale,
     height: box.height / plan.scale,
+  };
+}
+
+/**
+ * 把矩形夹进图片范围内（起点向下取整）。
+ *
+ * <p>外扩 + 映射回原图之后，框经常会**探出图片边界**（左上角变负、右下角超出）。裁剪器
+ * 对这种框的反应是直接抛错或者裁出一块空白，所以送进裁剪器之前必须夹一次。
+ * 起点取整是给 `expo-image-manipulator` 的：它的 `crop` 只接受整数原点。
+ * 夹完仍然保证 `width/height ≥ 1`——`crop` 不接受空框，而「一个像素高的文字框」
+ * 我们宁可让它识别失败，也不要在这一层抛异常把整张图废掉。
+ */
+export function clampRect(
+  box: Rect,
+  bounds: { width: number; height: number },
+): Rect {
+  const x = Math.max(0, Math.floor(box.x));
+  const y = Math.max(0, Math.floor(box.y));
+  return {
+    x,
+    y,
+    width: Math.max(1, Math.min(Math.round(box.width), bounds.width - x)),
+    height: Math.max(1, Math.min(Math.round(box.height), bounds.height - y)),
   };
 }
 

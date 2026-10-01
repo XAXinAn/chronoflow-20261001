@@ -9,6 +9,7 @@ import {
   base64ToBytes,
   decodeJpegBytes,
   padToCanvas,
+  rotate180,
   resizeNearest,
   toChwTensor,
 } from '../src/vision/ppocr/pixels';
@@ -96,5 +97,36 @@ describe('端侧 OCR 的取像素', () => {
     expect(toChwTensor(white, REC_MEAN, REC_STD)[0]).toBeCloseTo(1, 4);
     const black = { width: 1, height: 1, data: new Uint8Array([0, 0, 0, 255]) };
     expect(toChwTensor(black, REC_MEAN, REC_STD)[0]).toBeCloseTo(-1, 4);
+  });
+
+  it('通道顺序：识别头要 BGR，别照抄检测头那套 RGB（搞反了不报错、只是掉识别率）', () => {
+    const plane = 4;
+    const rgb = toChwTensor(sample(), REC_MEAN, REC_STD, 'rgb');
+    const bgr = toChwTensor(sample(), REC_MEAN, REC_STD, 'bgr');
+    // 左上角是纯红：RGB 下第 0 个平面是 1（白），BGR 下是 -1（黑）
+    expect(rgb[0]).toBeCloseTo(1, 4);
+    expect(bgr[0]).toBeCloseTo(-1, 4);
+    // 第 2 个平面正好相反
+    expect(rgb[plane * 2]).toBeCloseTo(-1, 4);
+    expect(bgr[plane * 2]).toBeCloseTo(1, 4);
+    // 绿通道在哪个顺序下都不动
+    expect(rgb[plane]).toBeCloseTo(bgr[plane]!, 6);
+    // 默认是 RGB（不传 order 时不能悄悄变成 BGR）
+    expect([...toChwTensor(sample(), REC_MEAN, REC_STD)]).toEqual([...rgb]);
+  });
+
+  it('旋转 180°：像素对角互换（倒着的文字转正要用它）', () => {
+    const rotated = rotate180(sample());
+    expect(rotated.width).toBe(2);
+    expect(rotated.height).toBe(2);
+    // 原图：左上红 / 右上绿 / 左下蓝 / 右下白 → 转完正好反过来
+    expect([...rotated.data.slice(0, 4)]).toEqual([255, 255, 255, 255]);
+    expect([...rotated.data.slice(4, 8)]).toEqual([0, 0, 255, 255]);
+    expect([...rotated.data.slice(8, 12)]).toEqual([0, 255, 0, 255]);
+    expect([...rotated.data.slice(12, 16)]).toEqual([255, 0, 0, 255]);
+    // 转两次回到原样
+    expect([...rotate180(rotated).data]).toEqual([...sample().data]);
+    // 原图不被改（纯函数）
+    expect([...rotate180(rotated).data]).toEqual([...sample().data]);
   });
 });

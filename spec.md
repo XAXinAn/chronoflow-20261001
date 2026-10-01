@@ -429,7 +429,7 @@
 ```
 点「点此上传图片，一键添加日程」→ 选择：相册上传 / 拍照上传
    ↓
-端侧 OCR（ML Kit 中文）：图片 → 文字。**图片不出手机**，上行的只有文字
+端侧 OCR（PaddleOCR PP-OCRv4，端侧 ONNX Runtime）：图片 → 文字。**图片不出手机**，上行的只有文字
    ↓
 POST /ai/events/parse-text：文字 → 0..N 条日程草稿（`at` 可以为空）
    ↓
@@ -437,9 +437,14 @@ POST /ai/events/parse-text：文字 → 0..N 条日程草稿（`at` 可以为空
 ```
 
 - **两段式，图片不出手机**：
-  1. **端侧 OCR**（`app/src/vision/`，`@react-native-ml-kit/text-recognition`）：图片 → 文字。
-     图片**不上传、不保存**。OCR 是原生模块，只在开发版 / 正式版可用；Expo Go 下如实提示
-     「端侧识别需要开发版构建」，**不静默改成上传图片**——「图片不出手机」正是这个功能的承诺。
+  1. **端侧 OCR**（`app/src/vision/`）：图片 → 文字。图片**不上传、不保存**。
+     引擎是 **PaddleOCR PP-OCRv4**（det + rec + 方向分类三个 ONNX 模型，跑在
+     `onnxruntime-react-native` 上，流水线写 TypeScript，见 `app/src/vision/ppocr/`；
+     模型 16MB，不进版本库，用 `scripts/fetch_ppocr_models.sh` 拉）。选它是因为中文印刷体
+     识别率高于 ML Kit 中文；**ML Kit 那份实现保留在 `vision/mlkitOcr.ts`**，
+     `vision/register.ts` 里的 `ENGINE` 一行可切回。OCR 是原生模块，只在开发版 / 正式版可用；
+     Expo Go 下如实提示「端侧识别需要开发版构建」，**不静默改成上传图片**——
+     「图片不出手机」正是这个功能的承诺。
   2. **云端解析**（`POST /api/v1/ai/events/parse-text`）：把 **OCR 出的文字**交给模型
      （阿里云百炼；结构化输出 `response_format=json_object` + 温度 0），返回 0..N 条草稿。
 - **抽取口径**（写在 `agent/vision-prompt.md`，Java / Python 两份逐字节相同，有测试守着）：

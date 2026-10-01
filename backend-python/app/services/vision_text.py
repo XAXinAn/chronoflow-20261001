@@ -1,6 +1,6 @@
 """OCR 文字 → 日程草稿（spec §4.1.9）。行为与 Java 版 `AgentTextParseService` 对齐。
 
-图片识别日程分两段：手机端 ML Kit 的**中文 OCR 又准又不花钱**（图片不出手机），
+图片识别日程分两段：手机端的端侧 OCR（PaddleOCR PP-OCRv4）**又准又不花钱、图片还不出手机**，
 「一段通知里有几件要做的事、哪句是时间」这种理解活交给服务端模型（百炼）。
 
 提示词正文在 `app/resources/agent/vision-prompt.md`，与 Java 版 `chronoflow-agent` 里那一份

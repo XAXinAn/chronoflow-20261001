@@ -16,6 +16,15 @@ export interface OcrEngine {
   /** 引擎名（进日志与「由谁识别」的说明） */
   name(): string;
   recognizeText(uri: string): Promise<string>;
+  /**
+   * 可选：提前把引擎暖起来（加载模型 / 建推理 session）。
+   *
+   * <p>端侧模型有十几 MB，**第一次识别**要先把 session 建起来（实测几百毫秒到几秒，
+   * 看机型），那几秒正好全落在用户「拍完照等结果」的等待里。调用方可以在用户**明确表达
+   * 意图之后、真正出图之前**（例如点开「上传图片」的选来源面板时）先预热一把，
+   * 失败就当没预热过——真识别时会再试一次，**不因为是预热失败就提前报错**。
+   */
+  warmUp?(): Promise<void>;
 }
 
 /** 端侧识别不可用（没注册引擎）：调用方要如实说明，不要静默降级到别的通道。 */
@@ -31,6 +40,26 @@ let ocrEngine: OcrEngine | null = null;
 /** 由开发版 / 正式版构建注册端侧 OCR 引擎（Expo Go 下永远不会被调用）。 */
 export function registerOcrEngine(engine: OcrEngine): void {
   ocrEngine = engine;
+}
+
+/**
+ * 预热端侧 OCR（可选、幂等、**不抛错**）。
+ *
+ * <p>在用户点开「上传图片」的选来源面板时调一次：那几百毫秒到几秒的建 session 时间
+ * 就被「选相册还是拍照」这段交互盖住了。没注册引擎（Expo Go）时直接返回——
+ * 真正的报错留给 {@link ocrImageText}，那里才有话对用户说。
+ */
+export async function warmUpOcrEngine(): Promise<void> {
+  const engine = ocrEngine;
+  if (!engine?.warmUp) {
+    return;
+  }
+  try {
+    await engine.warmUp();
+  } catch (cause) {
+    // 预热失败不影响主流程：真识别时会重新走一遍加载，那次失败才需要提示用户
+    console.log(`[vision] 预热 ${engine.name()} 失败（识别时会重试）：${String(cause)}`);
+  }
 }
 
 /** 端侧 OCR：图片 → 文字。文字随后交给服务端解析（`/ai/events/parse-text`）。 */

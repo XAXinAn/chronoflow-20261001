@@ -2,7 +2,7 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-10-01（第十九轮：**端侧 OCR 迁到 PaddleOCR（进行中）** + 验收包已出）
+> 最后更新：2026-10-01（第十九轮：**端侧 OCR 换成 PaddleOCR PP-OCRv4，流水线已接上** + 新验收包 0.0.2）
 >
 > ⚠️ **本文件下方的历史段落里出现的 `xa-*` / `xatodo` / `XATODO_*` 是改名前的旧标识，保留原文不改**
 > （那是当时的现场记录，改了就成假历史）。**当前代码里已经没有这些标识**，新写的东西一律用
@@ -25,8 +25,11 @@
 到点提醒默认关闭且有红字提示 / 时间拨到 00:00 后列表照实显示 / 识别出的日程备注里有默认时间标注 /
 名字可改 + 头像 1:1 取景（可拖动、可双指缩放）。
 
-**这一轮在做的事**：把端侧 OCR 从 Google ML Kit（`@react-native-ml-kit/text-recognition`）
+**这一轮做的事**：把端侧 OCR 从 Google ML Kit（`@react-native-ml-kit/text-recognition`）
 换成 **PaddleOCR（PP-OCRv4）**，用户明确要求，理由是中文印刷体的识别率。
+**代码已经全部接上**（检测 → 逐框方向分类 → 识别 → CTC 解码 → 成段文字），
+`expo export` 验证过模型确实进了包；**只差真机比对**（同一张通知图，ML Kit 基线 1.5–1.7s）。
+要退回 ML Kit：`app/src/vision/register.ts` 里 `ENGINE` 改成 `'mlkit'`，一行的事。
 
 ### 为什么是「ONNX Runtime + 自己写流水线」而不是 Paddle-Lite
 
@@ -51,29 +54,32 @@ Kotlin/Swift 原生模块。
 
 | 文件 | 内容 |
 | --- | --- |
-| `app/assets/models/ppocr/` | det 4.7MB / rec 10.9MB / cls 0.6MB + 字典，共 16.2MB。**不进 git**（`.gitignore` 已排除），由 `scripts/fetch_ppocr_models.sh` 拉取（带体积校验——hf-mirror 偶尔回错误页，只看「文件存在」会拿到假模型） |
+| `app/assets/models/ppocr/` | det 4.7MB / rec 10.9MB / cls 0.6MB + 字典，共 16.2MB。**不进 git**（`.gitignore` 已排除），由 `scripts/fetch_ppocr_models.sh` 拉取（带体积校验——hf-mirror 偶尔回错误页，只看「文件存在」会拿到假模型）。`build_apk.sh` 现在每次构建前自动确认一遍（幂等、文件齐了不联网） |
 | `app/src/vision/ppocr/decode.ts` | CTC 解码。**字符表从 rec 模型的 ONNX 元数据读**（`character` 字段，换行分隔，下标 0 是 blank），不靠字典文件猜顺序——差一位整行错位。6 项单测（`a·blank·a` = 两个字是关键用例） |
 | `app/src/vision/ppocr/detPost.ts` | DB 检测后处理：输入规划（等比缩到 960 + 补边到 32 的倍数）、二值化、连通域（迭代式，960×960 不爆栈）、过滤、**unclip 外扩**（不外扩会缺首尾字）、映射回原图、阅读顺序。6 项单测 |
 | `app/src/vision/ppocr/pixels.ts` | 纯计算：base64 自解码、JPEG 解码、最近邻缩放、补边（补纯黑）、RGBA→NCHW + 归一化（检测 ImageNet、识别 0.5/0.5）。5 项单测 |
 | `app/src/vision/ppocr/imageIo.ts` | 碰原生的那一半：`readScaledRgba` / `readCroppedRgba`（`expo-image-manipulator`）、`readImageSize` |
+| `app/src/vision/ppocr/charset.ts` | **字符表**：下标 0 是 blank、末尾补空格、拿模型的类别数交叉校验（对不上当场抛错）。见下面「踩到的坑」第 6 条——这是本轮最容易翻车的一处 |
+| `app/src/vision/ppocr/pipeline.ts` | **整条流水线**：检测 → 后处理 → 阅读顺序 → 逐框裁剪 → 方向分类（可选）→ 识别 → CTC 解码 → 成行文字。原生那一半（推理、读像素）走**注入**的 `OcrSession` / `OcrImageSource` 接口，所以这条链路能在 node 里用假 session 端到端跑：坐标切偏、顺序乱、通道反、置信度低都被 6 项单测盯住 |
+| `app/src/vision/ppocr/ortRunner.ts` | 唯一直接碰 `onnxruntime-react-native` 的文件：建 session、喂 `[1,3,H,W]` 张量、把输出摊成「哪一维是什么」。**输入 / 输出名字从 session 自己读，不写死**；顺便汇报三个头的累计耗时 |
+| `app/src/vision/paddleOcr.ts` | `OcrEngine` 实现（`name()` = 「PaddleOCR PP-OCRv4」）：资源 → 本地文件（`expo-asset`）→ 建 session + 字符表校验，首次识别时才加载并缓存（不拖慢冷启动）；用户点开「上传图片」的选来源面板时先**预热**（`OcrEngine.warmUp` + `warmUpOcrEngine`），把那几秒建 session 的时间藏进交互里 |
+| `app/metro.config.js` + `app/src/types/assets.d.ts` | 给 Metro 的 `assetExts` 补 `onnx` / `txt`（默认清单里没有，不补的话**打包阶段**就报 `Unable to resolve module`），以及这两类资源的 TS 声明 |
 | `scripts/patch-third-party-gradle.sh` | 见下面「踩到的坑」第 2 条，由 `build_apk.sh` 每次构建前自动调用 |
 
-**测试基线：App 260 项 + typecheck 全绿**（新增 ppocr 17 项）。合规门禁 20 项（`--strict`）也过。
+**测试基线：App 275 项 + typecheck 全绿**（ppocr 共 32 项）。合规门禁 20 项（`--strict`）也过。
+**打包验证**：`npx expo export --platform android` 22 秒跑通，输出里能看到四个模型资源
+（4.7MB / 10.9MB / 586KB / 26KB，md5 与源文件一致）——**不用出整包就能确认「模型进没进包」**，
+以后每次改资源都值得先跑这一遍。release 包也出好了：**166MB**（上一版 149MB + 模型 16MB），
+桌面文件 `chronoflow-0.0.2.apk`（versionCode 3），模型确实在包里（见坑 9）。
 
-### 还没做（下一步就照这个顺序）
+### 还没做
 
-1. `app/src/vision/ppocr/pipeline.ts`：det → 逐框 cls → rec 串成「图片 → 文本行 + 坐标」。
-   流程：`planDetInput` → `readScaledRgba` → `padToCanvas` → `toChwTensor(DET_*)` → 跑 det →
-   `binarize`/`connectedComponents`/`filterBoxes`/`unclipRect` → `mapBoxToImage` → `orderBoxes` →
-   逐框 `readCroppedRgba`（高 48、宽按比例、上限 320）+ `toChwTensor(REC_*)` → 跑 rec → `decodeCtc`。
-2. `app/src/vision/paddleOcr.ts`：实现 `OcrEngine`（`name()` 返回「PaddleOCR PP-OCRv4」），
-   用 `onnxruntime-react-native` 建 session（模型路径见下），把 `pipeline` 的结果拼成一段文本。
-3. `app/src/vision/register.ts`：改成注册 paddle 引擎，**ML Kit 那份实现保留**（`mlkitOcr.ts` 不删），
-   留一个一行能切回去的开关。
-4. 模型要**进包**：现在它们没被任何代码 `require`，所以上一条验收包里**没有**模型（占 0 字节）；
-   接上流水线后要确保 Metro 把 `.onnx`/`.txt` 当资源打进 apk（`assetExts` 里补 `onnx`，或走
-   `expo-asset`）。
-5. 出包 + 真机比对：同一张通知图，跑 ML Kit（基线实测 1.5–1.7s）与新引擎，比识别率与耗时。
+1. **真机比对（唯一还没验的）**：同一张通知图，跑 ML Kit（基线 1.5–1.7s）与 PaddleOCR，
+   比识别率与耗时。日志里 `[vision] PaddleOCR 端侧：检测 xxms（N 行，方向分类 xxms）→
+   识别 xxms（N 行）→ 合计 xxms` 是现成的埋点。
+2. **APK 瘦身**（见坑 2）：路线还没选，**别在真机验过识别率之前就动它**。
+3. 若真机上「识别出来是乱码 / 整体错位」：先查字符表（坑 6），再查通道顺序（坑 7）——
+   这两条都不会报错，只会让结果变差。
 
 ### 踩到的坑（新会话直接用）
 
@@ -93,8 +99,32 @@ Kotlin/Swift 原生模块。
 4. **`jpeg-js` 被提升到根 `node_modules`**（npm workspaces 的行为），`app/node_modules` 下没有，
    别以为没装上。
 5. **字典单独下不到**：`raw.githubusercontent.com` 拉不动；rec 的字典最终是从
-   `hf-mirror.com/deepghs/paddleocr`（`rec/ch_PP-OCRv4_rec/dict.txt`）拿的。不过解码时以
-   **模型自带的元数据**为准，字典文件只做交叉校验。
+   `hf-mirror.com/deepghs/paddleocr`（`rec/ch_PP-OCRv4_rec/dict.txt`）拿的。
+   ⚠️ **它是字符表的唯一来源，不是「校验用的备胎」**——原因见下一条。
+6. **字符表的真相（本轮最大的坑）**：rec 模型输出 **6625** 类，而 ONNX 元数据里的 `character`
+   只有 **6623** 条、字典文件也是 **6623** 行——差的两位是 blank（下标 0）与 `use_space_char`
+   追加的空格（下标 6624，官方那套 `['blank'] + 字典 + [' ']`）。更关键的是：
+   `onnxruntime-react-native@1.24.3` **没有暴露 model metadata 的接口**（只有输入 / 输出的形状），
+   所以「解码时从模型元数据读字符表」在这个包里**做不到**。落地做法是
+   `buildCharacterList(字典文本, 模型类别数)`：字典进表、按类别数补空格、对不上就抛错。
+   离线核对过元数据与字典**逐条相同**（本机没有 `onnx` 包，是手写 30 行 protobuf 读取器
+   把 `metadata_props` 抠出来比的）。
+7. **通道顺序：检测头要 RGB，识别 / 方向分类头要 BGR。** 官方 `predict_det` 的预处理里有
+   `img[:, :, ::-1]`（把 cv2 读出来的 BGR 翻成 RGB），而识别的 `resize_norm_img` **不翻**。
+   搞反了不报错，只会让识别率悄悄掉一截——`toChwTensor(..., order)` 就是为这个加的。
+8. **Gradle 要写 `~/.gradle`，在受限沙箱里跑会报「初始化不了 native services」**：
+   报错长这样 `Could not initialize native services / Failed to load native library
+   'libnative-platform.so'`。**那不是构建配置坏了，是权限**——放行（沙箱外）跑就行。
+9. **release 包里模型在哪、运行时怎么读出来**（这条能省半天）：出包后**在 APK 里搜不到 `ppocr`**——
+   资源被打进 `res/raw/`（构建中间产物叫 `assets_models_ppocr_*.onnx`），而 aapt2 打包时
+   又把它改名成 `res/-T.onnx`、`res/YD.onnx` 这类短名（只能按大小认：10.8MB = rec、4.7MB = det、
+   586KB = cls）。运行时的链路是：`Asset.fromModule(id).downloadAsync()` → 正式版拿到的 Uri 是
+   **资源标识名**（`models_ppocr_ch_ppocrv4_det_infer`，没扩展名、没斜杠）→ 原生
+   `resources.getIdentifier(name, "raw", 包名)` 找到它 → 拷进缓存目录 → 回一个
+   `file://…/ExponentAsset-<md5>.onnx`；开发版则是从 Metro 下载同一个文件名。
+   **字体（Ionicons.ttf）走的就是这条路**，所以「图标能显示」本身就说明这条链是通的。
+   ⚠️ ONNX Runtime 只要**文件路径**，交给它之前得把 `file://` 去掉（`filePath()` 就干这个）。
+   本机没有 `unzip`，查包内容用 `python3 -c "import zipfile; …"`。
 
 ### 排队中、还没开工的
 

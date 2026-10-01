@@ -10,6 +10,7 @@
  *
  * <p>归一化参数必须与训练时一致，否则识别会整体变差但不报错：
  * 检测用 ImageNet 的 mean/std，识别用 0.5/0.5（等价于 `v/127.5 - 1`）。
+ * **通道顺序两个头不一样**，见 {@link ChannelOrder}。
  */
 
 import { decode as decodeJpeg } from 'jpeg-js';
@@ -27,6 +28,18 @@ export const DET_STD: [number, number, number] = [0.229, 0.224, 0.225];
 /** 识别头的归一化：等价于 `v / 127.5 - 1`。 */
 export const REC_MEAN: [number, number, number] = [0.5, 0.5, 0.5];
 export const REC_STD: [number, number, number] = [0.5, 0.5, 0.5];
+
+/**
+ * 张量的通道顺序。
+ *
+ * <p><b>检测头要 RGB、识别头（含方向分类）要 BGR</b>——这不是笔误，是 PP-OCR 官方流水线的
+ * 既有事实：检测的预处理里有一句 `img[:, :, ::-1]`（把 cv2 读出来的 BGR 翻成 RGB），
+ * 而识别的 `resize_norm_img` **不翻**，于是模型是在 BGR 上训练的。
+ *
+ * <p>搞反了不会报错，只会让识别率悄悄掉一截（中文的笔画密度对通道很敏感），
+ * 是这类端侧集成最经典的坑之一。
+ */
+export type ChannelOrder = 'rgb' | 'bgr';
 
 /** RN 里没有 `Buffer`/`atob` 的保证，base64 自己解——20 行，省一个 polyfill 依赖。 */
 export function base64ToBytes(base64: string): Uint8Array {
@@ -90,6 +103,27 @@ export function resizeNearest(image: RgbaImage, width: number, height: number): 
 }
 
 /**
+ * 原地旋转 180°（水平 + 垂直翻转）。
+ *
+ * <p>方向分类头认出「这行是倒着的」之后，用它把那块文字转正再送进识别头；
+ * 纯 JS 翻转比再调一次原生裁剪便宜得多，而且不需要把整张原图重新读一遍。
+ */
+export function rotate180(image: RgbaImage): RgbaImage {
+  const { width, height, data } = image;
+  const out = new Uint8Array(data.length);
+  const last = width * height - 1;
+  for (let i = 0; i <= last; i += 1) {
+    const from = i * 4;
+    const to = (last - i) * 4;
+    out[to] = data[from]!;
+    out[to + 1] = data[from + 1]!;
+    out[to + 2] = data[from + 2]!;
+    out[to + 3] = data[from + 3]!;
+  }
+  return { width, height, data: out };
+}
+
+/**
  * 把图片放进一块更大的画布（右下角补零），用于把检测输入补到 32 的倍数。
  *
  * <p>补的是 **0（黑色）** 而不是灰：DB 的概率图在纯黑区域自然接近 0，不会凭空造出文字框。
@@ -133,18 +167,21 @@ export function toChwTensor(
   image: RgbaImage,
   mean: [number, number, number],
   std: [number, number, number],
+  order: ChannelOrder = 'rgb',
 ): Float32Array {
   const { width, height, data } = image;
   const tensor = new Float32Array(3 * width * height);
   const plane = width * height;
+  // JPEG 解出来是 RGBA，前三个字节就是 R/G/B（不是 BGR）——别照抄 cv2 那套顺序
+  const swap = order === 'bgr';
   for (let i = 0; i < plane; i += 1) {
     const base = i * 4;
     const r = (data[base] ?? 0) / 255;
     const g = (data[base + 1] ?? 0) / 255;
     const b = (data[base + 2] ?? 0) / 255;
-    tensor[i] = (r - mean[0]) / std[0];
+    tensor[i] = ((swap ? b : r) - mean[0]) / std[0];
     tensor[plane + i] = (g - mean[1]) / std[1];
-    tensor[plane * 2 + i] = (b - mean[2]) / std[2];
+    tensor[plane * 2 + i] = ((swap ? r : b) - mean[2]) / std[2];
   }
   return tensor;
 }

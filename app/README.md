@@ -68,10 +68,15 @@ python3 scripts/generate_app_icons.py          # 生成 icon / adaptive-icon / s
 | 我的 | 头像 / 深色模式 / 意见反馈 / **隐私与合规**（隐私政策、用户协议、儿童声明、双清单、账号注销）/ 退出登录 |
 
 > 「点此上传图片，一键添加日程」（spec §4.1.9）走的是**两段式**：
-> 端侧 OCR（ML Kit 中文，**图片不出手机**）→ 云端 `POST /ai/events/parse-text` 解析成草稿
+> 端侧 OCR（**PaddleOCR PP-OCRv4**，跑在 ONNX Runtime 上，**图片不出手机**）
+> → 云端 `POST /ai/events/parse-text` 解析成草稿
 > → **确认页**（点任意一条进整页编辑器，可改标题 / 日期 / 时间 / 地点 / 备注 / 重复 / 提醒）
 > → 「添加 N 条日程」逐条写进日历。所以 App 会申请**相机权限**（拍通知 / 行程单），
 > 不上传图片，只上传 OCR 出来的**文字**（隐私政策 §2.7 与第三方清单同步写明）。
+>
+> ⚠️ 端侧 OCR 的三个模型（16MB）**不进版本库**：出包前必须跑一次
+> `scripts/fetch_ppocr_models.sh`（`scripts/build_apk.sh` 会自动确认一遍，
+> 缺了会在 Metro 打包阶段直接报 `Unable to resolve module …onnx`）。
 
 ## 会话保持（spec §3.7）
 

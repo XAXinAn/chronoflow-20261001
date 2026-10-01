@@ -264,7 +264,7 @@ export function createEndpoints(client: ApiClient) {
     /**
      * OCR 文字 → 日程草稿（spec §4.1.9）。
      *
-     * <p>**图片不出手机**：这里只把手机端 ML Kit OCR 出来的**文字**发上去，
+     * <p>**图片不出手机**：这里只把手机端 OCR（PaddleOCR PP-OCRv4，见 `vision/`）出来的**文字**发上去，
      * 由服务端模型负责「一段通知里有几件事、哪句是时间」。
      * `items[].at` 可能是空的（通知里没写日期），交给确认页让用户补；
      * 解析模型未配置时返回 90002，界面如实说明，不假装识别成功。
