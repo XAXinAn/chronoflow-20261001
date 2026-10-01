@@ -2,16 +2,11 @@
   "expo": {
     "name": "时纪流",
     "slug": "chronoflow",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash.png",
-      "backgroundColor": "#FFFFFF",
-      "resizeMode": "contain"
-    },
     "ios": {
       "bundleIdentifier": "com.chronoflow.frontend",
       "buildNumber": "1",
@@ -22,7 +17,7 @@
     },
     "android": {
       "package": "com.chronoflow.frontend",
-      "versionCode": 1,
+      "versionCode": 2,
       "edgeToEdgeEnabled": true,
       "permissions": [
         "ACCESS_COARSE_LOCATION",
@@ -65,7 +60,20 @@
           "channel": "default_developer"
         }
       ],
-      "./plugins/withCleartextHttp"
+      "./plugins/withCleartextHttp",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF",
+          "dark": {
+            "image": "./assets/splash-dark.png",
+            "backgroundColor": "#21221D"
+          }
+        }
+      ]
     ],
     "extra": {
       "apiBaseUrl": "http://60.205.142.205:8080"

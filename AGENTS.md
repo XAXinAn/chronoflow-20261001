@@ -43,6 +43,30 @@
 **验证**：改完跑全量 —— Java **154**、Python **76**、App **228**（新增存储键迁移 4 项）、
 web-admin **21** + 构建、合规门禁 **20** 项，全绿。
 
+### ⚠️ 顺手修掉的启动图坑（真机上被用户当场发现）
+
+用户截图：**App 刚打开、还没进到自己的启动画面时，先闪出一张「网格 + 同心圆」的占位图**。
+根因：`app.json` 里只写了**老的 `expo.splash` 键**，而 **SDK 54+ 的 Android 12+ 系统启动图由
+`expo-splash-screen` 配置插件生成** —— 项目里连这个依赖都没装，于是 Expo 用了自带的
+**默认占位图**（就是那张网格+同心圆），写进了 `res/drawable-*/splashscreen_logo.png`
+与 `values/styles.xml` 的 `android:windowBackground`。
+
+修法：`npx expo install expo-splash-screen`，把 app.json 的 `splash` 键换成插件配置：
+
+```json
+["expo-splash-screen", {
+  "image": "./assets/splash.png", "imageWidth": 220, "resizeMode": "contain",
+  "backgroundColor": "#FFFFFF",
+  "dark": { "image": "./assets/splash-dark.png", "backgroundColor": "#21221D" }
+}]
+```
+
+（`splash-dark.png` = 深色底版，直接拿 `icon.png` 当的）。改完 `prebuild` 后要**检查生成物**：
+`app/android/app/src/main/res/drawable-xxxhdpi/splashscreen_logo.png` 应该是我们的 logo。
+
+顺带修了 `scripts/build_apk.sh` 一个静默失败：`$( [ "$X" = debug ] && echo ... )` 在条件不成立时
+返回 1，赋值语句继承这个退出码，配合 `set -e` **整个脚本会悄悄退出**（表现为「编译成功但桌面没有包」）。
+
 ---
 
 ## 0.0 本次交接摘要（2026-10-01，第十五轮：应用内更新 + WSL OOM 崩溃复盘）

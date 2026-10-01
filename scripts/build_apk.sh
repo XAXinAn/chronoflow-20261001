@@ -110,7 +110,13 @@ if [ -d "$DESKTOP_DIR" ]; then
   # 命名与线上发布保持一致：chronoflow-<版本名>.apk（debug 包多带一个后缀区分）。
   # 以前叫「时纪流-0.0.0(1)-release.apk」：括号里是 versionCode，容易被误认成
   # 系统自动去重加的「 (1)」，而且和下载链接里的名字对不上。
-  DESKTOP_APK="$DESKTOP_DIR/chronoflow-${VERSION_NAME}$([ "$BUILD_TYPE" = debug ] && echo '-debug').apk"
+  # 注意别写成 `$( [ ... ] && echo ... )`：条件不成立时那个子命令返回 1，
+  # 赋值语句会把它当自己的退出码，配合 `set -e` 会让脚本**静默退出**（踩过）。
+  if [ "$BUILD_TYPE" = debug ]; then
+    DESKTOP_APK="$DESKTOP_DIR/chronoflow-${VERSION_NAME}-debug.apk"
+  else
+    DESKTOP_APK="$DESKTOP_DIR/chronoflow-${VERSION_NAME}.apk"
+  fi
   if cp -f "$OUT" "$DESKTOP_APK"; then
     echo "📋 已复制到桌面：$DESKTOP_APK"
   else
