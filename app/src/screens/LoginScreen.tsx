@@ -8,6 +8,7 @@ import { Card, Checkbox, PrimaryButton, Screen } from '../components/ui';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import { canRequestCode, canSubmitLogin } from '../domain/consent';
 import { LEGAL_DOCS, type LegalDoc } from '../domain/legal';
+import { loginButtons } from '../domain/loginForm';
 import {
   SMS_COOLDOWN_SECONDS,
   nextCooldown,
@@ -39,7 +40,14 @@ export function LoginScreen({
    * 「注册或登录即默认同意」都列为违规。判定逻辑抽在 domain/consent.ts，由单测盯着。
    */
   const [acceptedPolicy, setAcceptedPolicy] = useState(false);
-  const [busy, setBusy] = useState(false);
+  /**
+   * 两个请求**各自**一个状态。
+   *
+   * 曾经共用一个 `busy`：点「获取验证码」时两个按钮一起转圈（用户一眼看出不对）。
+   * 判定逻辑在 `domain/loginForm.ts`，由单测盯着「转圈只出现在被点的按钮上」。
+   */
+  const [sendingCode, setSendingCode] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   /** 发码后的倒计时秒数（spec §3.6：同手机号 60 秒 1 条） */
   const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +66,7 @@ export function LoginScreen({
   };
 
   const sendCode = async () => {
-    setBusy(true);
+    setSendingCode(true);
     setError(null);
     try {
       const result = await api.sendSmsCode(phone.trim());
@@ -79,7 +87,7 @@ export function LoginScreen({
         setCooldown(SMS_COOLDOWN_SECONDS);
       }
     } finally {
-      setBusy(false);
+      setSendingCode(false);
     }
   };
 
@@ -88,7 +96,7 @@ export function LoginScreen({
       setError('请先阅读并勾选同意《用户服务协议》与《隐私政策》');
       return;
     }
-    setBusy(true);
+    setSubmitting(true);
     setError(null);
     try {
       const result = await api.loginBySms(phone.trim(), code.trim(), deviceId);
@@ -112,11 +120,17 @@ export function LoginScreen({
     } catch (cause) {
       setError(userFacingError(cause, '登录失败'));
     } finally {
-      setBusy(false);
+      setSubmitting(false);
     }
   };
 
   const loginReady = canSubmitLogin({ phone, code, acceptedPolicy });
+  const buttons = loginButtons({
+    sendingCode,
+    submitting,
+    canRequestCode: canRequestCode(phone, cooldown, acceptedPolicy),
+    canSubmitLogin: loginReady,
+  });
 
   return (
     <Screen style={styles.container}>
@@ -160,11 +174,11 @@ export function LoginScreen({
           />
           <View style={styles.codeButton}>
             <PrimaryButton
-              title={sendCodeLabel(cooldown, busy)}
+              title={sendCodeLabel(cooldown, buttons.sendCode.loading)}
               onPress={() => void sendCode()}
-              loading={busy && cooldown === 0}
-              // 冷却中也禁用：点不动比点了报错更省事
-              disabled={!canRequestCode(phone, cooldown, acceptedPolicy)}
+              loading={buttons.sendCode.loading}
+              // 冷却中 / 另一个请求在飞时也禁用：点不动比点了报错更省事
+              disabled={buttons.sendCode.disabled}
             />
           </View>
         </View>
@@ -177,8 +191,8 @@ export function LoginScreen({
         <PrimaryButton
           title="登录 / 注册"
           onPress={() => void submit()}
-          loading={busy}
-          disabled={!loginReady}
+          loading={buttons.submit.loading}
+          disabled={buttons.submit.disabled}
         />
 
         {/*
