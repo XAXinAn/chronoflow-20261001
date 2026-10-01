@@ -107,7 +107,10 @@ DESKTOP_DIR="${CHRONOFLOW_DESKTOP_DIR:-/mnt/c/Users/jiang/Desktop}"
 if [ -d "$DESKTOP_DIR" ]; then
   VERSION_NAME=$(python3 -c "import json;print(json.load(open('$APP/app.json'))['expo']['version'])")
   VERSION_CODE=$(python3 -c "import json;print(json.load(open('$APP/app.json'))['expo']['android']['versionCode'])")
-  DESKTOP_APK="$DESKTOP_DIR/时纪流-${VERSION_NAME}(${VERSION_CODE})-${BUILD_TYPE}.apk"
+  # 命名与线上发布保持一致：chronoflow-<版本名>.apk（debug 包多带一个后缀区分）。
+  # 以前叫「时纪流-0.0.0(1)-release.apk」：括号里是 versionCode，容易被误认成
+  # 系统自动去重加的「 (1)」，而且和下载链接里的名字对不上。
+  DESKTOP_APK="$DESKTOP_DIR/chronoflow-${VERSION_NAME}$([ "$BUILD_TYPE" = debug ] && echo '-debug').apk"
   if cp -f "$OUT" "$DESKTOP_APK"; then
     echo "📋 已复制到桌面：$DESKTOP_APK"
   else
