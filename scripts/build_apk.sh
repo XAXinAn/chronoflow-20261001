@@ -19,6 +19,9 @@
 #   scripts/build_apk.sh --release --archs=arm64-v8a,x86_64
 #                                               # 独立可用的包（JS 打进包里，装到手机就能跑）
 #
+# 编译完会**顺手复制一份到 Windows 桌面**（`/mnt/c/Users/jiang/Desktop/时纪流-<版本>(<versionCode>)-<debug|release>.apk`），
+# 联调时从桌面拖进模拟器/手机最省事；换目录用 `XATODO_DESKTOP_DIR=...`。
+#
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -97,3 +100,19 @@ echo "→ 编译 $BUILD_TYPE APK（workers=2, ninja=$CMAKE_BUILD_PARALLEL_LEVEL,
 echo
 echo "✅ $OUT"
 ls -lh "$OUT"
+
+# 顺手放一份到 Windows 桌面（WSL 路径 /mnt/c/...）。联调时从桌面拖进模拟器/手机最省事。
+# 文件名带版本号与构建类型，桌面上堆多个包时一眼能分辨是哪个。
+DESKTOP_DIR="${XATODO_DESKTOP_DIR:-/mnt/c/Users/jiang/Desktop}"
+if [ -d "$DESKTOP_DIR" ]; then
+  VERSION_NAME=$(python3 -c "import json;print(json.load(open('$APP/app.json'))['expo']['version'])")
+  VERSION_CODE=$(python3 -c "import json;print(json.load(open('$APP/app.json'))['expo']['android']['versionCode'])")
+  DESKTOP_APK="$DESKTOP_DIR/时纪流-${VERSION_NAME}(${VERSION_CODE})-${BUILD_TYPE}.apk"
+  if cp -f "$OUT" "$DESKTOP_APK"; then
+    echo "📋 已复制到桌面：$DESKTOP_APK"
+  else
+    echo "⚠️ 复制到桌面失败（$DESKTOP_APK），APK 仍在 $OUT" >&2
+  fi
+else
+  echo "（桌面目录 $DESKTOP_DIR 不存在，跳过复制；可用 XATODO_DESKTOP_DIR 指定）"
+fi
