@@ -12,130 +12,595 @@
     "access": "需要 Authorization: Bearer <accessToken>，未携带时返回 HTTP 401 与 code=20001"
   },
   "endpoints": [
-    { "method": "GET", "path": "/api/v1/system/info", "auth": "none" },
-    { "method": "GET", "path": "/api/v1/system/ping", "auth": "none" },
-    { "method": "GET", "path": "/api/v1/system/app-release", "auth": "none" },
-    { "method": "GET", "path": "/api/v1/legal/{doc}", "auth": "none" },
-
-    { "method": "POST", "path": "/api/v1/auth/sms/code", "auth": "none" },
-    { "method": "POST", "path": "/api/v1/auth/login/sms", "auth": "none" },
-    { "method": "POST", "path": "/api/v1/auth/login/password", "auth": "none" },
-    { "method": "POST", "path": "/api/v1/auth/identity/select", "auth": "none" },
-    { "method": "POST", "path": "/api/v1/auth/identity/switch", "auth": "none" },
-    { "method": "POST", "path": "/api/v1/auth/token/refresh", "auth": "none" },
-    { "method": "POST", "path": "/api/v1/auth/logout", "auth": "none" },
-    { "method": "GET", "path": "/api/v1/auth/identities", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/identities/personal", "auth": "none" },
-
-    { "method": "GET", "path": "/api/v1/me", "auth": "access" },
-    { "method": "PATCH", "path": "/api/v1/me", "auth": "access" },
-    { "method": "PUT", "path": "/api/v1/me/password", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/me/devices", "auth": "access" },
-    { "method": "DELETE", "path": "/api/v1/me/devices/{deviceId}", "auth": "access" },
-    { "method": "PUT", "path": "/api/v1/me/notifications", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/me/deletion", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/me/push-devices", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/me/push-devices", "auth": "access" },
-    { "method": "DELETE", "path": "/api/v1/me/push-devices/{registrationId}", "auth": "access" },
-
-    { "method": "GET", "path": "/api/v1/calendars", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/calendars", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/calendars/{id}", "auth": "access" },
-    { "method": "PATCH", "path": "/api/v1/calendars/{id}", "auth": "access" },
-    { "method": "DELETE", "path": "/api/v1/calendars/{id}", "auth": "access" },
-
-    { "method": "GET", "path": "/api/v1/events", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/events/all", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/events", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/events/{id}", "auth": "access" },
-    { "method": "PATCH", "path": "/api/v1/events/{id}", "auth": "access" },
-    { "method": "DELETE", "path": "/api/v1/events/{id}", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/events/{id}/convert-to-task", "auth": "access" },
-
-    { "method": "GET", "path": "/api/v1/tasks", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/tasks", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/tasks/{id}", "auth": "access" },
-    { "method": "PATCH", "path": "/api/v1/tasks/{id}", "auth": "access" },
-    { "method": "DELETE", "path": "/api/v1/tasks/{id}", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/tasks/{id}/complete", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/tasks/{id}/convert-to-event", "auth": "access" },
-
-    { "method": "PUT", "path": "/api/v1/reminders", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/reminders", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/reminders/schedule", "auth": "access" },
-
-    { "method": "GET", "path": "/api/v1/holidays", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/search", "auth": "access" },
-
-    { "method": "POST", "path": "/api/v1/uploads/images", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/ai/events/recognize", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/ai/events/parse-text", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/ai/agent/chat", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/ai/agent/approvals", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/ai/transcribe", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/feedback", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/feedback", "auth": "access" },
-
-    { "method": "GET", "path": "/api/v1/geo/places", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/geo/regeo", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/geo/config", "auth": "access" },
-
-    { "method": "GET", "path": "/api/v1/org/current", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/org-accounts/login", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-accounts", "auth": "access" },
-    { "method": "DELETE", "path": "/api/v1/org-accounts/{identityId}", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org/departments/tree", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org/members", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org/events", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/org/events/{id}/read", "auth": "access" },
-
-    { "method": "POST", "path": "/api/v1/org-admin/departments", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-admin/departments", "auth": "access" },
-    { "method": "PATCH", "path": "/api/v1/org-admin/departments/{id}", "auth": "access" },
-    { "method": "DELETE", "path": "/api/v1/org-admin/departments/{id}", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/org-admin/departments/{id}/managers", "auth": "access" },
-    { "method": "DELETE", "path": "/api/v1/org-admin/departments/{id}/managers/{orgMemberId}", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-admin/members", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/org-admin/members", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/org-admin/members/{id}/unbind", "auth": "access" },
-    { "method": "PATCH", "path": "/api/v1/org-admin/members/{id}", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/org-admin/members/import", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-admin/members/import/template", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-admin/imports", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-admin/imports/{id}", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-admin/imports/{id}/failures", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/org-admin/events", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-admin/events", "auth": "access" },
-    { "method": "PATCH", "path": "/api/v1/org-admin/events/{id}", "auth": "access" },
-    { "method": "DELETE", "path": "/api/v1/org-admin/events/{id}", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/org-admin/events/{id}/revoke", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-admin/settings", "auth": "access" },
-    { "method": "PATCH", "path": "/api/v1/org-admin/settings", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/org-admin/logs", "auth": "access" },
-
-    { "method": "POST", "path": "/api/v1/admin/auth/login", "auth": "none" },
-    { "method": "GET", "path": "/api/v1/admin/me", "auth": "access" },
-    { "method": "PUT", "path": "/api/v1/admin/me/password", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/admin/admins", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/admin/admins", "auth": "access" },
-    { "method": "PATCH", "path": "/api/v1/admin/admins/{id}", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/admin/admins/{id}/reset-password", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/admin/organizations", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/admin/organizations", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/admin/organizations/{id}", "auth": "access" },
-    { "method": "PATCH", "path": "/api/v1/admin/organizations/{id}", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/admin/organizations/{id}/status", "auth": "access" },
-    { "method": "DELETE", "path": "/api/v1/admin/organizations/{id}", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/admin/accounts", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/admin/accounts/{id}/status", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/admin/identities/{id}/status", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/admin/accounts/{id}/force-logout", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/admin/configs", "auth": "access" },
-    { "method": "PUT", "path": "/api/v1/admin/configs/{key}", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/admin/dashboard/stats", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/admin/audit-logs", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/admin/audit-logs/export", "auth": "access" },
-    { "method": "GET", "path": "/api/v1/admin/feedback", "auth": "access" },
-    { "method": "POST", "path": "/api/v1/admin/feedback/{id}/handle", "auth": "access" }
+    {
+      "method": "GET",
+      "path": "/api/v1/system/info",
+      "auth": "none"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/ping",
+      "auth": "none"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/app-release",
+      "auth": "none"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/legal/{doc}",
+      "auth": "none"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/sms/code",
+      "auth": "none"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/login/sms",
+      "auth": "none"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/login/password",
+      "auth": "none"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/identity/select",
+      "auth": "none"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/identity/switch",
+      "auth": "none"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/token/refresh",
+      "auth": "none"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "auth": "none"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/identities",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/identities/personal",
+      "auth": "none"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me",
+      "auth": "access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me",
+      "auth": "access"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/me/password",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/devices",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/me/devices/{deviceId}",
+      "auth": "access"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/me/notifications",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/deletion",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/push-devices",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/push-devices",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/me/push-devices/{registrationId}",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/security",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/email/code",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/email",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/realname",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/realname/result",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/calendars",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/calendars",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/calendars/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/calendars/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/calendars/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/events",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/events/all",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/events",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/events/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/events/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/events/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/events/{id}/convert-to-task",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tasks",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tasks",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tasks/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/tasks/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tasks/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tasks/{id}/complete",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tasks/{id}/convert-to-event",
+      "auth": "access"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/reminders",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reminders",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reminders/schedule",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/holidays",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/search",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/uploads/images",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/events/recognize",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/events/parse-text",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/agent/chat",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/agent/approvals",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/transcribe",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/feedback",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/feedback",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/geo/places",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/geo/regeo",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/geo/config",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org/current",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/org-accounts/login",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org-accounts",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/org-accounts/{identityId}",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org/departments/tree",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org/members",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org/events",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/org/events/{id}/read",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/org-admin/departments",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org-admin/departments",
+      "auth": "access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/org-admin/departments/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/org-admin/departments/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/org-admin/departments/{id}/managers",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/org-admin/departments/{id}/managers/{orgMemberId}",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org-admin/members",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/org-admin/members",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/org-admin/members/{id}/unbind",
+      "auth": "access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/org-admin/members/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/org-admin/members/import",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org-admin/members/import/template",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org-admin/imports",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org-admin/imports/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org-admin/imports/{id}/failures",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/org-admin/events",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org-admin/events",
+      "auth": "access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/org-admin/events/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/org-admin/events/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/org-admin/events/{id}/revoke",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org-admin/settings",
+      "auth": "access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/org-admin/settings",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/org-admin/logs",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/auth/login",
+      "auth": "none"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/me",
+      "auth": "access"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/me/password",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/admins",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/admins",
+      "auth": "access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/admins/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/admins/{id}/reset-password",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/organizations",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/organizations",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/organizations/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/organizations/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/organizations/{id}/status",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/organizations/{id}",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/accounts",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/accounts/{id}/status",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/identities/{id}/status",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/accounts/{id}/force-logout",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/configs",
+      "auth": "access"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/configs/{key}",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/dashboard/stats",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/audit-logs",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/audit-logs/export",
+      "auth": "access"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/feedback",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/feedback/{id}/handle",
+      "auth": "access"
+    }
   ]
 }
