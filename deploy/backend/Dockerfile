@@ -15,7 +15,13 @@ VOLUME ["/data/uploads"]
 
 EXPOSE 8080
 
-# 内存要收敛：这台机器上还要跑 PostgreSQL 与 Redis，默认堆会把整机吃满
-ENV JAVA_OPTS="-Xms128m -Xmx512m -XX:MaxMetaspaceSize=192m -Duser.timezone=Asia/Shanghai"
+# 内存要收敛：这台机器上还要跑 PostgreSQL 与 Redis，默认堆会把整机吃满。
+#
+# `-Djava.net.preferIPv4Stack=true`：**国内很多 ECS 没有 IPv6 出口，而 CDN 域名
+# （cloudflare / jsdelivr / ghproxy 这些）常常只返回 AAAA 记录** —— JVM 会先试 IPv6，
+# 连不上直接抛 ConnectException，而同一台机器上 `curl -4` 却是 200，特别容易被误判成
+# 「对方挂了」。2026-10-01 在新服务器上同步节假日就是这么踩的（`HolidaySyncService`
+# 两个年份都 ConnectException）。强制 IPv4 之后立刻正常。
+ENV JAVA_OPTS="-Xms128m -Xmx512m -XX:MaxMetaspaceSize=192m -Duser.timezone=Asia/Shanghai -Djava.net.preferIPv4Stack=true"
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]
