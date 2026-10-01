@@ -154,15 +154,35 @@ Kotlin/Swift 原生模块。
     把这两项钉进 `android/app/build.gradle`，与 gradle.properties 的钉法同一处。
     出包后想核对：`aapt2 dump badging <apk> | head -1`。
 
-### 排队中、还没开工的
+### 进行中：实名认证 + 邮箱绑定（方案已定，2026-10-01）
 
-**实名认证 + 邮箱绑定**（用户已提，方案未定，动手前必须问清）：
-用户说 accesskey 在**老服务器的老项目**里，老项目是「注册时强制实名」，新需求是「登录后可选，
-邮箱同理」。需要先确认：①accesskey 是哪套服务（可以 SSH 上老服务器只读翻配置找候选）；
-②邮箱走阿里云 DirectMail 还是 SMTP、发件域名有没有；③认证后要不要在昵称旁显示「已实名」标记、
-邮箱能否改绑、邮箱只做通知还是也要找回密码。结构上：两个可选动作放「我的 → 账号与安全」，
-服务端加 `POST /me/realname` 与邮箱验证码的一对端点，**新开迁移 V20**（绝不动 V1–V19），
-契约同步加端点、Java 与 Python 两版都实现。
+**方案来源**：老项目（`/opt/chronoflow-backend`，源码 `XAXinAn/ChronoFlow` 的 `develop` 分支，
+用户给的 zip 在 `/mnt/c/Users/jiang/Downloads/ChronoFlow-develop.zip`）里这两件事都做过了，
+照它的技术路线走、产品口径按「新需求」（登录后可选，不是注册强制）：
+
+| | 老项目怎么做的 | 我们怎么做 |
+| --- | --- | --- |
+| 实名 | **阿里云 CloudAuth 金融级实人认证**，`ID_PRO`（姓名 + 身份证 + 人脸活体）：后端 `InitFaceVerify` 拿 `certifyId` → 客户端做人脸 → 后端 `DescribeFaceVerify` 出结果；未实名时用 filter 拦接口 | 同一套服务；表字段照抄 `real_name_verified / real_name / id_card_number（AES 加密）/ verified_at` |
+| 邮箱 | **阿里云 DirectMail**（`noreply@xaxinan.top`，别名「时纪流」）：`/auth/send-email` 发码、`/user/bind-email` 绑定（邮箱唯一 + 验证码） | 同一套；`email` 唯一 |
+
+**用户已拍板的**：① SceneId = **`1000018914`**；② App 端走 **H5 认证页（WebView 打开
+CloudAuth 的 `certifyUrl`）**，**不用**老项目那套 Flutter 原生 SDK（RN 要自己写原生模块，而且
+iOS 这边出不了包验证）；③ 产品口径：认证后昵称旁显示「已实名」、邮箱**可改绑**（新邮箱验证码
+验证后替换）、邮箱先只做「绑定 + 通知」，**邮箱登录先不做**。
+
+**服务端配置已经在**新服务器（60.205.142.205）就位：`.env` 与 `docker-compose.yml` 都补了
+`ALIYUN_DM_*`（4 项，AK/SK 沿用老项目那把阿里云账号）与 `ALIYUN_CLOUDAUTH_*`（4 项，
+endpoint 默认 `cloudauth.cn-shanghai.aliyuncs.com`），容器 `printenv` 已验证读得到。
+⚠️ 老服务器上这套**从来没配过**（`.env` 里没有 CloudAuth 四项），所以那边实名其实一直不可用。
+
+**还差的代码**（下一步就照这个顺序）：
+1. **V20 迁移**（绝不动 V1–V19）：`identity` 加 `real_name_verified / real_name /
+   id_card_number（AES）/ verified_at / email`；
+2. 服务端**两版都实现** + 契约同步：`POST /me/realname`（拿 certifyUrl）、
+   `GET /me/realname/result`、`POST /me/email/code`（发码）、`POST /me/email`（绑定/改绑）、
+   `GET /me` 带上实名与邮箱状态；身份证号与邮箱验证码要走加密 / Redis 短时效存储；
+3. App：「我的 → 账号与安全」两行 → 实名页（WebView + 轮询结果）与邮箱绑定页；
+   服务未配置时**如实说不可用**（与短信 / 模型服务的既有约定一致）。
 
 ---
 
