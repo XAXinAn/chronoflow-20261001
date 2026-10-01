@@ -44,6 +44,10 @@ export interface IdentityView {
   identityType: IdentityType;
   nickname: string | null;
   avatarUrl?: string | null;
+  /** 绑定的邮箱（没绑就是 null）；属于**账号**级信息，切身份不变 */
+  email?: string | null;
+  /** 是否已完成实名认证（阿里云 CloudAuth）；同样属于账号级（spec §6.2） */
+  realNameVerified?: boolean;
   orgId: number | null;
   orgName: string | null;
   departmentName: string | null;

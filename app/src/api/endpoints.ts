@@ -141,6 +141,33 @@ export function createEndpoints(client: ApiClient) {
     updateMe: (payload: { nickname?: string; avatarUrl?: string | null; timezone?: string }) =>
       client.patch<IdentityView>('/api/v1/me', payload),
 
+    // ----------------------------------------------------- 账号与安全（实名 / 邮箱）
+    /**
+     * 给要绑定的邮箱发验证码（阿里云 DirectMail）。
+     *
+     * <p>与短信一样返回 `expiresIn`；`debugCode` 只在**未接真实邮件通道**的开发环境出现，
+     * 生产环境这个字段不存在（服务端有自检，接真通道后永不回显）。
+     */
+    sendEmailCode: (email: string) =>
+      client.post<{ expiresIn: number; debugCode?: string }>('/api/v1/me/email/code', { email }),
+    /** 绑定 / 改绑邮箱：带上刚收到的验证码（邮箱已被别的账号占用会被拒）。 */
+    bindEmail: (payload: { email: string; code: string }) =>
+      client.post<IdentityView>('/api/v1/me/email', payload),
+    /**
+     * 开始实名认证（阿里云 CloudAuth，ID_PRO：姓名 + 身份证 + 活体）。
+     *
+     * <p>服务端**不接收也不回传身份证号**：先由 App 把姓名/身份证交给服务端换 `certifyUrl`，
+     * 再用 WebView 打开它做人脸。服务未配置时返回 90002 一类的错误，界面如实说「暂不可用」。
+     */
+    initRealName: (payload: { realName: string; idCardNumber: string }) =>
+      client.post<{ certifyId: string; certifyUrl: string }>('/api/v1/me/realname', payload),
+    /** 查实名结果：人脸做完后轮询这个（服务端调 DescribeFaceVerify）。 */
+    realNameResult: (certifyId: string) =>
+      client.get<{ verified: boolean; message?: string | null }>(
+        '/api/v1/me/realname/result',
+        { certifyId },
+      ),
+
     /**
      * 自助注销账号（商店规范 §2.7：App 内必须有对应的注销功能按钮）。
      *
