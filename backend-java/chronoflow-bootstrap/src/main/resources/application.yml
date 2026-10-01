@@ -110,6 +110,22 @@ chronoflow:
       template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
       region-id: ${ALIYUN_SMS_REGION_ID:cn-hangzhou}
       endpoint: ${ALIYUN_SMS_ENDPOINT:dysmsapi.aliyuncs.com}
+    # 邮箱绑定（spec §6.2）：log = 不真发（开发用，配合 expose-mail-code 回显），aliyun = DirectMail
+    expose-mail-code: false
+    mail:
+      provider: ${MAIL_PROVIDER:log}
+      access-key-id: ${ALIYUN_DM_ACCESS_KEY_ID:}
+      access-key-secret: ${ALIYUN_DM_ACCESS_KEY_SECRET:}
+      account-name: ${ALIYUN_DM_ACCOUNT_NAME:}
+      from-alias: ${ALIYUN_DM_FROM_ALIAS:}
+      endpoint: ${ALIYUN_DM_ENDPOINT:dm.aliyuncs.com}
+    # 实名认证（阿里云 CloudAuth，ID_PRO：姓名 + 身份证 + 活体）。secret 是身份证加密/指纹的根密钥
+    realname:
+      access-key-id: ${ALIYUN_CLOUDAUTH_ACCESS_KEY_ID:}
+      access-key-secret: ${ALIYUN_CLOUDAUTH_ACCESS_KEY_SECRET:}
+      endpoint: ${ALIYUN_CLOUDAUTH_ENDPOINT:cloudauth.cn-shanghai.aliyuncs.com}
+      scene-id: ${ALIYUN_CLOUDAUTH_SCENE_ID:}
+      secret: ${CHRONOFLOW_IDENTITY_SECRET:}
   geo:
     # 期望的服务商。没配 Key 时自动降级为内置地点集，并在 /geo/config 里如实上报，
     # 保证离线环境与 CI 也能跑通「搜索地点 → 落库带坐标」的完整链路（spec §5.9）

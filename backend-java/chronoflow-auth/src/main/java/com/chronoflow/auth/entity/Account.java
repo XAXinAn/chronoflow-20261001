@@ -29,6 +29,16 @@ public class Account {
 
     private OffsetDateTime emailVerifiedAt;
 
+    // ---------------------------------------------------------------- 实名认证（V20）
+    /** 真实姓名（认证通过后才有） */
+    private String realName;
+    /** 身份证号**密文**（AES-GCM，随机 IV）；明文只存在于请求体内，不落库、不落日志 */
+    private String idCardCipher;
+    /** 身份证号 HMAC 指纹：定长且确定性，用来做「同一实名信息只能绑一个账号」的唯一索引 */
+    private String idCardFingerprint;
+    private Boolean realNameVerified;
+    private OffsetDateTime realNameVerifiedAt;
+
     private String status;
 
     private OffsetDateTime lastLoginAt;
@@ -99,6 +109,46 @@ public class Account {
 
     public void setEmailVerifiedAt(OffsetDateTime emailVerifiedAt) {
         this.emailVerifiedAt = emailVerifiedAt;
+    }
+
+    public String getRealName() {
+        return realName;
+    }
+
+    public void setRealName(String realName) {
+        this.realName = realName;
+    }
+
+    public String getIdCardCipher() {
+        return idCardCipher;
+    }
+
+    public void setIdCardCipher(String idCardCipher) {
+        this.idCardCipher = idCardCipher;
+    }
+
+    public String getIdCardFingerprint() {
+        return idCardFingerprint;
+    }
+
+    public void setIdCardFingerprint(String idCardFingerprint) {
+        this.idCardFingerprint = idCardFingerprint;
+    }
+
+    public Boolean getRealNameVerified() {
+        return realNameVerified;
+    }
+
+    public void setRealNameVerified(Boolean realNameVerified) {
+        this.realNameVerified = realNameVerified;
+    }
+
+    public OffsetDateTime getRealNameVerifiedAt() {
+        return realNameVerifiedAt;
+    }
+
+    public void setRealNameVerifiedAt(OffsetDateTime realNameVerifiedAt) {
+        this.realNameVerifiedAt = realNameVerifiedAt;
     }
 
     public String getStatus() {
