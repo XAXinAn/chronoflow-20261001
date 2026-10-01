@@ -221,7 +221,7 @@ export function AgendaScreen({
   );
 
   /**
-   * 「点击上传图片，一键添加日程」：选来源 → 选图/拍照 → 端侧 OCR → 云端解析 → 确认页。
+   * 「点此上传图片，一键添加日程」：选来源 → 选图/拍照 → 端侧 OCR → 云端解析 → 确认页。
    *
    * <p>**图片不出手机**：端侧 OCR（原生模块，只有开发版 / 正式版里注册得上）先把图片转成文字，
    * 发到服务端的只有**文字**；Expo Go 下 OCR 拿不到原生模块会抛 DeviceRecognitionUnavailable，
@@ -446,7 +446,7 @@ export function AgendaScreen({
           />
 
           {/*
-            日历下方的文字按钮：点击上传图片 → 一键添加日程（spec §4.1.9）。
+            日历下方的文字按钮：点此上传图片 → 一键添加日程（spec §4.1.9）。
             链路：选来源（相册/拍照）→ 端侧 OCR（图片不出手机）→ 云端解析文字 →
             确认页（补日期 / 改标题）→ 逐条写进日历。见 src/vision/onDevice.ts 与
             src/screens/EventImportScreen.tsx。
@@ -456,7 +456,7 @@ export function AgendaScreen({
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="点击上传图片，一键添加日程"
+            accessibilityLabel="点此上传图片，一键添加日程"
             accessibilityState={{ busy: recognizing, disabled: recognizing }}
             disabled={recognizing}
             hitSlop={8}
@@ -464,7 +464,7 @@ export function AgendaScreen({
             style={styles.uploadEntry}
           >
             <Text style={{ color: theme.color.accent, fontSize: 14, fontWeight: '600' }}>
-              {recognizing ? '识别中…' : '点击上传图片，一键添加日程'}
+              {recognizing ? '识别中…' : '点此上传图片，一键添加日程'}
             </Text>
           </Pressable>
 
