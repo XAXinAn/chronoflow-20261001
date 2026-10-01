@@ -92,6 +92,18 @@ services:
       XATODO_ASR_URL: ${XATODO_ASR_URL:-https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation}
       XATODO_ASR_API_KEY: ${XATODO_ASR_API_KEY:-}
       XATODO_ASR_MODEL: ${XATODO_ASR_MODEL:-qwen3-asr-flash}
+      # 应用内更新（spec §4.1.11）：App 通过 /system/app-release 查最新版本。
+      # 留空 = 这个部署不提供更新检查（App 不弹任何东西）；发布新版本时改这几项
+      # （changelog 用 `|` 分隔多条）。安装包由 nginx 的 /downloads/ 直接发。
+      XATODO_APP_RELEASE_VERSION_NAME: ${XATODO_APP_RELEASE_VERSION_NAME:-}
+      XATODO_APP_RELEASE_VERSION_CODE: ${XATODO_APP_RELEASE_VERSION_CODE:-0}
+      XATODO_APP_RELEASE_APK_URL: ${XATODO_APP_RELEASE_APK_URL:-}
+      XATODO_APP_RELEASE_SIZE_BYTES: ${XATODO_APP_RELEASE_SIZE_BYTES:-0}
+      XATODO_APP_RELEASE_SHA256: ${XATODO_APP_RELEASE_SHA256:-}
+      XATODO_APP_RELEASE_CHANGELOG: ${XATODO_APP_RELEASE_CHANGELOG:-}
+      XATODO_APP_RELEASE_FORCE: ${XATODO_APP_RELEASE_FORCE:-false}
+      XATODO_APP_RELEASE_MIN_SUPPORTED_VERSION_CODE: ${XATODO_APP_RELEASE_MIN_SUPPORTED_VERSION_CODE:-0}
+      XATODO_APP_RELEASE_PUBLISHED_AT: ${XATODO_APP_RELEASE_PUBLISHED_AT:-}
       TZ: Asia/Shanghai
     volumes:
       - xatodo_uploads:/data/uploads

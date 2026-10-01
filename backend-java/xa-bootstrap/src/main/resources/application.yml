@@ -68,6 +68,19 @@ mybatis-plus:
 
 xatodo:
   version: ${XATODO_VERSION:0.1.0-SNAPSHOT}
+  # App 应用内更新（spec §4.1.11）：**留空 = 这个部署不提供更新检查**。
+  # 发布新版本时改这几行（或只用环境变量覆盖）即可，不用改代码、不用重新发版后端。
+  # changelog 用 `|` 分隔多条，例如：图片识别日程|修复 9 月重复日程展开
+  app-release:
+    version-name: ${XATODO_APP_RELEASE_VERSION_NAME:}
+    version-code: ${XATODO_APP_RELEASE_VERSION_CODE:0}
+    apk-url: ${XATODO_APP_RELEASE_APK_URL:}
+    size-bytes: ${XATODO_APP_RELEASE_SIZE_BYTES:0}
+    sha256: ${XATODO_APP_RELEASE_SHA256:}
+    changelog: ${XATODO_APP_RELEASE_CHANGELOG:}
+    force: ${XATODO_APP_RELEASE_FORCE:false}
+    min-supported-version-code: ${XATODO_APP_RELEASE_MIN_SUPPORTED_VERSION_CODE:0}
+    published-at: ${XATODO_APP_RELEASE_PUBLISHED_AT:}
   admin:
     # 首次启动且 admin_user 表为空时创建初始超管；生产环境务必用环境变量覆盖密码
     bootstrap-username: ${ADMIN_BOOTSTRAP_USERNAME:admin}

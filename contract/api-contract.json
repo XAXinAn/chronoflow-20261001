@@ -14,6 +14,7 @@
   "endpoints": [
     { "method": "GET", "path": "/api/v1/system/info", "auth": "none" },
     { "method": "GET", "path": "/api/v1/system/ping", "auth": "none" },
+    { "method": "GET", "path": "/api/v1/system/app-release", "auth": "none" },
     { "method": "GET", "path": "/api/v1/legal/{doc}", "auth": "none" },
 
     { "method": "POST", "path": "/api/v1/auth/sms/code", "auth": "none" },

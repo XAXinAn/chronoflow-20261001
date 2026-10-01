@@ -107,6 +107,17 @@ class BackendFoundationTest {
     }
 
     @Test
+    @DisplayName("应用内更新接口免登录；未配置发布信息时如实回 versionCode=0，不编版本")
+    void appReleaseIsPublicAndEmptyWhenUnconfigured() throws Exception {
+        mockMvc.perform(get("/api/v1/system/app-release"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.versionCode").value(0))
+                // 没配置就不该有包地址——有地址 App 就会去下载
+                .andExpect(jsonPath("$.data.apkUrl").doesNotExist());
+    }
+
+    @Test
     @DisplayName("未认证访问受保护接口返回 401 且响应体结构一致")
     void unauthenticatedRequestReturnsEnvelope() throws Exception {
         mockMvc.perform(get("/api/v1/calendars"))

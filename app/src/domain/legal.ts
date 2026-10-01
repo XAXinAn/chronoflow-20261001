@@ -48,5 +48,5 @@ export function legalUrl(baseUrl: string, doc: LegalDoc): string {
  */
 export const OPERATOR_NAME = '舟山市时纪云人工智能应用软件开发有限公司';
 
-/** App 版本号，与 app.json 的 expo.version 保持一致。 */
-export const APP_VERSION = '0.1.0';
+/** App 版本号，与 app.json 的 expo.version 保持一致（应用内更新按 versionCode 比较，这里只是展示）。 */
+export const APP_VERSION = '0.2.0';

@@ -18,6 +18,7 @@ import {
 import { createRuntime } from './runtime';
 import { buildConsentRecord, hasAcceptedPolicy } from './domain/consent';
 import { registerBundledOcrEngine } from './vision/register';
+import { AppUpdateProvider } from './updater/AppUpdater';
 import { createSecureConsentStore, type ConsentStore } from './auth/consentStore';
 import { AgendaScreen } from './screens/AgendaScreen';
 import { AccountDeletionScreen } from './screens/AccountDeletionScreen';
@@ -713,7 +714,14 @@ function Root() {
     return <PrivacyConsentScreen onAgree={acceptConsent} onDecline={() => undefined} />;
   }
 
-  return session ? <MainStack /> : <AuthFlow />;
+  /**
+   * 应用内更新（spec §4.1.11）：Provider 挂在**同意隐私政策之后**，
+   * 所以「同意前不发任何请求」这条依然成立；里面的启动检查是静默的
+   * （没网 / 服务端没配发布信息都不会打扰用户），只有真发现新版本才弹。
+   */
+  return (
+    <AppUpdateProvider>{session ? <MainStack /> : <AuthFlow />}</AppUpdateProvider>
+  );
 }
 
 function ThemedRoot() {

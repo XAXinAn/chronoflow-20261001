@@ -11,6 +11,7 @@ import { askPermission } from '../components/permission';
 import { useAppScheme, useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import { LEGAL_DOCS, OPERATOR_NAME, APP_VERSION, type LegalDoc } from '../domain/legal';
 import { absoluteMediaUrl } from '../domain/media';
+import { useAppUpdate } from '../updater/AppUpdater';
 
 /**
  * 「我的」页。
@@ -30,6 +31,7 @@ export function SettingsScreen({
   onOpenDeletion: () => void;
 }) {
   const theme = useAppTheme();
+  const { check: checkUpdate, currentVersionName } = useAppUpdate();
   const insets = useSafeAreaInsets();
   const scheme = useAppScheme();
   const { api, baseUrl } = useRuntime();
@@ -211,6 +213,18 @@ export function SettingsScreen({
             leading={<RowIcon name="chatbubble-ellipses-outline" />}
             title="意见反馈"
             onPress={onOpenFeedback}
+            trailing={<Chevron />}
+          />
+          <ListSeparator inset={52} />
+          {/*
+            手动检查更新（spec §4.1.11）。启动时已经静默查过一次，这里是「我就是要现在查」——
+            它**一定会给反馈**：有新版本弹更新说明，没有就明确说「已是最新版本」。
+          */}
+          <ListRow
+            leading={<RowIcon name="cloud-download-outline" />}
+            title="检查更新"
+            subtitle={`当前版本 ${currentVersionName}`}
+            onPress={() => void checkUpdate(true)}
             trailing={<Chevron />}
           />
         </ListGroup>

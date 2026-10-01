@@ -1,5 +1,6 @@
 import type { AgentApprovalPayload } from './agent';
 import type { ApiClient } from './client';
+import type { AppRelease } from './appRelease';
 import { File } from 'expo-file-system';
 import type {
   EventDetail,
@@ -275,6 +276,12 @@ export function createEndpoints(client: ApiClient) {
      * 避免界面看起来能用、点了却装死（spec §11 阶段三）。
      */
     systemInfo: () => client.get<SystemInfo>('/api/v1/system/info'),
+    /**
+     * 应用内更新：拿服务端配置的最新版本信息（spec §4.1.11）。**免登录**——
+     * 登录接口改坏时，老客户端还得能查到新版本把自己升级上去。
+     * 没配置发布信息的部署会回 `versionCode: 0`，调用方据此认为「没有更新」。
+     */
+    appRelease: () => client.get<AppRelease>('/api/v1/system/app-release'),
     /**
      * 语音转文字（spec §11 阶段三）。录音上限 60 秒；音频只在服务端内存里转 base64
      * 转发给百炼，**不落盘**。返回的文本由 App 填进输入框，不自动发送。

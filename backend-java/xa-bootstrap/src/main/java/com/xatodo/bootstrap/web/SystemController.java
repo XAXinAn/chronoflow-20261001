@@ -3,6 +3,7 @@ package com.xatodo.bootstrap.web;
 import com.xatodo.common.api.ApiResponse;
 import com.xatodo.common.web.TraceIds;
 import com.xatodo.agent.service.AgentChatService;
+import com.xatodo.bootstrap.config.AppReleaseProperties;
 import com.xatodo.personal.geo.GeoService;
 import com.xatodo.personal.service.HolidaySyncStatus;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 
 /**
  * 系统探活与元信息接口，用于联通性验证。
@@ -29,13 +31,16 @@ public class SystemController {
     private final GeoService geoService;
     private final HolidaySyncStatus holidaySyncStatus;
     private final AgentChatService agentChatService;
+    private final AppReleaseProperties appRelease;
 
     public SystemController(GeoService geoService,
                             HolidaySyncStatus holidaySyncStatus,
-                            AgentChatService agentChatService) {
+                            AgentChatService agentChatService,
+                            AppReleaseProperties appRelease) {
         this.geoService = geoService;
         this.holidaySyncStatus = holidaySyncStatus;
         this.agentChatService = agentChatService;
+        this.appRelease = appRelease;
     }
 
     @GetMapping("/info")
@@ -53,6 +58,55 @@ public class SystemController {
     @GetMapping("/ping")
     public ApiResponse<String> ping() {
         return ApiResponse.ok("pong");
+    }
+
+    /**
+     * App 新版本发布信息（spec §4.1.11「应用内更新」）。**免登录**：版本检查发生在
+     * 登录之前也要能用（否则「登录接口改了、老客户端登不上」就永远升不了级）。
+     *
+     * <p>未配置发布信息时返回 `versionCode = 0`（见 {@link AppReleaseInfo#none()}），
+     * App 据此认为「这个部署没有提供应用内更新」，不弹窗。
+     */
+    @GetMapping("/app-release")
+    public ApiResponse<AppReleaseInfo> appRelease() {
+        return ApiResponse.ok(AppReleaseInfo.from(appRelease));
+    }
+
+    /**
+     * @param versionName            展示用版本名（如 0.2.0）
+     * @param versionCode            整数版本号，App 拿它和本地 `versionCode` 比大小
+     * @param apkUrl                 安装包地址：绝对 URL，或以 `/` 开头的相对路径（App 拼当前 API 域名）
+     * @param sizeBytes              安装包字节数（0 = 没配）
+     * @param sha256                 安装包 SHA-256（为空 = 不校验）
+     * @param changelog              更新说明，逐条
+     * @param force                  是否强制更新（App 不给「稍后」）
+     * @param minSupportedVersionCode 低于这个版本号的客户端必须更新（0 = 不限制）
+     * @param publishedAt            发布时间，ISO-8601；没配就是 null
+     */
+    public record AppReleaseInfo(String versionName, int versionCode, String apkUrl, long sizeBytes,
+                                 String sha256, List<String> changelog, boolean force,
+                                 int minSupportedVersionCode, String publishedAt) {
+
+        /** 这个部署没有提供应用内更新：只回一个 0 版本号，其余留空。 */
+        private static AppReleaseInfo none() {
+            return new AppReleaseInfo(null, 0, null, 0, null, List.of(), false, 0, null);
+        }
+
+        public static AppReleaseInfo from(AppReleaseProperties properties) {
+            if (!properties.configured()) {
+                return none();
+            }
+            return new AppReleaseInfo(
+                    properties.displayVersionName(),
+                    properties.getVersionCode(),
+                    properties.getApkUrl(),
+                    properties.getSizeBytes(),
+                    properties.getSha256(),
+                    properties.changelogItems(),
+                    properties.isForce(),
+                    properties.getMinSupportedVersionCode(),
+                    properties.getPublishedAt());
+        }
     }
 
     /**

@@ -479,6 +479,23 @@ def check_permission_rationale() -> None:
         "相册 / 相机 / 定位 / 通知四类权限都要有用途说明文案（拍照识别重新上线后，"
         "相机也要「先说明用途再申请」）",
     )
+    # 应用内更新要「安装应用」权限（spec §4.1.11）：这是审核会盯的敏感权限，
+    # 申请了就必须在隐私政策 §9.2 权限清单里写出来，否则按「声明与实际不符」判
+    policy = read(LEGAL / "privacy-policy.md")
+    require_contains(
+        policy,
+        ["REQUEST_INSTALL_PACKAGES"],
+        "privacy-policy.md",
+        "App 申请了「安装应用」权限（应用内更新），必须在 §9.2 系统权限清单里逐条写明用途与拒绝后的影响",
+    )
+    permissions_manifest = read(ROOT / "app" / "app.json")
+    require_contains(
+        permissions_manifest,
+        ["REQUEST_INSTALL_PACKAGES"],
+        "app.json",
+        "应用内更新要在 app.json 的 android.permissions 里声明 REQUEST_INSTALL_PACKAGES，"
+        "否则装完新包后系统不会给安装界面",
+    )
     for screen in [
         "AgendaScreen.tsx",
         "OrgEventsScreen.tsx",
