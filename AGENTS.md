@@ -2,12 +2,53 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-10-01（第十四轮：**图片识别日程改走服务端解析** —— 只抽「要你做的事」、
-> 日期可有可无、确认页补全后一键添加；端侧小模型从包里拿掉）
+> 最后更新：2026-10-01（第十五轮：**应用内更新**上线 + **WSL 被 OOM 拖崩**的复盘与防护）
 >
 > ⚠️ **数据模型变了**：`event.start_at` / `event.end_at` 已被 V18 迁移合并成 `event.at`（单时间点），
 > 不再有起止与时长；`event_exception.override_*` 同样合成 `override_at`。
 > 两版后端、Web 组织管理端与 App 都已对齐。改动前先读 §0.0 第九轮摘要。
+
+---
+
+## 0.0 本次交接摘要（2026-10-01，第十五轮：应用内更新 + WSL OOM 崩溃复盘）
+
+| # | 内容 |
+| --- | --- |
+| 1 | **后端新增 `GET /api/v1/system/app-release`**（免登录，Java + Python + 契约，**113 个端点**）。配置驱动（`XATODO_APP_RELEASE_*`）：版本名 / 版本号 / 包地址 / 大小 / sha256 / 更新说明（`\|` 分隔）/ 是否强更 / 支持下限 / 发布时间。**没配置就回 `versionCode = 0`**，客户端据此认为「不提供更新」——绝不编版本。 |
+| 2 | **App 应用内更新**：`domain/appUpdate.ts`（纯逻辑：要不要更新 / 能不能跳过 / 地址怎么拼，9 项单测）+ `updater/AppUpdater.tsx`（启动静默检查、「我的 → 检查更新」手动检查、更新说明弹层、下载带进度、调**系统安装器**安装）。强制更新不给「稍后」；**读不到本地 versionCode（Expo Go / Web）一律不检查**。 |
+| 3 | **合规**：`app.json` 声明 `REQUEST_INSTALL_PACKAGES`，隐私政策 §9.2 权限清单写清用途与「不静默安装」，`check_compliance.py` 加两条断言（政策里必须有、app.json 里必须有）。 |
+| 4 | **发布链路**：`scripts/publish_apk.sh`（传包到 `/opt/xatodo/web/downloads/` + 算大小与 sha256 + 打印要写进 `.env` 的九行）、nginx `location /downloads/` 直接发静态包（不过后端、支持 Range、`no-store` 防止缓存住旧包）、compose 透传 `XATODO_APP_RELEASE_*`。 |
+| 5 | **端到端实测（模拟器）**：装 v2 → 后端发布 v3 → App 启动自动提示「发现新版本 0.3.0 / 约 74 MB」→ 立即更新（进度条 26%→78%→完成）→ 系统安装器「Update this app?」→ 装完 `versionCode=3 / versionName=0.3.0`；再启动**不再提示**，「我的」页显示「检查更新 · 当前版本 0.3.0」。 |
+
+### ⚠️ 这一轮把 WSL 搞崩了两次：**Android 原生编译的 OOM**（务必读完）
+
+现象：agent 会话突然断、`uptime` 变成 `up 0 min`（整台 WSL 虚拟机重启）、终端开始刷
+`35;61;18M35;62;18M…`（鼠标一动就刷一屏）。**那串数字是 SGR 鼠标报告**——
+进程被杀时没来得及关终端的鼠标追踪模式，鼠标事件于是被当文本打印出来。**那是症状，不是原因**：
+
+```
+kernel: oom-kill: ... global_oom, task=java, pid=1571
+kernel: Out of memory: Killed process 1571 (java) total-vm:13500628kB, anon-rss:2243952kB
+（同一份 OOM 报告里还挂着二十多个 clang++、aapt2、ninja）
+```
+
+**根因**：`expo prebuild --clean` 会**重新生成** `app/android/gradle.properties`，把
+`~/.gradle/gradle.properties` 里早就写好的内存保护（`workers.max=3` / `parallel=false`）**整块覆盖掉**；
+再加上 ninja 自己的 `-j`（Gradle 的 worker 数管不到它），在 7.4GB 的 WSL 里瞬间吃掉几个 GB。
+
+**防护（已落地）**：出包一律走 `scripts/build_apk.sh`，它会在 prebuild 之后重新钉：
+`reactNativeArchitectures=x86_64`、`org.gradle.parallel=false`、`workers.max=2`、
+`org.gradle.daemon=false`，并导出 `CMAKE_BUILD_PARALLEL_LEVEL=2`（管住 ninja 的并行度）。
+用它重跑，内存峰值从「OOM」降到 ~5.8GB 后稳定，缓存命中时只有 ~850MB。
+
+**另外两条经验**：①别把构建日志写进 `app/android/`——`prebuild --clean` 会连日志一起删掉，
+写到 `app/*.log`（`.gitignore` 里的 `*.log` 已经忽略）里；②`.wslconfig` 建议加 `swap=8GB`（改完要
+`wsl --shutdown`，会重启 WSL 里的一切，挑空闲时做）。
+
+**手工修 compose 的教训**：别用「按子串替换一行」的方式插配置——我那次把
+`XATODO_ASR_MODEL` 的**值**挤到了下一行末尾，顺带把语音模型变量弄空
+（`publishedAt` 变成 `2026-10-01T05:04:34Z qwen3-asr-flash`）。**补配置后一定用
+`docker-compose config` + `docker exec <容器> printenv <变量>` 验一遍。**
 
 ---
 
