@@ -51,3 +51,42 @@ path.write_text(patched, encoding="utf-8")
 print("✓ onnxruntime-react-native：已跳过 VersionNumber 分支（Gradle 9 兼容）")
 PY
 fi
+
+# ------------------------------------------------- onnxruntime（16KB 页对齐）
+#
+# Android 15 起不少新机型的**页大小是 16KB**（模拟器也有 `ps16k` 镜像）。这类系统要求 APK 里
+# 每个 `.so` 的 ELF **LOAD 段按 16KB 对齐**，否则加载直接失败——实测现象：
+# **应用一启动就闪退**，系统还会弹一句
+# 「This app isn't 16 KB compatible. LOAD segment alignment check failed …
+#   libonnxruntimejsi.so : LOAD segment not aligned」。
+#
+# 本仓其它 `.so` 都是 `0x4000`（16KB）对齐的（连上游预编译的 `libreactnative.so`、`libonnxruntime.so`
+# 都是），**只有 `libonnxruntimejsi.so` 是 `0x1000`**：它是本仓用 NDK 现编的（模块自带 CMakeLists），
+# 而那个 CMake 工程没拿到 AGP 给自家 CMake 传的 16KB 参数。
+#
+# 所以给它补一行链接选项。**16KB 对齐的库在 4KB 页的老设备上照样能跑**（对齐大于页大小是安全的），
+# 所以这条补丁不需要按机型分支。
+ORT_CMAKE="$MODULES/onnxruntime-react-native/android/CMakeLists.txt"
+if [ -f "$ORT_CMAKE" ]; then
+  python3 - "$ORT_CMAKE" <<'PY'
+import sys, pathlib
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+marker = "APPEND_STRING PROPERTY LINK_FLAGS"
+if marker in text:
+    print("✓ onnxruntime-react-native：CMakeLists 已经是 16KB 对齐的状态")
+    sys.exit(0)
+anchor = "# Configure C++ 17"
+if anchor not in text:
+    sys.stderr.write("⚠ onnxruntime-react-native：CMakeLists 变了，16KB 补丁没匹配上，请人工看一眼\n")
+    sys.exit(1)
+patch = (
+    "# [补丁] 16KB 页对齐：Android 15+ 的 16KB 页设备要求 .so 的 LOAD 段 ≥16KB，\n"
+    "# 否则加载失败、应用启动即闪退（本仓其余 .so 都是 16KB）。\n"
+    'set_property(TARGET onnxruntimejsi APPEND_STRING PROPERTY LINK_FLAGS " -Wl,-z,max-page-size=16384")\n\n'
+)
+path.write_text(text.replace(anchor, patch + anchor, 1), encoding="utf-8")
+print("✓ onnxruntime-react-native：CMakeLists 已补 16KB 页对齐链接参数")
+PY
+fi

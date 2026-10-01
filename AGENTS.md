@@ -71,10 +71,11 @@ Kotlin/Swift 原生模块。
 （4.7MB / 10.9MB / 586KB / 26KB，md5 与源文件一致）——**不用出整包就能确认「模型进没进包」**，
 以后每次改资源都值得先跑这一遍。release 包也出好了：**166MB**（上一版 149MB + 模型 16MB），
 桌面文件 `chronoflow-0.0.2.apk`（versionCode 3），模型确实在包里（见坑 9）。
-**已发布上线**：包传到新服务器 `/opt/chronoflow/web/downloads/chronoflow-0.0.2.apk`
-（sha256 与本地一致），`.env` 里 9 行 `CHRONOFLOW_APP_RELEASE_*` 换成 0.0.2 / versionCode 3
-（旧值备份在 `/opt/chronoflow/.env.bak.20261001T134943Z`），重启后端后
-`GET /api/v1/system/app-release` 已返回 0.0.2、`/downloads/chronoflow-0.0.2.apk` 返回 200。
+**已发布上线**：先是 0.0.2（在 16KB 页真机上启动闪退，见坑 10），当天已换成
+**0.0.3 / versionCode 4**：包在 `/opt/chronoflow/web/downloads/chronoflow-0.0.3.apk`
+（sha256 与本地一致），`.env` 里 9 行 `CHRONOFLOW_APP_RELEASE_*` 已更新（旧值都留了
+`/opt/chronoflow/.env.bak.*` 备份），重启后端后 `GET /api/v1/system/app-release` 返回 0.0.3、
+下载链接 200。**0.0.2 那个包不要再用**（桌面上也还留着，别混）。
 ⚠️ **新服务器上是 `docker compose`（v2 插件），没有 `docker-compose`**——AGENTS 第十五轮写的
 `docker-compose up -d backend` 只适用于老服务器，敲错了会报 `command not found`。
 
@@ -135,6 +136,23 @@ Kotlin/Swift 原生模块。
    **字体（Ionicons.ttf）走的就是这条路**，所以「图标能显示」本身就说明这条链是通的。
    ⚠️ ONNX Runtime 只要**文件路径**，交给它之前得把 `file://` 去掉（`filePath()` 就干这个）。
    本机没有 `unzip`，查包内容用 `python3 -c "import zipfile; …"`。
+10. **16KB 页设备上「一打开就闪退」（0.0.2 的翻车，2026-10-01）**：真机现象是装完新版闪退；
+    模拟器上不崩（它只在启动时弹一句系统提示）。**根因**：Android 15+ 有一批机型的页大小是 16KB，
+    要求 APK 内每个 `.so` 的 ELF **LOAD 段按 16KB 对齐**，而 `libonnxruntimejsi.so` 是 `0x1000`
+    ——它是本仓用 NDK 现编的（模块自带 CMakeLists），没拿到 AGP 给自家 CMake 传的 16KB 参数；
+    本仓其余 **42 个 .so 全是 `0x4000`**（连上游预编译的 `libonnxruntime.so`、`libreactnative.so` 都是）。
+    **修法**：`patch-third-party-gradle.sh` 给那个 target 补 `-Wl,-z,max-page-size=16384`（每次构建自动跑），
+    并且 `build_apk.sh` **构建后硬卡**一遍包内所有 .so 的对齐（纯 python 解 zip + 读 ELF program header，
+    不依赖 `readelf`/`unzip`，不通过就直接失败）。顺带把「启动路径上 import ORT」改成**懒加载**
+    （注册的是代理，第一次识别才加载真实现）——原生库再出问题也只影响「图片识别」，不会让整个 App 打不开。
+    排查提示：`llvm-readelf -l <so> | awk '/LOAD/{print $NF}'` 看对齐；模拟器用 `ps16k` 镜像能复现提示，
+    但**只有真机 arm64 + 16KB 页才会硬失败**。
+11. **app.json 改了版本号，包里的还是老版本**：`android/` 是 `expo prebuild` 生成的，
+    **prebuild 之后再改 app.json 的 `version` / `versionCode` 不会同步过去**。0.0.2 就这么翻的车
+    （文件名和发布配置都是 0.0.2/3，包里其实还是 `versionCode 2 / versionName 0.0.1`
+    → 手机装上后「还提示有新版本」，无限弹更新）。修法：`build_apk.sh` 每次构建前从 app.json
+    把这两项钉进 `android/app/build.gradle`，与 gradle.properties 的钉法同一处。
+    出包后想核对：`aapt2 dump badging <apk> | head -1`。
 
 ### 排队中、还没开工的
 

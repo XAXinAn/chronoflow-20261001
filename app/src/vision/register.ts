@@ -3,8 +3,15 @@
  *
  * <p>为什么要动态 import：OCR 是原生模块（`onnxruntime-react-native` / ML Kit），
  * **Expo Go 里不存在**。静态 import 会让 Expo Go 的整包打包阶段就出问题。
- * 这里用 `await import()` 包在 try/catch 里：拿不到就当没注册，界面据此**如实说明**
- * 「端侧识别需要开发版构建」，而不是让整个 App 起不来。
+ * 这里用 `await import()`：拿不到就如实说明「端侧识别需要开发版构建」，
+ * 而不是让整个 App 起不来。
+ *
+ * <p><b>注册的是「代理」，真实现要等第一次用才加载</b>。这不是洁癖：2026-10-01 出过一版
+ * 启动即闪退——`onnxruntime-react-native` 的原生库当时没做 16KB 页对齐，在 Android 15+
+ * 的 16KB 页机型上加载失败，而**启动路径上就 import 了它**（注册引擎那一步），于是整个 App
+ * 打不开（见 `scripts/patch-third-party-gradle.sh` 里 onnxruntime 那段）。
+ * 原生库的问题当然要在原生侧修（已修 + 构建期硬卡），但**启动路径上不碰原生模块**这条
+ * 防线值得留着：引擎加载失败最多让「图片识别」这个功能报错，不该把整个 App 拖下水。
  *
  * <p>第二段（文字 → 日程草稿）在服务端做，所以这里只注册 OCR 这一件事。
  *
@@ -13,29 +20,51 @@
  * 改成 `'mlkit'` 就能一行切回去，不用改别的代码。
  */
 
-import { registerOcrEngine } from './onDevice';
+import { DeviceRecognitionUnavailable, registerOcrEngine, type OcrEngine } from './onDevice';
 
 /** 引擎开关：`paddle` = PaddleOCR PP-OCRv4（默认），`mlkit` = Google ML Kit 中文。 */
 const ENGINE: 'paddle' | 'mlkit' = 'paddle';
 
 let registered = false;
+/** 真实现的加载结果，缓存住（成功与失败都缓存：失败重试没有意义，反而会反复弹原生错误） */
+let engine: Promise<OcrEngine> | null = null;
 
-export async function registerBundledOcrEngine(): Promise<boolean> {
+export function registerBundledOcrEngine(): boolean {
   if (registered) {
     return true;
   }
+  registerOcrEngine({
+    name: () => (ENGINE === 'mlkit' ? 'ML Kit 中文 OCR' : 'PaddleOCR PP-OCRv4'),
+    recognizeText: async (uri) => (await loadEngine()).recognizeText(uri),
+    warmUp: async () => {
+      await loadEngine();
+    },
+  });
+  registered = true;
+  return true;
+}
+
+/** 第一次真正用到时才把实现（连同原生模块）加载进来。 */
+function loadEngine(): Promise<OcrEngine> {
+  if (!engine) {
+    engine = importEngine();
+  }
+  return engine;
+}
+
+async function importEngine(): Promise<OcrEngine> {
   try {
     if (ENGINE === 'mlkit') {
       const { mlkitOcrEngine } = await import('./mlkitOcr');
-      registerOcrEngine(mlkitOcrEngine);
-    } else {
-      const { paddleOcrEngine } = await import('./paddleOcr');
-      registerOcrEngine(paddleOcrEngine);
+      return mlkitOcrEngine;
     }
-    registered = true;
-    return true;
-  } catch {
-    // Expo Go / Web：没有原生模块，保持未注册（调用方会提示需要开发版构建）
-    return false;
+    const { paddleOcrEngine } = await import('./paddleOcr');
+    return paddleOcrEngine;
+  } catch (cause) {
+    // Expo Go / Web / 原生模块加载失败：如实告诉用户，不静默降级到别的通道
+    console.log(`[vision] 端侧 OCR 引擎加载失败（${ENGINE}）：${String(cause)}`);
+    throw new DeviceRecognitionUnavailable(
+      '端侧识别需要开发版构建（Expo Go 里没有 OCR 模块），或这台设备加载不了本地识别库',
+    );
   }
 }

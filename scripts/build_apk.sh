@@ -94,6 +94,28 @@ bash "$ROOT/scripts/patch-third-party-gradle.sh"
 echo "→ 确认端侧 OCR 模型（PaddleOCR PP-OCRv4）"
 bash "$ROOT/scripts/fetch_ppocr_models.sh"
 
+# app.json 里的版本号要**钉进 build.gradle**：`android/` 是 `expo prebuild` 生成后就不再跟着
+# app.json 变的（CNG 只在你显式 prebuild 时重写）。2026-10-01 就踩过这一条：app.json 改成
+# 0.0.2/3，包名也叫 chronoflow-0.0.2.apk，**包里的 versionCode 还是 2、versionName 还是 0.0.1**
+# → 手机装上后「还是提示有新版本」，无限弹更新。这里每次构建前对齐一次，杜绝再犯。
+echo "→ 把 app.json 的版本钉进 android/app/build.gradle"
+python3 - "$ANDROID/app/build.gradle" "$APP/app.json" <<'PY'
+import json, re, sys, pathlib
+
+gradle = pathlib.Path(sys.argv[1])
+config = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))["expo"]
+version_name = config["version"]
+version_code = int(config["android"]["versionCode"])
+text = gradle.read_text(encoding="utf-8")
+patched, count_code = re.subn(r"\bversionCode\s+\d+", f"versionCode {version_code}", text, count=1)
+patched, count_name = re.subn(r'\bversionName\s+"[^"]*"', f'versionName "{version_name}"', patched, count=1)
+if not count_code or not count_name:
+    sys.stderr.write("⚠ 没在 build.gradle 里找到 versionCode / versionName，请人工看一眼\n")
+    sys.exit(1)
+gradle.write_text(patched, encoding="utf-8")
+print(f"  versionName={version_name} versionCode={version_code}")
+PY
+
 if [ "$BUILD_TYPE" = "release" ]; then
   TASK=":app:assembleRelease"
   OUT="$ANDROID/app/build/outputs/apk/release/app-release.apk"
@@ -110,6 +132,54 @@ echo "→ 编译 $BUILD_TYPE APK（workers=2, ninja=$CMAKE_BUILD_PARALLEL_LEVEL,
 echo
 echo "✅ $OUT"
 ls -lh "$OUT"
+
+# 16KB 页对齐检查（Android 15+ 的 16KB 页机型**必须**满足，否则一启动就闪退）。
+# 见 `scripts/patch-third-party-gradle.sh` 里 onnxruntime 那段：libonnxruntimejsi.so 曾经是
+# 0x1000，整台手机上的 App 直接打不开，而模拟器/老机型看不出问题——所以这里**构建期硬卡**。
+# 本机没有 unzip/readelf，用纯 python 解 zip + 读 ELF program header，任何机器都能跑。
+echo "→ 检查包内 .so 的 16KB 页对齐"
+python3 - "$OUT" <<'PY'
+import struct, sys, zipfile
+
+path = sys.argv[1]
+bad = []
+checked = 0
+with zipfile.ZipFile(path) as apk:
+    for name in apk.namelist():
+        if not (name.startswith("lib/") and name.endswith(".so")):
+            continue
+        data = apk.read(name)
+        if data[:4] != b"\x7fELF":
+            continue
+        is64 = data[4] == 2
+        if is64:
+            phoff, phentsize, phnum = struct.unpack_from("<QHH", data, 32)
+        else:
+            phoff, phentsize, phnum = struct.unpack_from("<IHH", data, 28)
+        aligns = []
+        for index in range(phnum):
+            base = phoff + index * phentsize
+            if is64:
+                p_type = struct.unpack_from("<I", data, base)[0]
+                p_align = struct.unpack_from("<Q", data, base + 48)[0]
+            else:
+                p_type = struct.unpack_from("<I", data, base)[0]
+                p_align = struct.unpack_from("<I", data, base + 28)[0]
+            if p_type == 1:  # PT_LOAD
+                aligns.append(p_align)
+        checked += 1
+        if any(align < 0x4000 for align in aligns):
+            bad.append((name, [hex(align) for align in aligns]))
+
+print(f"  检查了 {checked} 个 .so")
+if bad:
+    sys.stderr.write("✗ 这些库的 LOAD 段不是 16KB 对齐（Android 15+ 的 16KB 页机型上会加载失败、启动闪退）：\n")
+    for name, aligns in bad:
+        sys.stderr.write(f"    {name} → {', '.join(aligns)}\n")
+    sys.stderr.write("  修法见 scripts/patch-third-party-gradle.sh（给对应模块补 -Wl,-z,max-page-size=16384）\n")
+    sys.exit(1)
+print("  ✓ 全部 16KB 对齐")
+PY
 
 # 顺手放一份到 Windows 桌面（WSL 路径 /mnt/c/...）。联调时从桌面拖进模拟器/手机最省事。
 # 文件名带版本号与构建类型，桌面上堆多个包时一眼能分辨是哪个。
