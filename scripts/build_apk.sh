@@ -14,8 +14,10 @@
 # 一起没了，终端还留在鼠标追踪模式，于是鼠标一动就往屏幕上刷 `35;61;18M…`。
 #
 # 用法：
-#   scripts/build_apk.sh            # 直接用现有的 android/ 工程编译
-#   scripts/build_apk.sh --prebuild # 先 expo prebuild --clean 再编译（改了 app.json 时用）
+#   scripts/build_apk.sh                        # debug 包（给模拟器用，需要 Metro）
+#   scripts/build_apk.sh --prebuild             # 先 expo prebuild --clean 再编译（改了 app.json 时用）
+#   scripts/build_apk.sh --release --archs=arm64-v8a,x86_64
+#                                               # 独立可用的包（JS 打进包里，装到手机就能跑）
 #
 set -euo pipefail
 
@@ -30,7 +32,18 @@ export ANDROID_HOME="${ANDROID_HOME:-/home/jiang/tools/android-sdk}"
 # 而这个环境变量是 CMake 官方认的（`cmake --build` 会照它设 ninja 的并行度）。
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-2}"
 
-if [ "${1:-}" = "--prebuild" ]; then
+BUILD_TYPE="debug"
+ARCHS="${XATODO_ARCHS:-x86_64}"
+for arg in "$@"; do
+  case "$arg" in
+    --prebuild) PREBUILD=1 ;;
+    --release) BUILD_TYPE="release" ;;
+    --debug) BUILD_TYPE="debug" ;;
+    --archs=*) ARCHS="${arg#--archs=}" ;;
+  esac
+done
+
+if [ "${PREBUILD:-0}" = "1" ]; then
   echo "→ expo prebuild --platform android --clean"
   (cd "$APP" && npx expo prebuild --platform android --clean)
 fi
@@ -38,14 +51,16 @@ fi
 [ -d "$ANDROID" ] || { echo "没有 $ANDROID：先跑 scripts/build_apk.sh --prebuild" >&2; exit 1; }
 
 # prebuild 会把这两个又要紧又容易被覆盖的配置改回去，每次构建前重新钉一遍
-echo "→ 固定 gradle 配置（ABI 只留 x86_64 + 压低内存/并行）"
-python3 - "$ANDROID/gradle.properties" <<'PY'
+echo "→ 固定 gradle 配置（ABI=$ARCHS + 压低内存/并行）"
+python3 - "$ANDROID/gradle.properties" "$ARCHS" <<'PY'
 import re, sys, pathlib
 path = pathlib.Path(sys.argv[1])
+archs = sys.argv[2]
 text = path.read_text(encoding="utf-8")
 wanted = {
-    # 4 个 ABI 会让原生库合并慢到离谱（实测 28 分钟还没完），模拟器只要 x86_64
-    "reactNativeArchitectures": "x86_64",
+    # 4 个 ABI 会让原生库合并慢到离谱（实测 28 分钟还没完）。
+    # 模拟器用 x86_64，真机要 arm64-v8a；要给别人的安装包就两个都带上（通用包）。
+    "reactNativeArchitectures": archs,
     "org.gradle.jvmargs": "-Xmx2048m -XX:MaxMetaspaceSize=512m",
     "org.gradle.parallel": "false",
     "org.gradle.workers.max": "2",
@@ -66,12 +81,19 @@ for key, value in wanted.items():
 path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 PY
 
-echo "→ 编译 debug APK（workers=2, ninja=$CMAKE_BUILD_PARALLEL_LEVEL）"
-(cd "$ANDROID" && "$GRADLE_HOME_DIR/bin/gradle" :app:assembleDebug \
+if [ "$BUILD_TYPE" = "release" ]; then
+  TASK=":app:assembleRelease"
+  OUT="$ANDROID/app/build/outputs/apk/release/app-release.apk"
+else
+  TASK=":app:assembleDebug"
+  OUT="$ANDROID/app/build/outputs/apk/debug/app-debug.apk"
+fi
+
+echo "→ 编译 $BUILD_TYPE APK（workers=2, ninja=$CMAKE_BUILD_PARALLEL_LEVEL, ABI=$ARCHS）"
+(cd "$ANDROID" && "$GRADLE_HOME_DIR/bin/gradle" "$TASK" \
   --no-daemon --max-workers=2 --console=plain)
 
-APK="$ANDROID/app/build/outputs/apk/debug/app-debug.apk"
-[ -f "$APK" ] || { echo "编译结束但没找到 APK" >&2; exit 1; }
+[ -f "$OUT" ] || { echo "编译结束但没找到 APK" >&2; exit 1; }
 echo
-echo "✅ $APK"
-ls -lh "$APK"
+echo "✅ $OUT"
+ls -lh "$OUT"
