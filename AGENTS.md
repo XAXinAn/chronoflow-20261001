@@ -20,6 +20,21 @@
 | 4 | **发布链路**：`scripts/publish_apk.sh`（传包到 `/opt/xatodo/web/downloads/` + 算大小与 sha256 + 打印要写进 `.env` 的九行）、nginx `location /downloads/` 直接发静态包（不过后端、支持 Range、`no-store` 防止缓存住旧包）、compose 透传 `XATODO_APP_RELEASE_*`。 |
 | 5 | **端到端实测（模拟器）**：装 v2 → 后端发布 v3 → App 启动自动提示「发现新版本 0.3.0 / 约 74 MB」→ 立即更新（进度条 26%→78%→完成）→ 系统安装器「Update this app?」→ 装完 `versionCode=3 / versionName=0.3.0`；再启动**不再提示**，「我的」页显示「检查更新 · 当前版本 0.3.0」。 |
 
+### ⚠️ 发 release 包必看：**Expo 只给 debug 包放行明文 HTTP**
+
+演示后端是 `http://8.136.20.182:8088`。Expo 生成的 AndroidManifest 里
+`android:usesCleartextTraffic="true"` **只写在 debug 那份**，release 包没有 → Android 9+ 直接拦掉
+所有 `http://` 请求，表现为**「验证码发送失败」**、会话恢复失败退回登录页，
+而**服务器 nginx 一行访问日志都没有**（请求根本没出手机）——2026-10-01 给演示机发的
+release 包就这么翻的车（debug 包一直好好的，所以很难往这个方向想）。
+
+排查这类「客户端说失败、服务端没日志」的问题，**先看 nginx access.log 有没有那条请求**，
+一秒区分「没发出去」还是「服务端报错」。
+
+修法：`app/plugins/withCleartextHttp.js`（config plugin，往 application 上写
+`usesCleartextTraffic=true`）+ `app.json` 的 plugins 里注册。
+⚠️ **这是内部演示的临时措施**：正式发版必须先把 API 换成 HTTPS，然后删掉这个插件。
+
 ### ⚠️ 这一轮把 WSL 搞崩了两次：**Android 原生编译的 OOM**（务必读完）
 
 现象：agent 会话突然断、`uptime` 变成 `up 0 min`（整台 WSL 虚拟机重启）、终端开始刷

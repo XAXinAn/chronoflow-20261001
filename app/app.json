@@ -64,7 +64,8 @@
           "appKey": "e45cb28aabd482c0dcc6ab42",
           "channel": "default_developer"
         }
-      ]
+      ],
+      "./plugins/withCleartextHttp"
     ],
     "extra": {
       "apiBaseUrl": "http://8.136.20.182:8088"
