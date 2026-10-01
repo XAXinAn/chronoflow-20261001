@@ -1621,3 +1621,12 @@ GET /api/v1/legal/{doc}  →  纯静态 HTML（无脚本、无跳转、免登录
 2. 按 `docs/legal/compliance-checklist.md` 里的「人工」项逐条点一遍真机；
 3. 若本版本新增了**第三方 SDK / 新权限 / 新的信息收集点**，
    先更新 `docs/legal/*.md` 的清单与隐私政策，再重新跑第 1 步。
+
+> ⚠️ **安装包签名（上架前必须换）**：现在 `expo prebuild` 生成的 `android/app/build.gradle` 里
+> release 也用的是 **Android 调试签名**（`signingConfig signingConfigs.debug`，证书 `CN=Android Debug`），
+> 钥匙放在出包那台机器的 `~/.android/debug.keystore`。内部演示没问题——而且**必须同一把钥匙**：
+> 应用内更新是「新包覆盖安装老包」，签名一变系统安装器直接拒（表现为「应用未安装」），
+> 老包 0.0.1 与 0.0.2 的证书指纹已经核对过一致（`fac61745…33b9c`）。
+> 但**上架应用宝 / 换机器出包前**必须换成正式 keystore（`keytool` 生成 + `gradle.properties`
+> 或 `~/.gradle/gradle.properties` 里给密码，并在 CNG 的 `app.json` / config plugin 里固化下来，
+> 否则每次 prebuild 都会打回调试签名）；应用宝的推送等厂商通道也要求按**这个签名指纹**报备。
