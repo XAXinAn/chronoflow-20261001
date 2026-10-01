@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 import type { EventDetail } from '../api/types';
 import { Card, Screen } from '../components/ui';
 import { WheelLayer } from '../components/WheelLayer';
+import { WheelDatePicker } from '../components/WheelDatePicker';
 import { WheelTimePicker } from '../components/WheelTimePicker';
 import {
   EditorHeader,
@@ -57,18 +58,25 @@ export function EventEditorScreen({
   dateKey: initialDateKey,
   eventId,
   occurrenceDate,
+  initialDraft,
   placeSelection,
   recurrenceSelection,
   reminderSelection,
   onPickLocation,
   onPickRecurrence,
   onPickReminder,
+  onDraftSaved,
   onCancel,
   onSaved,
 }: {
   dateKey: string;
   /** 传了就是编辑已有日程 */
   eventId?: number;
+  /**
+   * **草稿模式**：用这份草稿起步，保存**不写服务端**，而是通过 `onDraftSaved` 交回调用方。
+   * 图片识别的确认页用它来「像编辑日程一样编辑一条识别出来的草稿」。
+   */
+  initialDraft?: EventDraft;
   /** 重复日程里被点开的那一次，用于「仅此一次」的编辑/删除 */
   occurrenceDate?: string | null;
   placeSelection: PlaceSelection;
@@ -78,6 +86,8 @@ export function EventEditorScreen({
   /** 第二个参数是日程自己的日期（编辑时可能与列表页选中的那天不同） */
   onPickRecurrence: (current: Recurrence, startDateKey: string) => void;
   onPickReminder: (current: number[]) => void;
+  /** 草稿模式下的「保存」：把改好的草稿与日期交回调用方（不落库） */
+  onDraftSaved?: (draft: EventDraft, dateKey: string) => void;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -85,8 +95,10 @@ export function EventEditorScreen({
   const { api, reminders } = useRuntime();
   const { notificationEnabled } = useAppSessionState();
   const isEdit = typeof eventId === 'number';
+  /** 草稿模式：编辑的是「还没落库的识别结果」，不是服务端上的一条日程 */
+  const draftMode = onDraftSaved !== undefined;
 
-  const [draft, setDraft] = useState<EventDraft>(emptyDraft);
+  const [draft, setDraft] = useState<EventDraft>(() => initialDraft ?? emptyDraft());
   const [dateKey, setDateKey] = useState(initialDateKey);
   const [detail, setDetail] = useState<EventDetail | null>(null);
   /**
@@ -99,13 +111,16 @@ export function EventEditorScreen({
   /** 正在用滚轮改哪个时间（null = 没开选择层）；`draft` 是滚轮里的临时值 */
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [timeDraft, setTimeDraft] = useState(DEFAULT_EVENT_TIME);
-  const [loading, setLoading] = useState(isEdit);
+  /** 草稿模式下日期也能在页内改（新建日程时日期来自日历，没有这一步） */
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [dateDraft, setDateDraft] = useState(initialDateKey);
+  const [loading, setLoading] = useState(isEdit && !draftMode);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // 编辑态先把已有内容拉回来预填
   useEffect(() => {
-    if (!isEdit || eventId === undefined) {
+    if (!isEdit || eventId === undefined || draftMode) {
       return;
     }
     let cancelled = false;
@@ -198,6 +213,14 @@ export function EventEditorScreen({
     patch({ time: timeDraft });
     setTimePickerOpen(false);
   };
+  const openDatePicker = () => {
+    setDateDraft(dateKey);
+    setDatePickerOpen(true);
+  };
+  const confirmDatePicker = () => {
+    setDateKey(dateDraft);
+    setDatePickerOpen(false);
+  };
 
   const isRecurring = Boolean(detail?.rrule);
 
@@ -209,6 +232,11 @@ export function EventEditorScreen({
     setSaving(true);
     setError(null);
     try {
+      // 草稿模式：草稿还没落库，保存只是把结果交回调用方（确认页），不发任何写请求
+      if (onDraftSaved) {
+        onDraftSaved(draft, dateKey);
+        return;
+      }
       let savedId: number;
       const payload = buildCreatePayload(dateKey, draft);
       if (eventId === undefined) {
@@ -334,11 +362,12 @@ export function EventEditorScreen({
   return (
     <Screen>
       <EditorHeader
-        title={isEdit ? '编辑日程' : '新建日程'}
+        title={draftMode ? '编辑草稿' : isEdit ? '编辑日程' : '新建日程'}
         // 取消就是取消：不再弹「放弃未保存的修改？」——用户已经明确表达要退出了
         onCancel={onCancel}
         onSave={() => void save()}
         saving={saving}
+        saveLabel={draftMode ? '完成' : '保存'}
       />
 
       <ScrollView
@@ -358,8 +387,13 @@ export function EventEditorScreen({
 
         <View style={{ marginTop: theme.spacing.md }}>
           <Card>
-            <FormRow label="日期">
-              <Text style={{ color: theme.color.textPrimary, fontSize: 15 }}>{dateKey}</Text>
+            {/* 新建日程时日期来自日历（少一个控件少一次误操作）；草稿模式没有那一步，所以日期可点 */}
+            <FormRow label="日期" onPress={draftMode ? openDatePicker : undefined}>
+              {draftMode ? (
+                <FormRowValue text={dateKey} placeholder="选择日期" />
+              ) : (
+                <Text style={{ color: theme.color.textPrimary, fontSize: 15 }}>{dateKey}</Text>
+              )}
             </FormRow>
 
             {/* 时间用滚轮选：手打 HH:mm 在手机上又慢又容易错（spec §4.1.5）。
@@ -470,6 +504,17 @@ export function EventEditorScreen({
           onConfirm={confirmTimePicker}
         >
           <WheelTimePicker value={timeDraft} onChange={setTimeDraft} />
+        </WheelLayer>
+      ) : null}
+
+      {/* 草稿模式才会用到：在编辑页里直接改这条草稿的日期 */}
+      {datePickerOpen ? (
+        <WheelLayer
+          title="日期"
+          onCancel={() => setDatePickerOpen(false)}
+          onConfirm={confirmDatePicker}
+        >
+          <WheelDatePicker value={dateDraft} onChange={setDateDraft} />
         </WheelLayer>
       ) : null}
     </Screen>

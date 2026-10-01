@@ -9,10 +9,10 @@
  * ① 把服务端返回的 items **容错**归一成草稿；② 把确认页上的草稿**映射成创建请求**。
  */
 
-import type { EventWritePayload } from '../api/endpoints';
 import type { ParsedEventItem } from '../api/types';
 import { localDateKey } from './agenda';
 import { APP_TIMEZONE, APP_UTC_OFFSET } from './calendar';
+import { emptyDraft, timeInZone, type EventDraft } from './eventDraft';
 
 /**
  * 识别出的一条草稿。
@@ -79,22 +79,28 @@ export function missingDateCount(drafts: RecognizedDraft[]): number {
 }
 
 /**
- * 把确认页上的一条草稿映射成创建日程的请求体。
+ * 把一条识别草稿铺成**日程编辑器用的草稿**（`EventDraft`）。
  *
- * 确认页只让用户挑**日期**，时刻固定 00:00（「就这一天」）——要精确到点，用户添加后
- * 在日历里再编辑（本轮产品口径）。`at` 直接拼成带 `+08:00` 的 ISO：中国无夏令时。
+ * 确认页里点开草稿就进整页编辑器，字段与「编辑日程」完全一致（标题 / 日期 / 时间 /
+ * 地点 / 详细地址 / 备注 / 重复 / 提醒），所以这里要先把模型给的少量字段铺成完整草稿：
+ * 其余字段用 `emptyDraft()` 的默认值填上，用户在编辑器里改。
+ *
+ * - **时间**：模型给了就用（只说了哪天的就是 00:00，即「就这一天」），用户可再调；
+ * - **地点**：模型抽到的地点只有名字、没有坐标，先当「手工地点」放进去——
+ *   用户可以保留、清掉，或在编辑页里换成地图选点；
+ * - **日期**不在这里：它是 `draftDateKey()` 的产物，确认页与编辑器各自持有。
  */
-export function buildDraftCreatePayload(
-  draft: RecognizedDraft,
-  dateKey: string,
-  timeZone = APP_TIMEZONE,
-): EventWritePayload {
+export function draftToEventDraft(draft: RecognizedDraft): EventDraft {
+  const zone = draft.timezone || APP_TIMEZONE;
+  const base = emptyDraft();
   return {
+    ...base,
     title: draft.title.trim(),
-    at: `${dateKey}T00:00:00${APP_UTC_OFFSET}`,
-    timezone: timeZone,
-    locationName: text(draft.locationName),
-    description: text(draft.description),
+    time: draft.at ? timeInZone(draft.at, zone) : base.time,
+    place: text(draft.locationName)
+      ? { poiId: null, name: text(draft.locationName) as string, address: null, latitude: null, longitude: null }
+      : null,
+    description: draft.description ?? '',
   };
 }
 

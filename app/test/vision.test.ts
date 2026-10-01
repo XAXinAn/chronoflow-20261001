@@ -4,12 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildDraftCreatePayload,
   draftDateKey,
+  draftToEventDraft,
   draftsFromItems,
   missingDateCount,
   normalizeTime,
 } from '../src/domain/vision';
+import { buildCreatePayload } from '../src/domain/eventDraft';
 
 /**
  * 「图片识别日程」链路里**能单测的一段**：服务端返回的草稿如何归一、确认页上的草稿
@@ -66,11 +67,33 @@ describe('草稿 → 创建日程请求', () => {
     expect(draftDateKey({ title: '返校统计' })).toBeNull();
   });
 
-  it('时刻固定当天 00:00、时区原样带上——「就这一天」', () => {
-    const payload = buildDraftCreatePayload(
-      { title: '  离返校登记  ', locationName: '学工系统', description: '9 月 24 日前' },
-      '2026-09-24',
-    );
+  it('草稿铺成日程草稿：标题 / 时间 / 地点 / 备注都带上，其余字段用默认值', () => {
+    const draft = draftToEventDraft({
+      title: '  离返校登记  ',
+      at: '2026-09-24T00:00:00+08:00',
+      locationName: '学工系统',
+      description: '9 月 24 日前',
+    });
+
+    expect(draft.title).toBe('离返校登记');
+    // 只说了哪天 → 00:00（「就这一天」），编辑页里还能再调
+    expect(draft.time).toBe('00:00');
+    expect(draft.place?.name).toBe('学工系统');
+    expect(draft.description).toBe('9 月 24 日前');
+    expect(draft.rrule).toBe('');
+    expect(draft.reminders).toEqual([]);
+  });
+
+  it('创建请求：日期来自确认页，时刻与日期拼成带偏移的 ISO、并带上时区', () => {
+    const draft = draftToEventDraft({
+      title: '离返校登记',
+      at: '2026-09-24T00:00:00+08:00',
+      locationName: '学工系统',
+    });
+    const payload = {
+      ...buildCreatePayload('2026-09-24', draft),
+      timezone: 'Asia/Shanghai',
+    };
 
     expect(payload.title).toBe('离返校登记');
     expect(payload.at).toBe('2026-09-24T00:00:00+08:00');
@@ -78,8 +101,10 @@ describe('草稿 → 创建日程请求', () => {
     expect(payload.locationName).toBe('学工系统');
   });
 
-  it('空的地点 / 说明送 null，而不是空串（服务端把空串当有效值存）', () => {
-    const payload = buildDraftCreatePayload({ title: '开会', locationName: '  ' }, '2026-09-24');
+  it('模型没给地点 / 备注时：地点为空、备注是空串（编辑器里表现成「没填」）', () => {
+    const draft = draftToEventDraft({ title: '开会', locationName: '  ' });
+    expect(draft.place).toBeNull();
+    const payload = buildCreatePayload('2026-09-24', draft);
     expect(payload.locationName).toBeNull();
     expect(payload.description).toBeNull();
   });

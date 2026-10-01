@@ -250,9 +250,15 @@ export function AgendaScreen({
       return;
     }
     setRecognizing(true);
+    // 各阶段耗时埋点：OCR 与云端解析各自多快，是这条链路调优 / 排障最先要看的东西
+    const pipelineStart = Date.now();
+    let ocrMs = 0;
+    let parseMs = 0;
     try {
       // ① 端侧 OCR：中文通知这类图，手机本地的 ML Kit 又准又不花钱
+      const ocrStart = Date.now();
       const ocrText = await ocrImageText(picked.assets[0].uri);
+      ocrMs = Date.now() - ocrStart;
       if (!ocrText.trim()) {
         Alert.alert('没识别出文字', '这张图里没有识别出可用的文字，换一张再试。');
         return;
@@ -260,13 +266,18 @@ export function AgendaScreen({
 
       // ② 云端解析：「一段通知里有几件要做的事、哪句是时间」是模型的长处。
       //    端侧小模型这条路已下线（0.5B 抽一份通知不够用，且把 APK 撑到 570MB）。
+      const parseStart = Date.now();
       const parsed = await api.parseScheduleText({
         text: ocrText,
         today,
         timezone: APP_TIMEZONE,
       });
+      parseMs = Date.now() - parseStart;
       const drafts = draftsFromItems(parsed.items);
-      console.log(`[vision] 解析完成：草稿 ${drafts.length} 条`);
+      console.log(
+        `[vision] 耗时：端侧 OCR ${ocrMs}ms（${ocrText.length} 字）→ 云端解析 ${parseMs}ms`
+        + ` → 合计 ${Date.now() - pipelineStart}ms，草稿 ${drafts.length} 条`,
+      );
       if (drafts.length === 0) {
         // 如实说「没有要做的事」，而不是「识别失败」——两者对用户是两件事
         Alert.alert('没找到要做的事', '这张图里没有找到要做的事。');
@@ -275,6 +286,10 @@ export function AgendaScreen({
       // ③ 交给确认页：补日期、改标题，用户确认后才写
       onReviewDrafts(drafts);
     } catch (cause) {
+      console.log(
+        `[vision] 失败于 ${ocrMs === 0 ? '端侧 OCR' : '云端解析'}：`
+        + `OCR ${ocrMs}ms，解析 ${parseMs}ms，合计 ${Date.now() - pipelineStart}ms`,
+      );
       if (cause instanceof DeviceRecognitionUnavailable) {
         Alert.alert(
           '端侧识别还没就绪',

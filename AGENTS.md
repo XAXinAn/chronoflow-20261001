@@ -21,9 +21,10 @@
 | 1 | **抽取口径重写**：`agent/vision-prompt.md`（Java / Python **逐字节相同**）改成「只抽**要你做的事**」（登记 / 报名 / 交材料 / 开会 / 缴费…），叙述性内容（放假区间、「@所有人」「各部门」抬头、情况统计的说明）不抽；**日期有就写、没有就留空**，不拿今天兜底、不猜时刻（只说了哪天 → 当天 00:00，「上午」不折算成 09:00）。 |
 | 2 | **`POST /ai/events/parse-text` 返回形状变了**：`{ items:[{ title, at?, timezone, locationName?, description? }] }` —— 去掉 `kind` / `confidence`，新增 `timezone`（客户端靠它判定「00:00 = 只说了哪天」）；**`at` 为空是合法返回**（通知里没写日期），不得因为缺日期就丢条目。两版后端都把调用改成**结构化输出**：`response_format=json_object` + `temperature=0`（Java：`CompletionRequest.structured(...)`；Python：`AgentModelClient.complete_json`）。 |
 | 3 | **Python 版补齐**：`app/services/vision_text.py` + `app/resources/agent/vision-prompt.md`（与 Java 同文件），端点在 `app/routers/ai.py`。这个端点**进了契约**（**112 个端点**），两版都受门禁约束。 |
-| 4 | **App 链路改了**：端侧 OCR（ML Kit，图片不出手机）→ 云端 `/parse-text` → **确认页**（`EventImportScreen`，每条可改标题 / 补日期 / 删除）→ 逐条 `POST /events`。没日期的条目标红「请选择日期」，全都有日期后底部「添加 N 条日程」才可点；全部成功回日历刷新，部分失败列出失败项留在页面重试。 |
+| 4 | **App 链路改了**：端侧 OCR（ML Kit，图片不出手机）→ 云端 `/parse-text` → **确认页**（`EventImportScreen`）→ 逐条 `POST /events`。**点任意一条进整页编辑器**（`EventEditorScreen` 的**草稿模式**：`initialDraft` + `onDraftSaved`，字段与编辑日程完全一致——标题 / 日期 / 时间 / 地点 / 详细地址 / 备注 / 重复 / 提醒，保存只回传给确认页、**不落库**）；确认页上也能就地改日期、删除。没日期的条目标红「请选择日期」，全都有日期后底部「添加 N 条日程」才可点；全部成功回日历刷新，部分失败列出失败项留在页面重试。 |
 | 5 | **端侧小模型整个拿掉**：删 `llama.rn` 依赖、`assets/models/*.gguf`、`vision/llamaTextModel.ts`、`metro.config.js`；`vision/onDevice.ts` 现在只留 OCR 接口 + 注册，`vision/register.ts` 只注册 OCR。APK 从 ~570MB 回到 ~100MB。要回退见第十三轮末尾那段。 |
 | 6 | **合规同步**：隐私政策 §2.7 改为「图片只在手机本地处理，但 OCR 出的**文字**会上传至我们的服务端解析」；《与第三方共享个人信息清单》补第 5 条（OCR 文字 → 阿里云百炼）；《已收集个人信息清单》补第 21 条；App 相机权限说明也照实改了。`check_compliance.py`（20 项 + `--strict`）全过。 |
+| 7 | **耗时埋点**：App 侧 `[vision] 耗时：端侧 OCR xxxms → 云端解析 xxxms`（Metro 日志），服务端 `AgentTextParseService` 打 `识别解析：模型 xxx ms`。真机实测（292 字通知，3 次）：**端侧 OCR 1.5–1.7s、云端解析 1.2–1.8s（其中模型 1.1–1.7s）、合计 2.8–3.4s**。 |
 
 **已知边界（这一轮没验的）**：**没有打真实百炼上游**（两版测试注入的都是假模型），所以
 「模型拿到这份提示词到底抽得准不准」只有提示词不变量测试兜底，**上线前建议真图 + 真模型跑一遍**
@@ -819,7 +820,7 @@ setsid nohup /home/jiang/tools/jdk-21.0.12.1+1/bin/java -jar target/xa-bootstrap
 | backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **76 项全绿** |
 | packages/design-tokens | 完成 | 8 个用例（1 个测试文件；`node --test` 汇总会显示 1） |
 | web-admin（React + Vite + AntD） | 完成：超管六页 + **组织管理端五页** + 意见反馈 | 21 项 |
-| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程（无回执，与个人日程同一长相）、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记、头像上传、意见反馈、组织账号认领与账户管理、小安（对话 + 授权面板 + 长按说话）、**图片识别日程（端侧 OCR → 云端解析 → 确认页）**、深色模式偏好持久化 | **215 项**（**仅纯逻辑层，组件未做渲染测试**） |
+| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程（无回执，与个人日程同一长相）、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记、头像上传、意见反馈、组织账号认领与账户管理、小安（对话 + 授权面板 + 长按说话）、**图片识别日程（端侧 OCR → 云端解析 → 确认页 → 草稿编辑器）**、深色模式偏好持久化 | **216 项**（**仅纯逻辑层，组件未做渲染测试**） |
 
 最近几次提交（倒序）：
 

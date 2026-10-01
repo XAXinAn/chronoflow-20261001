@@ -24,7 +24,7 @@ import { AccountDeletionScreen } from './screens/AccountDeletionScreen';
 import { EventEditorScreen, type PlaceSelection } from './screens/EventEditorScreen';
 import { EventPickerScreen, type PickedEvent } from './screens/EventPickerScreen';
 import { FeedbackScreen } from './screens/FeedbackScreen';
-import { EventImportScreen } from './screens/EventImportScreen';
+import { EventImportScreen, type DraftEdit } from './screens/EventImportScreen';
 import { AgentChatScreen } from './screens/AgentChatScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { LocationPickerScreen } from './screens/LocationPickerScreen';
@@ -40,6 +40,7 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { TaskEditorScreen } from './screens/TaskEditorScreen';
 import { TasksScreen } from './screens/TasksScreen';
 import type { Recurrence } from './domain/recurrence';
+import type { EventDraft } from './domain/eventDraft';
 import { localDateKey } from './domain/agenda';
 import { APP_TIMEZONE } from './domain/calendar';
 import type { LegalDoc } from './domain/legal';
@@ -209,6 +210,8 @@ type AppStackParamList = {
   EventEditor: { dateKey: string; eventId?: number; occurrenceDate?: string | null };
   /** 图片识别出的日程草稿 → 确认页（补日期 / 改标题 / 一键添加，spec §4.1.9） */
   EventImport: { drafts: RecognizedDraft[] };
+  /** 确认页里点开的某一条草稿 → 整页编辑器（草稿模式，改完回传、不落库） */
+  EventDraftEditor: { draft: EventDraft; dateKey: string };
   TaskEditor: { taskId?: number };
   OrgEventEditor: { dateKey: string; event?: OrgEvent };
   OrgRecipientPicker: undefined;
@@ -258,6 +261,15 @@ function MainStack() {
     version: 0,
     event: null,
   });
+  /**
+   * 确认页点开某条草稿 → 编辑器保存后的回传。
+   *
+   * 与地点 / 重复 / 提醒同一套「version 变了才算改过」的语义：编辑器是栈里的整页，
+   * 确认页一直在下面活着，靠这份回传把改好的草稿写回对应的那一行。
+   */
+  const [draftEdit, setDraftEdit] = useState<DraftEdit | null>(null);
+  /** 正在编辑哪一行草稿（编辑器保存时要用它把结果对上号） */
+  const [editingImportKey, setEditingImportKey] = useState('');
   /**
    * 组织日程的「下发对象」：选人页挑好后回填。
    *
@@ -457,9 +469,47 @@ function MainStack() {
         {({ navigation, route }) => (
           <EventImportScreen
             drafts={route.params.drafts}
+            draftEdit={draftEdit}
+            onEditDraft={(key, draft, dateKey) => {
+              // 进草稿编辑器前清掉二级页的回传，避免上一次选的地点 / 重复 / 提醒串进来
+              setPlaceSelection({ version: 0, place: null });
+              setRecurrenceSelection({ version: 0, recurrence: null });
+              setReminderSelection({ version: 0, minutes: [] });
+              setEditingImportKey(key);
+              navigation.navigate('EventDraftEditor', { draft, dateKey: dateKey ?? today });
+            }}
             onCancel={() => navigation.goBack()}
             // 全部添加成功 → 回日历；日历页的 useFocusEffect 会自动重新拉取，新建的日程立刻可见
             onAdded={() => navigation.navigate('Main', { screen: 'Agenda' })}
+          />
+        )}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="EventDraftEditor">
+        {({ navigation, route }) => (
+          <EventEditorScreen
+            // 草稿模式：用识别出来的草稿起步，保存只回传给确认页，不写服务端
+            dateKey={route.params.dateKey}
+            initialDraft={route.params.draft}
+            placeSelection={placeSelection}
+            recurrenceSelection={recurrenceSelection}
+            reminderSelection={reminderSelection}
+            onPickLocation={() => navigation.navigate('LocationPicker')}
+            onPickRecurrence={(current, startDateKey) =>
+              navigation.navigate('RecurrencePicker', { startDateKey, initial: current })
+            }
+            onPickReminder={(current) => navigation.navigate('ReminderPicker', { initial: current })}
+            onDraftSaved={(draft, dateKey) => {
+              setDraftEdit((current) => ({
+                version: (current?.version ?? 0) + 1,
+                key: editingImportKey,
+                draft,
+                dateKey,
+              }));
+              navigation.goBack();
+            }}
+            onCancel={() => navigation.goBack()}
+            onSaved={() => navigation.goBack()}
           />
         )}
       </AppStack.Screen>

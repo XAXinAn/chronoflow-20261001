@@ -9,6 +9,8 @@ import com.xatodo.agent.model.CompletionResult;
 import com.xatodo.agent.tool.AgentTimes;
 import com.xatodo.common.api.ErrorCode;
 import com.xatodo.common.exception.BizException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -37,6 +39,7 @@ import java.util.List;
 @Service
 public class AgentTextParseService {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentTextParseService.class);
     private static final String PROMPT_PATH = "agent/vision-prompt.md";
     /** OCR 文字上限：一张通知再长也就几千字，超了多半是把整本书拍进来了。 */
     private static final int MAX_TEXT_LENGTH = 4000;
@@ -73,11 +76,17 @@ public class AgentTextParseService {
                 .replace("{{timezone}}", zone.getId())
                 .replace("{{text}}", trimmed);
 
+        long startedAt = System.nanoTime();
         CompletionResult result = modelClient.complete(
                 // 结构化输出：JSON 模式 + 温度 0；这一段不需要流式转发，攒完一次性返回
                 CompletionRequest.structured(List.of(AgentMessage.user(prompt))),
                 delta -> { });
-        return parseItems(result.text(), zone);
+        long modelMs = (System.nanoTime() - startedAt) / 1_000_000;
+        List<ParsedEventDraft> drafts = parseItems(result.text(), zone);
+        // 耗时埋点：OCR 在手机端（客户端日志），这里只报服务端这一段（绝大部分是模型时间）
+        log.info("识别解析：模型 {} ms，文字 {} 字 → 草稿 {} 条（{}）",
+                modelMs, trimmed.length(), drafts.size(), modelClient.providerName());
+        return drafts;
     }
 
     /**
