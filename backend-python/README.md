@@ -46,6 +46,7 @@ CI 上有 root，直接 `apt-get install postgresql redis-server` 并设置
 | 个人日历 / 日程（RRULE + 例外 + THIS/FUTURE/ALL）/ 待办 / 提醒 / 互转 | 完成 |
 | 组织、部门树、成员、批量导入、组织日历下发（首版不收集回执） | 完成 |
 | 智能助手「小安」（`/ai/agent/chat` SSE + `/ai/agent/approvals` + `/ai/transcribe`） | 完成（与 Java 版同一套工具语义、同一份提示词、同一套事件形状） |
+| 图片识别日程（`/ai/events/parse-text` 文字解析 + `/ai/events/recognize` 整图识别） | 完成（与 Java 版同一份提示词、同一返回形状） |
 | 平台超管后台（组织、账号、管理员、配置、看板、审计） | 完成 |
 
 **契约覆盖率 100%（112/112 端点）**，由 `tests/test_contract.py` 里的棘轮常量守着，不允许倒退。

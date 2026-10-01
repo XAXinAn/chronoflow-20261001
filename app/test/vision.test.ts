@@ -7,7 +7,6 @@ import {
   draftDateKey,
   draftToEventDraft,
   draftsFromItems,
-  missingDateCount,
   normalizeTime,
 } from '../src/domain/vision';
 import { buildCreatePayload } from '../src/domain/eventDraft';
@@ -53,13 +52,6 @@ describe('识别草稿的归一', () => {
     expect(draftDateKey({ title: 'a', at: '下周三' })).toBeNull();
   });
 
-  it('没日期的条数用于「还有 x 条没选日期」', () => {
-    expect(missingDateCount([
-      { title: 'a', at: '2026-09-24T00:00:00+08:00' },
-      { title: 'b' },
-      { title: 'c', at: null },
-    ])).toBe(2);
-  });
 });
 
 describe('草稿 → 创建日程请求', () => {

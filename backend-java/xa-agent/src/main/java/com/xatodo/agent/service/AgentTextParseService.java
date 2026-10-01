@@ -54,10 +54,6 @@ public class AgentTextParseService {
         this.template = readTemplate();
     }
 
-    public boolean enabled() {
-        return modelClient.available();
-    }
-
     /**
      * @param today    今天（`YYYY-MM-DD`）：相对时间靠提示词换算，模型自己不算日期
      * @param timezone 解释时间用的时区，也原样回带进每一条

@@ -73,11 +73,6 @@ export function draftDateKey(draft: RecognizedDraft, fallbackTimeZone = APP_TIME
   return localDateKey(draft.at, draft.timezone || fallbackTimeZone);
 }
 
-/** 还有几条没选日期（确认页据此显示提示、禁用「添加」）。 */
-export function missingDateCount(drafts: RecognizedDraft[]): number {
-  return drafts.filter((draft) => draftDateKey(draft) === null).length;
-}
-
 /**
  * 把一条识别草稿铺成**日程编辑器用的草稿**（`EventDraft`）。
  *

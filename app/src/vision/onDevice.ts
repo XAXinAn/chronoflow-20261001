@@ -33,11 +33,6 @@ export function registerOcrEngine(engine: OcrEngine): void {
   ocrEngine = engine;
 }
 
-/** 端侧 OCR 是否可用（用于界面提示与按钮态）。 */
-export function ocrEngineRegistered(): boolean {
-  return ocrEngine !== null;
-}
-
 /** 端侧 OCR：图片 → 文字。文字随后交给服务端解析（`/ai/events/parse-text`）。 */
 export async function ocrImageText(uri: string): Promise<string> {
   if (!ocrEngine) {
