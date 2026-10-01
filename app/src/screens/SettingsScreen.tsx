@@ -27,6 +27,7 @@ export function SettingsScreen({
   onOpenDeletion,
   onOpenProfileEdit,
   onOpenAvatarCrop,
+  onOpenAccountSecurity,
   avatarCrop,
 }: {
   onOpenFeedback: () => void;
@@ -35,6 +36,8 @@ export function SettingsScreen({
   onOpenDeletion: () => void;
   /** 改名字（昵称）：昵称是身份级属性，服务端支持 PATCH /me */
   onOpenProfileEdit: () => void;
+  /** 账号与安全：实名认证（阿里云实人认证）与邮箱绑定，两个都可选（spec §6.2） */
+  onOpenAccountSecurity: () => void;
   /** 选好图后进取景页（正方框 + 拖动缩放，spec §4.1.8） */
   onOpenAvatarCrop: (uri: string) => void;
   /** 取景页裁完回传的本地图片；version 变了才上传（与地点/重复那套回传同一语义） */
@@ -210,6 +213,18 @@ export function SettingsScreen({
             <Text style={{ color: theme.color.danger, fontSize: 12, marginTop: 4 }}>{avatarError}</Text>
           ) : null}
         </View>
+      </View>
+
+      <View style={{ marginBottom: theme.spacing.lg }}>
+        <SectionHeader title="账号" />
+        <ListGroup>
+          <ListRow
+            leading={<RowIcon name="shield-checkmark-outline" />}
+            title="账号与安全"
+            subtitle="实名认证、邮箱绑定（两个都可选）"
+            onPress={onOpenAccountSecurity}
+          />
+        </ListGroup>
       </View>
 
       <View style={{ marginBottom: theme.spacing.lg }}>

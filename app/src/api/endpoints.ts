@@ -142,6 +142,11 @@ export function createEndpoints(client: ApiClient) {
       client.patch<IdentityView>('/api/v1/me', payload),
 
     // ----------------------------------------------------- 账号与安全（实名 / 邮箱）
+    /** 「账号与安全」页的当前状态：邮箱 / 是否已验证 / 是否已实名（spec §6.2）。 */
+    meSecurity: () =>
+      client.get<{ email: string | null; emailVerified: boolean; realNameVerified: boolean; realName: string | null }>(
+        '/api/v1/me/security',
+      ),
     /**
      * 给要绑定的邮箱发验证码（阿里云 DirectMail）。
      *

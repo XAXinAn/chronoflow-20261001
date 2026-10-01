@@ -41,6 +41,7 @@ import { PrivacyConsentScreen } from './screens/PrivacyConsentScreen';
 import { RecurrencePickerScreen } from './screens/RecurrencePickerScreen';
 import { ReminderPickerScreen } from './screens/ReminderPickerScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { AccountSecurityScreen } from './screens/AccountSecurityScreen';
 import { TaskEditorScreen } from './screens/TaskEditorScreen';
 import { TasksScreen } from './screens/TasksScreen';
 import type { Recurrence } from './domain/recurrence';
@@ -125,6 +126,8 @@ type MainTabsProps = {
   onOpenDeletion: () => void;
   /** 改名字（昵称，spec §4.1.8）：昵称可改，服务端是 PATCH /me */
   onOpenProfileEdit: () => void;
+  /** 「我的 → 账号与安全」：实名认证 + 邮箱绑定 */
+  onOpenAccountSecurity: () => void;
   /** 选好头像原图后进取景页（正方框 + 拖动缩放，spec §4.1.8） */
   onOpenAvatarCrop: (uri: string) => void;
   /** 取景页裁完回传的本地图片（version 变了才处理） */
@@ -145,6 +148,7 @@ function MainTabs({
   onOpenLegal,
   onOpenDeletion,
   onOpenProfileEdit,
+  onOpenAccountSecurity,
   onOpenAvatarCrop,
   avatarCrop,
 }: MainTabsProps) {
@@ -218,6 +222,7 @@ function MainTabs({
             onOpenLegal={onOpenLegal}
             onOpenDeletion={onOpenDeletion}
             onOpenProfileEdit={onOpenProfileEdit}
+            onOpenAccountSecurity={onOpenAccountSecurity}
             onOpenAvatarCrop={onOpenAvatarCrop}
             avatarCrop={avatarCrop}
           />
@@ -245,6 +250,7 @@ type AppStackParamList = {
   OrgAccounts: undefined;
   /** 改名字（昵称）：二级页而不是弹窗，键盘与校验都在同一套页面结构里（spec §4.1.8） */
   ProfileEdit: undefined;
+  AccountSecurity: undefined;
   /** 头像取景：正方框 + 拖动缩放，确认后按框裁成 1:1（spec §4.1.8） */
   AvatarCrop: { uri: string };
   Legal: { doc: LegalDoc };
@@ -455,6 +461,7 @@ function MainStack() {
             onOpenLegal={(doc) => navigation.navigate('Legal', { doc })}
             onOpenDeletion={() => navigation.navigate('AccountDeletion')}
             onOpenProfileEdit={() => navigation.navigate('ProfileEdit')}
+            onOpenAccountSecurity={() => navigation.navigate('AccountSecurity')}
             onOpenAvatarCrop={(uri) => navigation.navigate('AvatarCrop', { uri })}
             avatarCrop={avatarCrop}
           />
@@ -662,6 +669,10 @@ function MainStack() {
 
       <AppStack.Screen name="ProfileEdit">
         {({ navigation }) => <ProfileEditScreen onBack={() => navigation.goBack()} />}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="AccountSecurity">
+        {({ navigation }) => <AccountSecurityScreen onBack={() => navigation.goBack()} />}
       </AppStack.Screen>
 
       <AppStack.Screen name="AvatarCrop">
