@@ -44,6 +44,10 @@ app/ios/
 # 用 **/ 前缀：后端从各自的模块目录启动（CWD 不同），路径会落在不同层级
 **/data/uploads/
 
+# 端侧 OCR 的 PaddleOCR 模型（约 16MB 二进制）：不进版本库，
+# 用 `scripts/fetch_ppocr_models.sh` 拉取（来源、体积、校验都在脚本里）
+app/assets/models/ppocr/
+
 # 构建缓存与临时产物
 tmp/
 .cache/

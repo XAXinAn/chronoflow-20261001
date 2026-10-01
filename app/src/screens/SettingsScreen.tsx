@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { userFacingError } from '../domain/errors';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { askPermission } from '../components/permission';
 import { useAppScheme, useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import { LEGAL_DOCS, OPERATOR_NAME, APP_VERSION, type LegalDoc } from '../domain/legal';
 import { absoluteMediaUrl } from '../domain/media';
+import { displayName } from '../domain/profile';
 import { useAppUpdate } from '../updater/AppUpdater';
 
 /**
@@ -24,11 +25,20 @@ export function SettingsScreen({
   onOpenFeedback,
   onOpenLegal,
   onOpenDeletion,
+  onOpenProfileEdit,
+  onOpenAvatarCrop,
+  avatarCrop,
 }: {
   onOpenFeedback: () => void;
   /** 打开隐私政策 / 用户协议 / 儿童声明 / 双清单（规范 §四「隐私政策常驻入口」） */
   onOpenLegal: (doc: LegalDoc) => void;
   onOpenDeletion: () => void;
+  /** 改名字（昵称）：昵称是身份级属性，服务端支持 PATCH /me */
+  onOpenProfileEdit: () => void;
+  /** 选好图后进取景页（正方框 + 拖动缩放，spec §4.1.8） */
+  onOpenAvatarCrop: (uri: string) => void;
+  /** 取景页裁完回传的本地图片；version 变了才上传（与地点/重复那套回传同一语义） */
+  avatarCrop?: { version: number; uri: string | null } | null;
 }) {
   const theme = useAppTheme();
   const { check: checkUpdate, currentVersionName } = useAppUpdate();
@@ -59,7 +69,7 @@ export function SettingsScreen({
   }, [loadProfile]);
 
   /**
-   * 换头像：选图 → 上传拿到相对 URL → PATCH /me 回填（spec §4.1.8）。
+   * 换头像：选图 → **取景页裁成 1:1** → 上传拿到相对 URL → PATCH /me 回填（spec §4.1.8）。
    *
    * 顺序不能反：先上传再写资料，中途失败最多留一张没人引用的图片（无害），
    * 反过来会写出一个指向不存在文件的 avatarUrl，界面上就是一个永远加载不出来的头像。
@@ -72,18 +82,24 @@ export function SettingsScreen({
     }
     const picked = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      // 刻意不开 allowsEditing：它会拉起系统裁剪页，而 AOSP 那个页面的确认按钮
-      // 在部分机型/模拟器上根本渲染不出来（实测只有翻转菜单），用户会卡在里面出不来。
-      // 头像是圆形裁切显示（overflow: hidden），本来也不需要系统裁剪。
+      // 仍然不开 allowsEditing：系统裁剪页的确认按钮在 AOSP/部分机型上渲染不出来
+      // （实测只有翻转菜单，用户会卡在里面出不来）。取景用我们自己的 `AvatarCropScreen`，
+      // 行为一致、也照得到黑白极简的样式。
       quality: 0.8,
     });
     if (picked.canceled || picked.assets.length === 0) {
       return;
     }
-    const asset = picked.assets[0];
+    // 进自己的取景页：非 1:1 的图直接上传会被圆形容器裁掉两边
+    onOpenAvatarCrop(picked.assets[0].uri);
+  };
+
+  /** 取景页裁完的图：上传 + 回填资料。 */
+  const uploadAvatar = async (uri: string) => {
     setAvatarBusy(true);
+    setAvatarError(null);
     try {
-      const uploaded = await api.uploadImage(asset.uri);
+      const uploaded = await api.uploadImage(uri);
       setProfile(await api.updateMe({ avatarUrl: uploaded.url }));
     } catch (cause) {
       // 非 ApiError 说明请求根本没到服务端（典型是 RN 的 fetch 在 multipart 上出错），
@@ -96,6 +112,19 @@ export function SettingsScreen({
     }
   };
 
+  // 取景页回来：version 变了才上传（首次渲染 version=0 不动作）
+  const uploadedCropVersion = useRef(0);
+  useEffect(() => {
+    const version = avatarCrop?.version ?? 0;
+    if (version === 0 || version === uploadedCropVersion.current || !avatarCrop?.uri) {
+      return;
+    }
+    uploadedCropVersion.current = version;
+    void uploadAvatar(avatarCrop.uri);
+    // uploadAvatar 每次渲染都是新函数，这里只认 version 的变化
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarCrop?.version]);
+
   const logout = async () => {
     if (session) {
       try {
@@ -107,7 +136,7 @@ export function SettingsScreen({
     await signOut();
   };
 
-  const nickname = session?.nickname ?? '未命名';
+  const nickname = displayName(session?.nickname);
 
   return (
     <ScrollView
@@ -151,9 +180,25 @@ export function SettingsScreen({
           </View>
         </Pressable>
         <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
-          <Text style={{ color: theme.color.textPrimary, fontSize: 22, fontWeight: '600' }} numberOfLines={1}>
-            {nickname}
-          </Text>
+          {/*
+            名字可点进去改（真机反馈「名字无法编辑」）。以前这里是一段死文字：
+            服务端早就支持 PATCH /me 改昵称，界面上却没有入口。
+          */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="修改名字"
+            onPress={onOpenProfileEdit}
+            hitSlop={6}
+            style={styles.nameRow}
+          >
+            <Text
+              style={{ color: theme.color.textPrimary, fontSize: 22, fontWeight: '600' }}
+              numberOfLines={1}
+            >
+              {nickname}
+            </Text>
+            <Ionicons name="pencil-outline" size={16} color={theme.color.textTertiary} />
+          </Pressable>
           {/*
             这里原来还有两行「个人身份 · 身份 #1」「账号 #1」。
             身份 ID / 账号 ID 是内部标识：用户看不懂、也没法拿它做任何事，
@@ -340,6 +385,8 @@ function Chevron() {
 
 const styles = StyleSheet.create({
   profile: { flexDirection: 'row', alignItems: 'center' },
+  /** 名字 + 铅笔图标：一眼看出这行能点（纯文字没人会去点） */
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   avatar: {
     width: 64,
     height: 64,

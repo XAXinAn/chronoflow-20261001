@@ -75,6 +75,25 @@ export class SessionManager {
     return session;
   }
 
+  /**
+   * 只改本地会话里的昵称（`PATCH /me` 成功之后调用）。
+   *
+   * <p>昵称是身份级属性：改完必须**内存与安全存储一起更新**。只改内存（React state）
+   * 的话，下次冷启动从存储里读回来的还是旧昵称——和「登录只更新 state 不写存储
+   * → 一重启就要重新登录」是同一类坑（spec §4.1.8）。
+   *
+   * <p>以服务端返回的值为准：传 null 表示服务端把昵称清空了，界面上会显示「未命名」。
+   */
+  async updateNickname(nickname: string | null): Promise<StoredSession | null> {
+    if (!this.session) {
+      return null;
+    }
+    const next: StoredSession = { ...this.session, nickname };
+    this.session = next;
+    await this.options.store.write(next);
+    return next;
+  }
+
   async clear(): Promise<void> {
     this.session = null;
     this.restored = true;

@@ -397,7 +397,8 @@ export function EventEditorScreen({
             </FormRow>
 
             {/* 时间用滚轮选：手打 HH:mm 在手机上又慢又容易错（spec §4.1.5）。
-                没有「全天」开关：日程只有一个时间点，拨到 00:00 就是「就这一天」。 */}
+                没有「全天」开关：日程只有一个时间点，**必须拨到一个明确的时刻**，
+                00:00 就是凌晨零点（2026-10-01 起不再表示「只说了哪一天」）。 */}
             <FormRow label="时间" onPress={openTimePicker}>
               <FormRowValue text={draft.time} placeholder="09:00" />
             </FormRow>

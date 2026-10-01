@@ -68,12 +68,28 @@ describe('草稿 → 创建日程请求', () => {
     });
 
     expect(draft.title).toBe('离返校登记');
-    // 只说了哪天 → 00:00（「就这一天」），编辑页里还能再调
-    expect(draft.time).toBe('00:00');
+    // 只说了哪天（当地 00:00）→ 填默认 09:00，并在备注里写明这是默认值
+    expect(draft.time).toBe('09:00');
     expect(draft.place?.name).toBe('学工系统');
-    expect(draft.description).toBe('9 月 24 日前');
+    expect(draft.description).toBe('未识别到具体时间，已默认填 09:00，请核对\n9 月 24 日前');
     expect(draft.rrule).toBe('');
     expect(draft.reminders).toEqual([]);
+  });
+
+  it('原文写了具体时刻就照用，不补默认值、也不加备注', () => {
+    const draft = draftToEventDraft({
+      title: '动员大会',
+      at: '2026-09-24T15:30:00+08:00',
+      description: '带笔记本',
+    });
+    expect(draft.time).toBe('15:30');
+    expect(draft.description).toBe('带笔记本');
+  });
+
+  it('连日期都没有的条目：时刻同样填默认值并标注（日期由确认页让用户补）', () => {
+    const draft = draftToEventDraft({ title: '填写返校情况统计表', description: '金山文档填写' });
+    expect(draft.time).toBe('09:00');
+    expect(draft.description).toBe('未识别到具体时间，已默认填 09:00，请核对\n金山文档填写');
   });
 
   it('创建请求：日期来自确认页，时刻与日期拼成带偏移的 ISO、并带上时区', () => {
@@ -88,17 +104,19 @@ describe('草稿 → 创建日程请求', () => {
     };
 
     expect(payload.title).toBe('离返校登记');
-    expect(payload.at).toBe('2026-09-24T00:00:00+08:00');
+    // 时刻是补出来的默认值，日期来自确认页
+    expect(payload.at).toBe('2026-09-24T09:00:00+08:00');
     expect(payload.timezone).toBe('Asia/Shanghai');
     expect(payload.locationName).toBe('学工系统');
   });
 
-  it('模型没给地点 / 备注时：地点为空、备注是空串（编辑器里表现成「没填」）', () => {
+  it('模型没给地点 / 备注时：地点为空，备注里只有一条「时间已填默认值」的标注', () => {
     const draft = draftToEventDraft({ title: '开会', locationName: '  ' });
     expect(draft.place).toBeNull();
     const payload = buildCreatePayload('2026-09-24', draft);
     expect(payload.locationName).toBeNull();
-    expect(payload.description).toBeNull();
+    // 没识别到时刻 → 备注里必须有那句话，否则用户会以为 09:00 是原文写的
+    expect(payload.description).toBe('未识别到具体时间，已默认填 09:00，请核对');
   });
 });
 

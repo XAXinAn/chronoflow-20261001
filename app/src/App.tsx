@@ -32,6 +32,8 @@ import { LoginScreen } from './screens/LoginScreen';
 import { LocationPickerScreen } from './screens/LocationPickerScreen';
 import { LegalScreen } from './screens/LegalScreen';
 import { OrgAccountsScreen } from './screens/OrgAccountsScreen';
+import { ProfileEditScreen } from './screens/ProfileEditScreen';
+import { AvatarCropScreen } from './screens/AvatarCropScreen';
 import { OrgEventEditorScreen } from './screens/OrgEventEditorScreen';
 import { OrgRecipientPickerScreen } from './screens/OrgRecipientPickerScreen';
 import { OrgTabScreen } from './screens/OrgTabScreen';
@@ -121,6 +123,12 @@ type MainTabsProps = {
   onOpenLegal: (doc: LegalDoc) => void;
   /** 账号注销（规范 §2.7 要求 App 内必须有对应按钮） */
   onOpenDeletion: () => void;
+  /** 改名字（昵称，spec §4.1.8）：昵称可改，服务端是 PATCH /me */
+  onOpenProfileEdit: () => void;
+  /** 选好头像原图后进取景页（正方框 + 拖动缩放，spec §4.1.8） */
+  onOpenAvatarCrop: (uri: string) => void;
+  /** 取景页裁完回传的本地图片（version 变了才处理） */
+  avatarCrop: { version: number; uri: string | null };
 };
 
 function MainTabs({
@@ -136,6 +144,9 @@ function MainTabs({
   onOpenFeedback,
   onOpenLegal,
   onOpenDeletion,
+  onOpenProfileEdit,
+  onOpenAvatarCrop,
+  avatarCrop,
 }: MainTabsProps) {
   const theme = useAppTheme();
   const { session } = useAppSessionState();
@@ -151,6 +162,12 @@ function MainTabs({
       key={session?.identityId ?? 'anonymous'}
       screenOptions={{
         headerShown: false,
+        /**
+         * 键盘弹起时收起 tab 栏：小安的输入框在页面最底部，留着 tab 栏会跟键盘
+         * 争同一块空间（要么输入框顶着 tab 栏、要么 tab 栏浮在键盘上）。
+         * 微信、豆包在聊天页也都是键盘一出来就把底栏收掉。
+         */
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: theme.color.accent,
         tabBarInactiveTintColor: theme.color.textTertiary,
         tabBarStyle: { backgroundColor: theme.color.surfaceRaised, borderTopColor: theme.color.border },
@@ -200,6 +217,9 @@ function MainTabs({
             onOpenFeedback={onOpenFeedback}
             onOpenLegal={onOpenLegal}
             onOpenDeletion={onOpenDeletion}
+            onOpenProfileEdit={onOpenProfileEdit}
+            onOpenAvatarCrop={onOpenAvatarCrop}
+            avatarCrop={avatarCrop}
           />
         )}
       </Tabs.Screen>
@@ -223,6 +243,10 @@ type AppStackParamList = {
   EventPicker: undefined;
   Feedback: undefined;
   OrgAccounts: undefined;
+  /** 改名字（昵称）：二级页而不是弹窗，键盘与校验都在同一套页面结构里（spec §4.1.8） */
+  ProfileEdit: undefined;
+  /** 头像取景：正方框 + 拖动缩放，确认后按框裁成 1:1（spec §4.1.8） */
+  AvatarCrop: { uri: string };
   Legal: { doc: LegalDoc };
   AccountDeletion: undefined;
 };
@@ -257,6 +281,11 @@ function MainStack() {
   const [reminderSelection, setReminderSelection] = useState<{ version: number; minutes: number[] }>({
     version: 0,
     minutes: [],
+  });
+  /** 头像取景页裁好的本地图片；version 表达「又裁了一张」，与其它二级页回传同一套语义 */
+  const [avatarCrop, setAvatarCrop] = useState<{ version: number; uri: string | null }>({
+    version: 0,
+    uri: null,
   });
   // 待办关联日程的回传，和地点一样用 version 表达「又选了一次」
   const [eventSelection, setEventSelection] = useState<{ version: number; event: PickedEvent | null }>({
@@ -424,6 +453,9 @@ function MainStack() {
             onOpenFeedback={() => navigation.navigate('Feedback')}
             onOpenLegal={(doc) => navigation.navigate('Legal', { doc })}
             onOpenDeletion={() => navigation.navigate('AccountDeletion')}
+            onOpenProfileEdit={() => navigation.navigate('ProfileEdit')}
+            onOpenAvatarCrop={(uri) => navigation.navigate('AvatarCrop', { uri })}
+            avatarCrop={avatarCrop}
           />
         )}
       </AppStack.Screen>
@@ -625,6 +657,24 @@ function MainStack() {
 
       <AppStack.Screen name="OrgAccounts">
         {({ navigation }) => <OrgAccountsScreen onBack={() => navigation.goBack()} />}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="ProfileEdit">
+        {({ navigation }) => <ProfileEditScreen onBack={() => navigation.goBack()} />}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="AvatarCrop">
+        {({ navigation, route }) => (
+          <AvatarCropScreen
+            uri={route.params.uri}
+            onCancel={() => navigation.goBack()}
+            onDone={(uri) => {
+              // 裁好就回「我的」页：上传与资料回填都由那一页负责（它持有 profile 状态）
+              setAvatarCrop((current) => ({ version: current.version + 1, uri }));
+              navigation.goBack();
+            }}
+          />
+        )}
       </AppStack.Screen>
 
     </AppStack.Navigator>

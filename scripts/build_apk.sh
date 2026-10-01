@@ -84,6 +84,10 @@ for key, value in wanted.items():
 path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 PY
 
+# 某些第三方原生模块的 build.gradle 比这台机器上的 Gradle 9 还老（见脚本里的注释）。
+# 每次构建前重新打一遍补丁：node_modules 会被 npm 重装覆盖，补丁不能只打一次。
+bash "$ROOT/scripts/patch-third-party-gradle.sh"
+
 if [ "$BUILD_TYPE" = "release" ]; then
   TASK=":app:assembleRelease"
   OUT="$ANDROID/app/build/outputs/apk/release/app-release.apk"

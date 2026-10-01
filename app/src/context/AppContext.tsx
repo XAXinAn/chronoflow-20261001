@@ -88,8 +88,9 @@ export function AppProvider({
   /**
    * 到点提醒的总开关（spec §4.5）。
    *
-   * 默认**开启**：日程类 App 的提醒是核心功能，默认关掉会让人以为提醒坏了。
-   * 存本机而不是服务端——它是「这台手机要不要响」，换设备时新设备默认开启。
+   * 默认**关闭**（2026-10-01 产品决定）：通知是「用户主动要的打扰」，没问过就不发。
+   * 代价是「设了提醒却不响」，所以提醒页会写明总开关的状态并引导去打开。
+   * 存本机而不是服务端——它是「这台手机要不要响」，换设备时按默认值来。
    */
   const [notificationEnabled, setNotificationEnabledState] = useState(
     DEFAULT_NOTIFICATION_PREFS.enabled,
@@ -106,7 +107,7 @@ export function AppProvider({
           setNotificationEnabledState(stored.enabled);
         }
       } catch {
-        // 存储不可用（Web 预览）：保持默认开启，本机排期仍然可用
+        // 存储不可用（Web 预览）：保持默认（关闭），不影响其他功能
       }
     })();
     return () => {

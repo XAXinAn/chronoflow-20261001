@@ -127,17 +127,22 @@ describe('重排本机提醒', () => {
 });
 
 describe('通知偏好', () => {
-  it('没存过 / 存坏了都按「开启」：默认关掉会让人以为提醒坏了', () => {
-    expect(parseNotificationPrefs(null)).toEqual({ enabled: true });
-    expect(parseNotificationPrefs('{')).toEqual({ enabled: true });
-    expect(parseNotificationPrefs('{"enabled":"no"}')).toEqual({ enabled: true });
+  /**
+   * 默认**关闭**（2026-10-01 产品决定）：通知是「用户主动要的打扰」，没问过就不该发。
+   * 存坏了也回到关闭——坏数据不该被解读成「用户同意了」。
+   */
+  it('没存过 / 存坏了都按「关闭」：没问过就不打扰', () => {
+    expect(parseNotificationPrefs(null)).toEqual({ enabled: false });
+    expect(parseNotificationPrefs('{')).toEqual({ enabled: false });
+    expect(parseNotificationPrefs('{"enabled":"no"}')).toEqual({ enabled: false });
+    expect(parseNotificationPrefs('{"enabled":true}')).toEqual({ enabled: true });
     expect(parseNotificationPrefs('{"enabled":false}')).toEqual({ enabled: false });
   });
 
   it('内存实现与生产实现同一套读写语义', async () => {
     const store = createMemoryNotificationPrefsStore();
-    expect((await store.read()).enabled).toBe(true);
-    await store.write({ enabled: false });
     expect((await store.read()).enabled).toBe(false);
+    await store.write({ enabled: true });
+    expect((await store.read()).enabled).toBe(true);
   });
 });

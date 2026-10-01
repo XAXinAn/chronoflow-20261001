@@ -10,9 +10,19 @@
  */
 
 import type { ParsedEventItem } from '../api/types';
-import { localDateKey } from './agenda';
+import { isDateOnlyPoint, localDateKey } from './agenda';
 import { APP_TIMEZONE, APP_UTC_OFFSET } from './calendar';
-import { emptyDraft, timeInZone, type EventDraft } from './eventDraft';
+import { DEFAULT_EVENT_TIME, emptyDraft, timeInZone, type EventDraft } from './eventDraft';
+
+/**
+ * 「时刻没识别出来」时写进备往里的那句话。
+ *
+ * <p>填默认值必须让用户看见（2026-10-01 产品要求）：识别结果里 09:00 和「通知里真写了 9 点」
+ * 长得一模一样，不标注的话用户会当成原文里写着的时间，核对时就跳过去了。
+ */
+export function defaultTimeNote(time: string = DEFAULT_EVENT_TIME): string {
+  return `未识别到具体时间，已默认填 ${time}，请核对`;
+}
 
 /**
  * 识别出的一条草稿。
@@ -22,7 +32,11 @@ import { emptyDraft, timeInZone, type EventDraft } from './eventDraft';
  */
 export interface RecognizedDraft {
   title: string;
-  /** 时间点（带偏移量的 ISO）；null / undefined = 没写日期 */
+  /**
+   * 时间点（带偏移量的 ISO）。null / undefined = 没写日期；
+   * 落在当地 00:00 = 写了日期但**没写几点**（模型按提示词的约定这么输出），
+   * 两种情况都会在铺成日程草稿时补一个默认时刻并在备注里标注。
+   */
   at?: string | null;
   /** 解释 `at` 用的时区（服务端回带）；缺省按 App 统一时区 */
   timezone?: string | null;
@@ -88,15 +102,38 @@ export function draftDateKey(draft: RecognizedDraft, fallbackTimeZone = APP_TIME
 export function draftToEventDraft(draft: RecognizedDraft): EventDraft {
   const zone = draft.timezone || APP_TIMEZONE;
   const base = emptyDraft();
+  const time = recognizedTime(draft, zone);
+  const description = (draft.description ?? '').trim();
   return {
     ...base,
     title: draft.title.trim(),
-    time: draft.at ? timeInZone(draft.at, zone) : base.time,
+    // 识别不出时刻就填默认值（`base.time` = 09:00），并在备注里写明这是默认值
+    time: time ?? base.time,
     place: text(draft.locationName)
       ? { poiId: null, name: text(draft.locationName) as string, address: null, latitude: null, longitude: null }
       : null,
-    description: draft.description ?? '',
+    description:
+      time === null
+        ? [defaultTimeNote(), description].filter(Boolean).join('\n')
+        : description,
   };
+}
+
+/**
+ * 解析结果里的时刻；**返回 null 表示「没识别出时刻」**，调用方据此补默认值。
+ *
+ * <p>三种情况都算没识别出来：根本没给 `at`（连日期都没有，用户在确认页补日期）、
+ * 给了但解析不了、以及当地 00:00（模型只在「只写了哪一天」时这么输出）。
+ */
+function recognizedTime(draft: RecognizedDraft, zone: string): string | null {
+  const at = draft.at;
+  if (!at || Number.isNaN(Date.parse(at))) {
+    return null;
+  }
+  if (isDateOnlyPoint(at, zone)) {
+    return null;
+  }
+  return timeInZone(at, zone);
 }
 
 /**

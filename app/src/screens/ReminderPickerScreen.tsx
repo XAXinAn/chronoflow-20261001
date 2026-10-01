@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Card, Screen } from '../components/ui';
 import { CheckRow, EditorHeader, FormInput } from '../components/form';
-import { useAppTheme } from '../context/AppContext';
+import { useAppSessionState, useAppTheme } from '../context/AppContext';
 import { localNotificationsAvailable } from '../notifications/availability';
 import {
   REMINDER_PRESETS,
@@ -33,6 +33,7 @@ export function ReminderPickerScreen({
   onConfirm: (minutes: number[]) => void;
 }) {
   const theme = useAppTheme();
+  const { notificationEnabled } = useAppSessionState();
   const [selected, setSelected] = useState<number[]>(normalizeReminders(initial));
   const [customText, setCustomText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +130,15 @@ export function ReminderPickerScreen({
         <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: theme.spacing.md }}>
           当前：{describeReminders(selected)}
         </Text>
+        {/*
+          总开关默认是**关**的（2026-10-01 产品决定）：用户在这里选了提前量却什么都不响，
+          是这轮改动最容易踩到的坑，所以状态必须写在这一页上，而不是只藏在「我的」里。
+        */}
+        {selected.length > 0 && !notificationEnabled ? (
+          <Text style={{ color: theme.color.danger, fontSize: 12, marginTop: 4 }}>
+            到点提醒总开关当前是关闭的，这样设置不会响；请到「我的 → 到点提醒」打开。
+          </Text>
+        ) : null}
         {/* 说清楚提醒由谁发：用户会以为「没提醒是没网」，实际是本地通知（spec §4.5） */}
         <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: 4 }}>
         {localNotificationsAvailable()

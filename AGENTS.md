@@ -2,7 +2,7 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-10-01（第十六轮：**全项目改名 `xa-todo`/`xatodo` → `chronoflow`/`时纪流`**）
+> 最后更新：2026-10-01（第十九轮：**端侧 OCR 迁到 PaddleOCR（进行中）** + 验收包已出）
 >
 > ⚠️ **本文件下方的历史段落里出现的 `xa-*` / `xatodo` / `XATODO_*` 是改名前的旧标识，保留原文不改**
 > （那是当时的现场记录，改了就成假历史）。**当前代码里已经没有这些标识**，新写的东西一律用
@@ -12,6 +12,163 @@
 > ⚠️ **数据模型变了**：`event.start_at` / `event.end_at` 已被 V18 迁移合并成 `event.at`（单时间点），
 > 不再有起止与时长；`event_exception.override_*` 同样合成 `override_at`。
 > 两版后端、Web 组织管理端与 App 都已对齐。改动前先读 §0.0 第九轮摘要。
+
+---
+
+## 0.0 本次交接摘要（2026-10-01，第十九轮：端侧 OCR 迁向 PaddleOCR，进行中）
+
+### 先看这一节的「当前状态」，再看下面的清单
+
+**用户已装包验收中**：`/mnt/c/Users/jiang/Desktop/chronoflow-0.0.1.apk`
+（149MB，arm64-v8a+x86_64，2026-10-01 21:05 出的 release 包）。它包含**第十七、十八两轮的全部改动**，
+请重点验这几条：小安输入框跟键盘走 / 长按语音能转文字 / 地图先问定位再落在「我的位置」/
+到点提醒默认关闭且有红字提示 / 时间拨到 00:00 后列表照实显示 / 识别出的日程备注里有默认时间标注 /
+名字可改 + 头像 1:1 取景（可拖动、可双指缩放）。
+
+**这一轮在做的事**：把端侧 OCR 从 Google ML Kit（`@react-native-ml-kit/text-recognition`）
+换成 **PaddleOCR（PP-OCRv4）**，用户明确要求，理由是中文印刷体的识别率。
+
+### 为什么是「ONNX Runtime + 自己写流水线」而不是 Paddle-Lite
+
+这几条都实测过，别再重复探：
+
+| 探测 | 结果 |
+| --- | --- |
+| `com.baidu.paddle:paddle-lite`（阿里云 Maven 镜像） | **404**，Paddle-Lite 的 Android AAR 没发布到 Maven，只能去 GitHub release 淘 |
+| `com.microsoft.onnxruntime:onnxruntime-android`（同一镜像） | **200**，可用 |
+| `paddle2onnx`（PyPI 清华镜像） | 包在，但**本机只有 Python 3.14，没有对应 wheel** → 自己转 ONNX 走不通，直接下现成的 |
+| `paddleocr.bj.bcebos.com` | 200（官方 `.tar` 是 Paddle 推理格式，`.pdmodel`/`.pdiparams`） |
+| `hf-mirror.com/SWHL/RapidOCR` | 200，**有现成的 PP-OCRv4 ONNX**（RapidOCR 作者维护的转换版） |
+| `raw.githubusercontent.com` | 拉不动；`hf-mirror.com` 与 `github.com` 页面可达 |
+
+**最终路线：`onnxruntime-react-native`（iOS/Android 同一套推理核心，一份代码两端跑）+ 三个 ONNX 模型 +
+流水线写在 TypeScript 里。** 用户明确要了「iOS 和 Android 一起的方案」，所以**不要**改成按平台写
+Kotlin/Swift 原生模块。
+
+⚠️ **iOS 只能到「代码就绪」**：出 iOS 包要 macOS + Xcode，本机（WSL）出不了，验不了。
+
+### 已完成（都有测试）
+
+| 文件 | 内容 |
+| --- | --- |
+| `app/assets/models/ppocr/` | det 4.7MB / rec 10.9MB / cls 0.6MB + 字典，共 16.2MB。**不进 git**（`.gitignore` 已排除），由 `scripts/fetch_ppocr_models.sh` 拉取（带体积校验——hf-mirror 偶尔回错误页，只看「文件存在」会拿到假模型） |
+| `app/src/vision/ppocr/decode.ts` | CTC 解码。**字符表从 rec 模型的 ONNX 元数据读**（`character` 字段，换行分隔，下标 0 是 blank），不靠字典文件猜顺序——差一位整行错位。6 项单测（`a·blank·a` = 两个字是关键用例） |
+| `app/src/vision/ppocr/detPost.ts` | DB 检测后处理：输入规划（等比缩到 960 + 补边到 32 的倍数）、二值化、连通域（迭代式，960×960 不爆栈）、过滤、**unclip 外扩**（不外扩会缺首尾字）、映射回原图、阅读顺序。6 项单测 |
+| `app/src/vision/ppocr/pixels.ts` | 纯计算：base64 自解码、JPEG 解码、最近邻缩放、补边（补纯黑）、RGBA→NCHW + 归一化（检测 ImageNet、识别 0.5/0.5）。5 项单测 |
+| `app/src/vision/ppocr/imageIo.ts` | 碰原生的那一半：`readScaledRgba` / `readCroppedRgba`（`expo-image-manipulator`）、`readImageSize` |
+| `scripts/patch-third-party-gradle.sh` | 见下面「踩到的坑」第 2 条，由 `build_apk.sh` 每次构建前自动调用 |
+
+**测试基线：App 260 项 + typecheck 全绿**（新增 ppocr 17 项）。合规门禁 20 项（`--strict`）也过。
+
+### 还没做（下一步就照这个顺序）
+
+1. `app/src/vision/ppocr/pipeline.ts`：det → 逐框 cls → rec 串成「图片 → 文本行 + 坐标」。
+   流程：`planDetInput` → `readScaledRgba` → `padToCanvas` → `toChwTensor(DET_*)` → 跑 det →
+   `binarize`/`connectedComponents`/`filterBoxes`/`unclipRect` → `mapBoxToImage` → `orderBoxes` →
+   逐框 `readCroppedRgba`（高 48、宽按比例、上限 320）+ `toChwTensor(REC_*)` → 跑 rec → `decodeCtc`。
+2. `app/src/vision/paddleOcr.ts`：实现 `OcrEngine`（`name()` 返回「PaddleOCR PP-OCRv4」），
+   用 `onnxruntime-react-native` 建 session（模型路径见下），把 `pipeline` 的结果拼成一段文本。
+3. `app/src/vision/register.ts`：改成注册 paddle 引擎，**ML Kit 那份实现保留**（`mlkitOcr.ts` 不删），
+   留一个一行能切回去的开关。
+4. 模型要**进包**：现在它们没被任何代码 `require`，所以上一条验收包里**没有**模型（占 0 字节）；
+   接上流水线后要确保 Metro 把 `.onnx`/`.txt` 当资源打进 apk（`assetExts` 里补 `onnx`，或走
+   `expo-asset`）。
+5. 出包 + 真机比对：同一张通知图，跑 ML Kit（基线实测 1.5–1.7s）与新引擎，比识别率与耗时。
+
+### 踩到的坑（新会话直接用）
+
+1. **`onnxruntime-react-native@1.24.3`（当前最新）与 Gradle 9 不兼容**：它的
+   `android/build.gradle` 用 `org.gradle.util.VersionNumber`（Gradle 8 移出公开 API、9 没了），
+   配置阶段直接报 `Could not get unknown property 'VersionNumber'`，**整个构建一个 task 都跑不起来**，
+   而且会连带报 `:expo` 的 `SoftwareComponent 'release' not found`——**那个是连带的，不是 expo 的问题**。
+   `scripts/patch-third-party-gradle.sh` 把这个只在 RN < 0.71 才需要的分支换成 `if (false)`
+   （本项目 RN 0.86.3），幂等、每次构建自动跑（`node_modules` 重装会覆盖补丁）。
+2. **APK 从 83MB 涨到 149MB**：不是模型，是 **ONNX Runtime 全量库每 ABI 30–37MB，两个 ABI 69MB**
+   （`libonnxruntime.so`：x86_64 37.5MB + arm64-v8a 31.5MB）。之前我按「模型 +16MB」估的，**是错的**。
+   瘦身三条路（等流水线跑通再选）：只留 `arm64-v8a`（省 37MB → ~112MB）/ 换 `onnxruntime-mobile`
+   精简算子集 / 用 `.ort` 格式做最小构建。
+3. **测试里不能 import 原生模块**：`pixels.ts` 一 import `expo-image-manipulator`，vitest 就报
+   `Cannot find package 'expo-modules-core'`。所以**纯计算与原生适配层必须拆成两个文件**
+   （`pixels.ts` / `imageIo.ts`），这也是本仓 `src/domain/**` 只放纯逻辑的既有约定。
+4. **`jpeg-js` 被提升到根 `node_modules`**（npm workspaces 的行为），`app/node_modules` 下没有，
+   别以为没装上。
+5. **字典单独下不到**：`raw.githubusercontent.com` 拉不动；rec 的字典最终是从
+   `hf-mirror.com/deepghs/paddleocr`（`rec/ch_PP-OCRv4_rec/dict.txt`）拿的。不过解码时以
+   **模型自带的元数据**为准，字典文件只做交叉校验。
+
+### 排队中、还没开工的
+
+**实名认证 + 邮箱绑定**（用户已提，方案未定，动手前必须问清）：
+用户说 accesskey 在**老服务器的老项目**里，老项目是「注册时强制实名」，新需求是「登录后可选，
+邮箱同理」。需要先确认：①accesskey 是哪套服务（可以 SSH 上老服务器只读翻配置找候选）；
+②邮箱走阿里云 DirectMail 还是 SMTP、发件域名有没有；③认证后要不要在昵称旁显示「已实名」标记、
+邮箱能否改绑、邮箱只做通知还是也要找回密码。结构上：两个可选动作放「我的 → 账号与安全」，
+服务端加 `POST /me/realname` 与邮箱验证码的一对端点，**新开迁移 V20**（绝不动 V1–V19），
+契约同步加端点、Java 与 Python 两版都实现。
+
+---
+
+## 0.0 本次交接摘要（2026-10-01，第十八轮：时间口径反转 + 头像取景 + 改名字）
+
+又是用户实测反馈驱动的三条。**第一条是口径反转，改之前一定要读**。
+
+| # | 反馈 | 做法 |
+| --- | --- | --- |
+| 1 | 「时间选择器里 00:00 无法被选择」 | **根因不是选择器，是展示层**：`formatEventTime` 对当地 00:00 返回 `null`（第九轮定的「只说了哪一天」约定），于是拨到 00:00 之后列表/检索/卡片里那一栏干脆空白，看起来就像没选上。**产品决定：00:00 不再代表「全天 / 只说了哪天」，日程必须给出明确到分钟的时间**。所以 `formatEventTime` 现在是 `string`（永远照实显示），`reminderBase` 也不再把它挪到 09:00 —— 用户设成 00:00 就要在 00:00 响。`isDayOnlyPoint` 改名 `isDateOnlyPoint`，**只留给识别链路当信号用**（见第 2 条），不再是展示口径 |
+| 2 | 「识别不出时间要给默认值，并在备注里标注」 | 图片识别解析出的 `at` 缺失 / 解析不了 / 落在当地 00:00（模型按提示词的约定这么输出）→ 填默认 `09:00`，并在**备注开头**写「未识别到具体时间，已默认填 09:00，请核对」。填默认值必须让用户看见：09:00 和「原文真写了 9 点」长得一模一样，不标注就会被当成原文内容核对过去。日期仍然只由用户在确认页补，**绝不拿今天兜底** |
+| 3 | 「头像如果不是 1:1 要能选区域、放大缩小移动」 | 新增 `screens/AvatarCropScreen.tsx`（正方形取景框 + 圆环参考线，单指拖动 / 双指捏合，最多放大 4 倍）+ `domain/avatarCrop.ts`（**纯几何，可单测**）。确认后 `expo-image-manipulator` 按取景框裁成 1:1、最长边 512 再上传。**新增原生依赖 `expo-image-manipulator`**，装完必须重新出包 |
+| 4 | 「名字无法编辑」 | 昵称本来就支持改（`PATCH /me`），缺的只是入口：「我的」页名字现在可点（带铅笔），进 `ProfileEditScreen`；改完同时更新服务端、`SessionManager`（内存 + 安全存储）与页面 state。校验逻辑在 `domain/profile.ts`（32 字上限与服务端 `@Size(max=32)` 对齐，按**码点**算长度，emoji 不会被当成两个字） |
+
+### 这一轮最值得记住的一条
+
+**「某个值无法被选择」先怀疑展示层，再怀疑选择器。** 这次的选择器一点问题都没有（`hours()` 给的就是 0..23），
+坏的是「00:00 → 不显示时间」这条展示规则：用户看到的是结果，看不到规则。
+遇到「选了没反应」这类反馈，先去查**保存之后显示成什么**。
+
+**验证**：App **243** 项 + typecheck、合规门禁 20 项（`--strict`）全绿。
+⚠️ 仍然**没有在真机上验过**（键盘/取景框/语音这几处都是纯界面行为）——装新包之后请重点看：
+时间拨到 00:00 后列表是否照实显示、识别出的日程备注里有没有那句默认值标注、
+头像取景能不能拖动与捏合缩放、名字点开能不能改。
+
+> ⏳ **排队中（用户提出、尚未开工）**：①**实名认证 + 邮箱绑定**（老项目是注册时强制，新需求是
+> 登录后可选；复用老服务器上老项目的 accesskey，需要先确认服务商与通道）；②**把端侧 OCR 从
+> ML Kit 换成 PaddleOCR（PP-OCRv4/v6）**——这是原生工程（Paddle-Lite AAR 或 ONNX Runtime +
+> det/rec/cls 模型 + DB 后处理与 CTC 解码），不是换个 npm 包就能完事，需要网络放行 + 重新出包 +
+> 真机验证。OCR 已经抽象成 `OcrEngine` 注册制（`vision/onDevice.ts`），**换引擎只需换 `vision/` 下的实现**。
+
+---
+
+## 0.0 本次交接摘要（2026-10-01，第十七轮：四条实测反馈的修复）
+
+用户在真机上用了之后报了四条，**前两条是真 bug、后两条是产品口径**。都在 App 侧，后端没动。
+
+| # | 反馈 | 根因 | 改法 |
+| --- | --- | --- | --- |
+| 1 | 小安输入框不随键盘上移 | 整仓**没有任何 `KeyboardAvoidingView`**；而 `app.json` 里 `edgeToEdgeEnabled: true` 之后 Android 15+ 不再按 `adjustResize` 缩窗口，底部固定的输入框被键盘整块盖住 | `AgentChatScreen` 根容器换成 `KeyboardAvoidingView behavior="padding"`；**导航栏加 `tabBarHideOnKeyboard: true`**（微信也是键盘一出来就收底栏）；再加一个 `keyboardDidShow → scrollToEnd`，键盘弹起时贴住最新一条 |
+| 2 | 语音按钮点了没用 | `MicRecorderImpl` 把 `PanResponder` 的 handlers 展开到 `Pressable` 上，而 `Pressable` 内部是 `<View {...restProps} {...pressabilityEventHandlers} />`——**Pressability 的 handlers 展开在后面，把 panHandlers 整块盖掉**，长按永远不触发 | 那个按钮换回普通 `View` 承载手势（见下）；顺带补了两处：轻点一下给一句提示（原来是静默无反应），以及**授权弹窗期间用户必然松手**、不能在松手后照样开录（会一直录到 60 秒上限） |
+| 3 | 地点点进去是天安门而不是「我的位置」 | 进页面的自动定位写成 `askPermission('location', { quiet: true })`，未授权时**直接放弃**，于是落到兜底坐标 `39.9087/116.3975`（天安门） | 进页面这次**真的去要权限**（先我们的说明、再系统窗），每个 App 会话只问一次，避免「频繁弹窗」；已授权时静默复用。兜底坐标只在真的定位失败时才用，且提示语写清「可点右下角图标重试，或直接搜索」 |
+| 4 | 到点提醒应该默认关闭 | `DEFAULT_NOTIFICATION_PREFS.enabled = true` | 改成 **`false`**（spec §4.5 已同步）。代价是「设了提醒却不响」，所以**提醒页在总开关关着时当场写明「这样设置不会响，请到『我的 → 到点提醒』打开」**——默认关闭不能变成一个静默失效的功能 |
+
+### 这一轮最值得记住的一条：**别把 `PanResponder` 挂在 `Pressable` 上**
+
+```jsx
+<Pressable {...responder.panHandlers} onPress={...}>   // ← panHandlers 是死的
+```
+
+`Pressable` 的渲染是 `<View {...restPropsWithDefaults} {...eventHandlers} />`，
+后面的 `eventHandlers` 来自 `usePressability`，里面同样有
+`onStartShouldSetResponder` / `onResponderGrant` / `onResponderMove` / `onResponderRelease` …
+**同名的展开在后面，我们的手势一次都收不到**。表现就是「按钮点了/长按了完全没反应」，
+而且在 Expo Go 里也一样，跟原生模块没关系。
+
+**要手势（长按、上滑、拖拽）就用普通 `View` 接 `panHandlers`，要点击才用 `Pressable`。**
+（`PanResponder` 换成 RNGH 也一样，别叠在两套手势系统上。）
+
+**验证**：App **228** 项 + typecheck、web-admin / design-tokens、合规门禁 20 项（含 `--strict`）全绿。
+⚠️ **这四条都是界面行为，纯逻辑测试覆盖不到**——本轮**没有在真机 / 模拟器上验过**
+（本机 WSL 重启过、模拟器没起，出包要跑一次原生编译）。装新包之后请重点看：
+键盘弹出时输入框是否贴着键盘、语音长按是否出浮层并能转成文字、地点页是否先问定位权限、
+以及「我的 → 到点提醒」默认是关的。
 
 ---
 

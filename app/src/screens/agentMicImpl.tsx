@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { PanResponder, Pressable, StyleSheet } from 'react-native';
+import { PanResponder, StyleSheet, View } from 'react-native';
 import {
   RecordingPresets,
   setAudioModeAsync,
@@ -37,6 +37,8 @@ export function MicRecorderImpl({ disabled, onHint, onRecorded, onError }: MicPr
   const [slidingCancel, setSlidingCancel] = useState(false);
   const recordingRef = useRef(false);
   const slidingRef = useRef(false);
+  /** 手指是否还按在按钮上（松手 / 被系统打断都要置 false） */
+  const touchActiveRef = useRef(false);
   const disabledRef = useRef(disabled);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedAtRef = useRef(0);
@@ -51,9 +53,21 @@ export function MicRecorderImpl({ disabled, onHint, onRecorded, onError }: MicPr
     if (!granted) {
       return;
     }
+    /**
+     * 首次长按必然要弹「先说明用途」+ 系统权限窗，而那时用户的手指早就松了。
+     * 不挡这一道的话，授权通过后会**在没有按键的情况下开始录音**，
+     * 一直录到 60 秒上限才自己停——用户看到的是「麦克风自己录了一分钟」。
+     */
+    if (!touchActiveRef.current) {
+      return;
+    }
     try {
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
+      if (!touchActiveRef.current) {
+        void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+        return;
+      }
       recorder.record();
       startedAtRef.current = Date.now();
       slidingRef.current = false;
@@ -71,6 +85,7 @@ export function MicRecorderImpl({ disabled, onHint, onRecorded, onError }: MicPr
       return;
     }
     recordingRef.current = false;
+    touchActiveRef.current = false;
     setRecording(false);
     const cancel = cancelled || slidingRef.current;
     slidingRef.current = false;
@@ -95,6 +110,7 @@ export function MicRecorderImpl({ disabled, onHint, onRecorded, onError }: MicPr
       onStartShouldSetPanResponder: () => !disabledRef.current,
       onMoveShouldSetPanResponder: () => !disabledRef.current,
       onPanResponderGrant: () => {
+        touchActiveRef.current = true;
         holdTimerRef.current = setTimeout(() => {
           holdTimerRef.current = null;
           void begin();
@@ -108,15 +124,19 @@ export function MicRecorderImpl({ disabled, onHint, onRecorded, onError }: MicPr
         }
       },
       onPanResponderRelease: () => {
+        touchActiveRef.current = false;
         if (holdTimerRef.current) {
-          // 还没到长按阈值就松手了：当误触，不录音也不报错
+          // 还没到长按阈值就松手了：不录音，但**要说一句**。
+          // 原来这里什么都不做，用户点一下得不到任何反馈，看起来就是「按钮坏了」。
           clearTimeout(holdTimerRef.current);
           holdTimerRef.current = null;
+          onError('按住麦克风说话，松开后转成文字，上滑取消');
           return;
         }
         void finish(false);
       },
       onPanResponderTerminate: () => {
+        touchActiveRef.current = false;
         if (holdTimerRef.current) {
           clearTimeout(holdTimerRef.current);
           holdTimerRef.current = null;
@@ -152,12 +172,21 @@ export function MicRecorderImpl({ disabled, onHint, onRecorded, onError }: MicPr
   });
 
   return (
-    <Pressable
+    /**
+     * 用 `View` 而不是 `Pressable` 承载 PanResponder。
+     *
+     * <p>`Pressable` 内部是 `<View {...restProps} {...pressabilityEventHandlers} />` ——
+     * Pressability 的 `onStartShouldSetResponder` / `onResponderGrant` 展开在后面，
+     * **会整块盖掉**传进去的 `panHandlers`，于是长按永远不触发、语音按钮点不动。
+     * 这个按钮要的是「按住 + 上滑」的手势，不是点按，所以直接用 View 接手势。
+     */
+    <View
       {...responder.panHandlers}
       accessibilityRole="button"
       accessibilityLabel="按住说话"
       accessibilityHint="按住开始录音，上滑取消，松开后转成文字"
-      disabled={disabled}
+      accessibilityState={{ disabled }}
+      accessible
       style={[
         styles.button,
         {
@@ -172,7 +201,7 @@ export function MicRecorderImpl({ disabled, onHint, onRecorded, onError }: MicPr
         size={20}
         color={recording ? theme.color.accentContrast : theme.color.textSecondary}
       />
-    </Pressable>
+    </View>
   );
 }
 

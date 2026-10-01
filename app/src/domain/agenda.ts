@@ -87,12 +87,14 @@ export function dayHeading(dateKey: string, todayKey: string): string {
 }
 
 /**
- * 这个时刻是不是「只说了哪一天、没说几点」。
+ * 这个时刻是不是「只有日期、没有时刻」。
  *
- * 日程只有一个时间点（spec §4.1.2），**没有 all_day 字段了**；约定：落在当地 00:00
- * 就表示「就这一天」。这样「全天」这个概念不必存在，界面也不显示 00:00。
+ * <p>**这只是识别结果里的一个信号，不是展示口径**（2026-10-01 改）：
+ * 日程只有一个时间点（spec §4.1.2），**00:00 就是一个普通的时间点，不再代表「全天 / 只说了哪天」**。
+ * 会用到它的地方只有一处——图片识别的解析结果：模型按提示词的约定，把「只写了哪一天」
+ * 输出成当地 00:00，客户端据此判断「时刻没识别出来」，填一个默认时刻并在备注里标注。
  */
-export function isDayOnlyPoint(atIso: string, timeZone: string): boolean {
+export function isDateOnlyPoint(atIso: string, timeZone: string): boolean {
   const formatter = new Intl.DateTimeFormat('zh-CN', {
     timeZone,
     hour: '2-digit',
@@ -103,21 +105,23 @@ export function isDayOnlyPoint(atIso: string, timeZone: string): boolean {
 }
 
 /**
- * 日程时间的展示：有具体时刻给「15:00」，只说了哪一天给 null（界面只显示日期）。
+ * 日程时间的展示：永远是「HH:mm」，**00:00 也照实显示**。
+ *
+ * <p>以前这里对当地 00:00 返回 null（「只说了哪一天」→ 只显示日期），结果是用户
+ * 把时间拨到 00:00 之后，列表里那一栏干脆空了——看起来就是「00:00 选不上」。
+ * 现在时间点必须明确，00:00 就是凌晨零点。
  */
-export function formatEventTime(atIso: string, timeZone: string): string | null {
-  return isDayOnlyPoint(atIso, timeZone) ? null : timeInZoneByIntl(atIso, timeZone);
+export function formatEventTime(atIso: string, timeZone: string): string {
+  return timeInZoneByIntl(atIso, timeZone);
 }
 
 /**
- * 「什么时候的事」整串文案：`9 月 30 日 15:00` / `9 月 30 日`（通知正文用）。
+ * 「什么时候的事」整串文案：`9 月 30 日 15:00`（通知正文用）。
  */
 export function formatEventWhen(atIso: string, timeZone: string): string {
   const [, month, day] = localDateKey(atIso, timeZone).split('-').map(Number) as
     [number, number, number];
-  const date = `${month} 月 ${day} 日`;
-  const time = formatEventTime(atIso, timeZone);
-  return time ? `${date} ${time}` : date;
+  return `${month} 月 ${day} 日 ${formatEventTime(atIso, timeZone)}`;
 }
 
 function timeInZoneByIntl(iso: string, timeZone: string): string {

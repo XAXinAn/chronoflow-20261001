@@ -73,7 +73,8 @@
             "backgroundColor": "#21221D"
           }
         }
-      ]
+      ],
+      "onnxruntime-react-native"
     ],
     "extra": {
       "apiBaseUrl": "http://60.205.142.205:8080"

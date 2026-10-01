@@ -300,7 +300,9 @@
 
 #### 4.1.2 日历能力
 
-- 只说了哪一天的事件（`at` 落在当地 00:00）与跨时区事件的渲染都要正确。
+- 跨时区事件的渲染要正确。**没有「全天 / 只说了哪一天」这种形态**（2026-10-01 定稿）：
+  日程只有一个时间点，`at` 落在当地 00:00 就是**凌晨零点**，列表、检索、通知里一律照实写
+  `00:00`，不再有「只显示日期」这种隐藏口径。
 - 标准 **RRULE** 重复规则：`DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY` + 间隔、星期集合、结束条件（永不 / 指定日期 / 次数）。
 - **重复例外**：支持修改或取消某一次实例，不影响其余实例。
 - **月视图行数按实际需要**：只画含有本月日期的周（5 行或 6 行），不补一整周都属于邻月的行。
@@ -324,7 +326,7 @@
 | 字段 | 说明 | 首版 |
 | --- | --- | --- |
 | 标题 | 必填 | ✔ |
-| 时间 | 单一时间点 `at`；只说了哪一天 = 当天 00:00（不再支持跨天，也**没有 all_day 字段**） | ✔ |
+| 时间 | 单一时间点 `at`，**必须明确到分钟**（不再支持跨天，也**没有 all_day 字段**；00:00 是合法的凌晨零点） | ✔ |
 | 时区 | 默认取身份时区 | ✔ |
 | 重复规则 | RRULE + 结束条件（永不 / 指定日期 / 次数） | ✔ |
 | 提醒 | 可配置多个，提前量自定义 | ✔ |
@@ -444,6 +446,7 @@ POST /ai/events/parse-text：文字 → 0..N 条日程草稿（`at` 可以为空
   只抽「**要你去做的事**」（登记 / 报名 / 交材料 / 开会 / 缴费 / 填写…）；叙述性内容
   （放假区间、「@所有人」「各部门」抬头、情况统计的说明）不抽。**日期有就写、没有就留空**：
   不拿今天兜底、不猜时刻（只说了哪天 → 当天 00:00；「上午」不折算成 09:00）。
+  这里的 00:00 是**「时刻没识别出来」的信号**，不是要展示给用户的时间（见下一段）。
 - **返回形状**：`{ items:[{ title, at?, timezone, locationName?, description? }] }`。
   `at` **可以为空**（通知里没写日期，这是合法结果）；只产出日程，没有 `kind` / `confidence`。
   模型未配置 / 不可用返回 `90002`，与「图里确实没有要做的事」（空 `items`）是两件事。
@@ -451,8 +454,12 @@ POST /ai/events/parse-text：文字 → 0..N 条日程草稿（`at` 可以为空
   唯一的事实来源）。每条可改**标题**、补 / 改**日期**（滚轮选择）、删除；没日期的条目标红
   「请选择日期」。**全部条目都有日期**后底部「添加 N 条日程」才可点，逐条 `POST /events`；
   全部成功回日历并刷新，部分失败则列出失败项留在页面重试（成功的不会重复创建）。
-- 日期只到「哪一天」：确认页选的是日期，创建时时刻固定 **00:00**（「就这一天」）；
-  要精确到点，用户添加后在日历里再编辑。
+- **时刻识别不出来就给默认值 + 在备注里标注**（2026-10-01 定稿）：解析结果里
+  `at` 缺失、解析不了、或落在当地 00:00（模型只在「只写了哪一天」时这么输出）时，
+  **填默认时刻 `09:00`**，并在**备注（`description`）开头写一句
+  「未识别到具体时间，已默认填 09:00，请核对」**。填默认值必须让用户看见 ——
+  否则 09:00 和「原文里真写了 9 点」长得一模一样，核对时就跳过去了。
+  日期仍然由用户在确认页补（`at` 缺失的条目标红「请选择日期」），**日期绝不拿今天兜底**。
 - **端侧小模型已下线**：0.5B（`llama.rn` + GGUF）在「一份通知抽多条」上不够用（2026-09-30
   真机对比），且把 APK 撑到 ~570MB；解析改走服务端后包体回到 ~100MB。要恢复端侧解析可加回
   `llama.rn` + GGUF 与 `app/src/vision/register.ts` 的注册。
@@ -627,8 +634,11 @@ POST /ai/events/parse-text：文字 → 0..N 条日程草稿（`at` 可以为空
   本机按目标重排，**服务端没返回的目标一律撤销**——用户在别的设备删了提醒、
   或日程挪出了窗口，本机那份必须跟着消失；
 - **时机**：冷启动、回到前台（5 分钟内不重复拉）、以及每次保存 / 删除日程或待办之后；
-- **开关**：用户可在「我的 → 到点提醒」关掉；关掉只影响**这台设备**（换设备的默认仍是开启），
-  并会撤销已排的本机通知——否则开关就成了摆设；
+- **开关**：有一个总开关，在「我的 → 到点提醒」；**默认关闭**（2026-10-01 定稿：通知是
+  「用户主动要的打扰」，没问过就不发）。用户打开后才排本机通知，关掉会立刻撤销已排的那些——
+  否则开关就成了摆设。开关只影响**这台设备**（换设备按默认值，即仍是关闭）；
+  用户设了提前量而总开关还关着时，提醒页要**当场写明「这样设置不会响」**，
+  不能让这变成一个静默失效的功能；
 - **点击路由**：通知的 data 带 `targetType` / `targetId` / `occurrenceDate`，
   点击后直接打开对应日程（跳到**那一次**）或待办的编辑页；冷启动那次点击由
   `getLastNotificationResponseAsync` 补捞，解析不出的通知一律忽略，不影响启动。
@@ -726,7 +736,7 @@ erDiagram
 | 表 | 关键字段 | 约束 / 说明 |
 | --- | --- | --- |
 | `calendar` | `id`、`calendar_type`、`owner_identity_id`(可空)、`org_id`(可空)、`department_id`(可空)、`name`、`color`、`timezone`、`is_default`、`status`、`created_at`、`updated_at` | `PERSONAL` 时 `owner_identity_id` 必填；`ORG`/`ORG_DEPARTMENT` 时 `org_id` 必填 |
-| `event` | `id`、`calendar_id`、`org_id`(可空)、`creator_identity_id`、`source_type`、`title`、`description`、`location_name`、`location_address`、`latitude`、`longitude`、`poi_id`、`coordinate_system`、**`at`（唯一时间点，NOT NULL）**、`timezone`、`rrule`、`rrule_until`、`status`、`availability`、`color`、`priority`、`category`、`url`、`travel_time_minutes`、`dispatch_id`(可空)、`updated_after_dispatch`、`created_at`、`updated_at`、`deleted_at` | **没有 `start_at` / `end_at`**（V18 已真删列，见 §4.1.1）；索引 `idx_event_calendar_at(calendar_id, at)`、`idx_event_org_at(org_id, at)`；`at` 落在当地 00:00 表示「只说了哪一天」（V19 已删 `all_day`）；`status` ∈ `CONFIRMED`/`TENTATIVE`/`CANCELLED`；`availability` ∈ `BUSY`/`FREE`；地点字段语义见 §5.9 |
+| `event` | `id`、`calendar_id`、`org_id`(可空)、`creator_identity_id`、`source_type`、`title`、`description`、`location_name`、`location_address`、`latitude`、`longitude`、`poi_id`、`coordinate_system`、**`at`（唯一时间点，NOT NULL）**、`timezone`、`rrule`、`rrule_until`、`status`、`availability`、`color`、`priority`、`category`、`url`、`travel_time_minutes`、`dispatch_id`(可空)、`updated_after_dispatch`、`created_at`、`updated_at`、`deleted_at` | **没有 `start_at` / `end_at`**（V18 已真删列，见 §4.1.1）；索引 `idx_event_calendar_at(calendar_id, at)`、`idx_event_org_at(org_id, at)`；`at` 是**明确的时刻**（V19 已删 `all_day`；2026-10-01 起当地 00:00 不再表示「只说了哪一天」）；`status` ∈ `CONFIRMED`/`TENTATIVE`/`CANCELLED`；`availability` ∈ `BUSY`/`FREE`；地点字段语义见 §5.9 |
 | | | `creator_identity_id` **可空**：个人日程必填；组织日程由 Web 组织管理端下发时没有 C 端身份，此时为空，发起方记在 `event_dispatch.created_by_admin_id` |
 | `event_exception` | `id`、`event_id`、`occurrence_date`、`exception_type`(MODIFIED/CANCELLED)、`override_at`、`override_title`、`created_at` | `(event_id, occurrence_date)` 唯一；`override_at` 是这个时间点被单独改成了什么 |
 | `task` | `id`、`calendar_id`、`owner_identity_id`、`org_id`(可空)、`parent_task_id`(可空)、`event_id`(可空)、`title`、`description`、`due_at`(可空)、`status`、`completed_at`、`priority`、`rrule`、`images`(jsonb)、`sort_order`、`created_at`、`updated_at`、`deleted_at` | 仅两层（父/子）；父任务与子任务须同 `calendar_id`；`event_id` 指向关联日程（一个日程可关联多个待办，见 §4.1.6），删除日程时置空而非级联删除；`images` 存上传后的相对 URL 数组（≤9，与 `feedback.images` 同一套写法） |

@@ -25,6 +25,16 @@ const RESOLVE_DEBOUNCE_MS = 700;
 /** 实时定位最多等这么久；超时就退到缓存位置，宁可位置略旧也不要一直转圈 */
 const LOCATE_TIMEOUT_MS = 8000;
 
+/**
+ * 本次会话是否已经为「进页面自动定位」解释并申请过定位权限。
+ *
+ * <p>**必须问一次**：不问的话第一眼看到的是兜底坐标（`39.9087/116.3975` = 天安门），
+ * 而不是「我的位置」——用户会以为定位坏了。
+ * **只问一次**：每次进页面都弹说明属于审核规范 §四点名的「频繁弹窗」，
+ * 用户拒绝之后就别再打扰，右下角的定位按钮仍然可以随时手动再来一次。
+ */
+let autoLocateAskedThisSession = false;
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
@@ -216,10 +226,21 @@ export function LocationPickerScreen({
     setLocating(true);
     setError(null);
     try {
-      // 先说明用途再申请系统权限。自动定位（进页面就试一次）时解释得更轻，
-      // 但**绝不允许**因为没给定位就退出页面——规范 §四把「拒绝权限后强制退出」列为违规。
-      if (!(await askPermission('location', { quiet: auto }))) {
-        setError(auto ? '未授权定位，已打开默认位置；可点右下角图标重新定位' : '未授予定位权限，无法定位到当前位置');
+      /**
+       * 先说明用途再申请系统权限，**进页面这次也要问**（见 `autoLocateAskedThisSession`）。
+       *
+       * <p>以前的写法是自动定位一律 `quiet`（没授权就直接放弃），结果地图永远落在
+       * 北京的兜底坐标上；现在首次进页面走完整流程，之后再进只是安静地复用已有授权。
+       * **绝不允许**因为没给定位就退出页面——规范 §四把「拒绝权限后强制退出」列为违规。
+       */
+      const quiet = auto && autoLocateAskedThisSession;
+      autoLocateAskedThisSession = true;
+      if (!(await askPermission('location', { quiet }))) {
+        setError(
+          auto
+            ? '未授权定位，已打开默认位置；可点右下角图标重试，或直接搜索地点'
+            : '未授予定位权限，无法定位到当前位置；可搜索地点或手工输入地址',
+        );
         return false;
       }
       // 先争一次实时定位（用 GPS，模拟器与真机都能拿到 fix），

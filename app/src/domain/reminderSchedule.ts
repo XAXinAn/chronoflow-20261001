@@ -1,5 +1,3 @@
-import { isDayOnlyPoint } from './agenda';
-
 /**
  * 提醒的本地排期（spec §4.1.2 / §4.5）。
  *
@@ -11,8 +9,8 @@ import { isDayOnlyPoint } from './agenda';
  * 三个必须守住的约束：
  *   1. **已经过去的时刻不要再排**（否则保存后立刻弹一堆过期提醒）；
  *   2. **iOS 待触发通知上限 64 条**，重复日程只排未来 30 天，并按上限截断；
- *   3. 到点提醒（提前 0 分钟）与「只说了哪一天」的基准时刻要算对（后者按当地 09:00，
- *      不能在午夜弹通知）。
+ *   3. 到点提醒（提前 0 分钟）就是日程那个时间点本身——**00:00 也是正经时间**
+ *      （2026-10-01 起不再有「只说了哪一天」这种输入）。
  */
 
 /** 界面上可选的提前量（分钟）。1440 = 提前 1 天。 */
@@ -23,9 +21,6 @@ export const MAX_SCHEDULED_REMINDERS = 60;
 
 /** 重复日程一次只排这么多天，之后靠「用户再次打开 App」时续排。 */
 export const SCHEDULE_HORIZON_DAYS = 30;
-
-/** 「只说了哪一天」的提醒基准时刻：当地 09:00（半夜弹通知会被用户骂）。 */
-export const DAY_ONLY_BASE_HOUR = 9;
 
 export interface PlannedReminder {
   /** 触发时刻（绝对时间） */
@@ -81,22 +76,12 @@ export function zoneOffsetMinutes(at: Date, timezone: string): number {
 /**
  * 提醒的基准时刻。
  *
- * <p>有具体时刻就用那个时刻；**只说了哪一天**（时间点落在当地 00:00）的按当天 09:00 算 ——
- * 否则「9 月 30 日」这类日程的提醒会在午夜响。
+ * <p>以前对「只说了哪一天」（当地 00:00）会挪到当天 09:00，免得半夜弹通知；现在日程必须有
+ * 明确时间、00:00 就是凌晨零点，所以基准就是它本身——用户把时间设成 00:00 就要在 00:00 响，
+ * 我们再替他挪一次反而是错的。
  */
 export function reminderBase(input: Pick<PlanInput, 'at' | 'timezone'>): Date {
-  const at = new Date(Date.parse(input.at));
-  if (!isDayOnlyPoint(input.at, input.timezone)) {
-    return at;
-  }
-  const offset = zoneOffsetMinutes(at, input.timezone);
-  const local = new Date(Date.parse(input.at) + offset * 60_000);
-  const dateKey = [
-    local.getUTCFullYear(),
-    String(local.getUTCMonth() + 1).padStart(2, '0'),
-    String(local.getUTCDate()).padStart(2, '0'),
-  ].join('-');
-  return zonedTimeToUtc(dateKey, DAY_ONLY_BASE_HOUR, input.timezone);
+  return new Date(Date.parse(input.at));
 }
 
 /**

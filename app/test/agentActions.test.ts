@@ -53,13 +53,13 @@ describe('卡片展示「将写入的日程」', () => {
     expect(preview.locationText).toBe('会议室 A');
   });
 
-  it('只说了哪一天的日程不显示具体时刻', () => {
+  it('00:00 的日程照实显示时刻（不再当成「只说了哪一天」）', () => {
     const preview = describeActionPreview(
       { ...createAction, payload: { title: '团建', at: '2026-09-29T00:00:00+08:00' } },
       '2026-09-27',
     );
 
-    expect(preview.timeText).toBeNull();
+    expect(preview.timeText).toBe('00:00');
     expect(preview.dateText).toContain('9 月 29 日');
   });
 

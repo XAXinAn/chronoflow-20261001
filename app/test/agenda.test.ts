@@ -40,10 +40,11 @@ describe('日程领域逻辑', () => {
     expect(formatDayLabel('2026-10-20', '2026-10-05')).toBe('10 月 20 日');
   });
 
-  it('formatEventTime：有具体时刻给时刻，只说了哪一天（当地 00:00）给 null', () => {
+  it('formatEventTime：永远是 HH:mm，00:00 也照实显示（它就是凌晨零点）', () => {
     expect(formatEventTime('2026-10-05T01:00:00Z', 'Asia/Shanghai')).toBe('09:00');
-    // 16:00Z = 次日 00:00（东八区）→ 没有具体时刻
-    expect(formatEventTime('2026-10-04T16:00:00Z', 'Asia/Shanghai')).toBeNull();
+    // 16:00Z = 次日 00:00（东八区）：以前这里返回 null（「只显示日期」），
+    // 表现成「时间拨到 00:00 之后列表里那一栏空了」——现在必须照实写出来
+    expect(formatEventTime('2026-10-04T16:00:00Z', 'Asia/Shanghai')).toBe('00:00');
   });
 
   it('sortTasks 未完成在前、按截止时间、无时间排最后', () => {

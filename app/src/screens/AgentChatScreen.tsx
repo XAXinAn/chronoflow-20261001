@@ -1,8 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import {
+  Keyboard,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -120,6 +122,18 @@ export function AgentChatScreen({
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   }, []);
+
+  /**
+   * 键盘弹起来时把最后一条滚进视野。
+   *
+   * <p>输入框被 KeyboardAvoidingView 顶上去之后，可视区变矮了，但 ScrollView 的偏移
+   * 还停在原处——用户看到的还是几轮之前那段，最后一句话被压在输入框下面。
+   * 微信也是这个行为：键盘一出来就贴住最新一条。
+   */
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', scrollToEnd);
+    return () => shown.remove();
+  }, [scrollToEnd]);
 
   const patchAgentMessage = useCallback(
     (id: number, patch: (message: Extract<ChatMessage, { role: 'agent' }>) => ChatMessage) => {
@@ -368,7 +382,21 @@ export function AgentChatScreen({
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.bg }}>
+    /**
+     * 键盘避让（spec §11「小安」对话页的输入体验）。
+     *
+     * <p>`edgeToEdgeEnabled: true` 之后 Android 15+ 不再按 `adjustResize` 缩窗口，
+     * 底部固定的输入框会被键盘整块盖住——原来整仓没有一处 KeyboardAvoidingView，
+     * 所以「点了输入框看不见自己打什么」。
+     *
+     * <p>两个平台都用 `padding`：它的位移是**每次按当前 geometry 重算**的
+     * （`frame.y + frame.height - keyboardY`），窗口已经缩过时为 0、不会重复顶；
+     * 而 `height` 会把首次测量高度记成基准，tab 栏收起让父容器变高之后就会算偏。
+     */
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: theme.color.bg }}
+      behavior="padding"
+    >
       <EditorHeader
         // 就叫「小安」：服务端接没接模型是部署方的事，不该出现在用户的标题栏里
         title={AGENT_NAME}
@@ -627,7 +655,7 @@ export function AgentChatScreen({
           </View>
         </View>
       ) : null}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
