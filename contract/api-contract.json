@@ -68,6 +68,7 @@
 
     { "method": "POST", "path": "/api/v1/uploads/images", "auth": "access" },
     { "method": "POST", "path": "/api/v1/ai/events/recognize", "auth": "access" },
+    { "method": "POST", "path": "/api/v1/ai/events/parse-text", "auth": "access" },
     { "method": "POST", "path": "/api/v1/ai/agent/chat", "auth": "access" },
     { "method": "POST", "path": "/api/v1/ai/agent/approvals", "auth": "access" },
     { "method": "POST", "path": "/api/v1/ai/transcribe", "auth": "access" },

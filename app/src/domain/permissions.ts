@@ -12,15 +12,16 @@
  */
 
 /**
- * 第一版只用得到这三种权限。
+ * 这五类权限都对应可见功能，且都要「先说明用途再申请」。
  *
- * 「拍照识别日程」暂缓上线，因此 App **不申请相机权限**——不申请就不该在隐私政策里声明，
- * 清单与实现必须一致（这正是上架检测会核对的东西）。
+ * 相机（`camera`）是 2026-10-01 重新上线的：拍一张会议通知 / 行程单，在手机本地 OCR 成文字
+ * （图片不出手机，解析用的文字会上传）。不申请相机也能从相册选图，所以声明与实现必须一致——
+ * 这正是上架检测会核对的东西。
  *
- * 通知（`POST_NOTIFICATIONS`）是 2026-09-27 新加的：日程/待办的到点提醒走本地通知
+ * 通知（`POST_NOTIFICATIONS`）是 2026-09-27 新增的：日程/待办的到点提醒走本地通知
  * （spec §4.5），因此必须在申请前说明用途，隐私政策 §9.2 的权限清单也要同步列出。
  */
-export type PermissionKind = 'photo' | 'location' | 'notification' | 'microphone';
+export type PermissionKind = 'photo' | 'camera' | 'location' | 'notification' | 'microphone';
 
 export interface PermissionRationale {
   /** 说明弹窗标题 */
@@ -39,6 +40,15 @@ export const PERMISSION_RATIONALE: Record<PermissionKind, PermissionRationale> =
       + '我们只读取您主动选中的那张图片，不会扫描、上传相册里的其他内容。\n\n'
       + '您也可以选择「不允许」，其他功能不受影响。',
     deniedHint: '未获得相册权限，其他功能不受影响；如需更换头像可稍后在系统设置里开启。',
+  },
+  camera: {
+    title: '需要使用相机',
+    message:
+      '用于拍一张日程相关的照片（会议通知、行程单、课程表等），在您的手机本地识别成文字，再解析成日程草稿。\n\n'
+      + '照片只在您的手机上处理，我们不上传、也不保存它；识别出的文字会上传到我们的服务器用于解析，'
+      + '识别结果先给您确认，确认后才写进日历。\n\n'
+      + '您也可以选择「不允许」，改从相册选图或手工新建日程。',
+    deniedHint: '未获得相机权限，您仍可从相册选图或手工新建日程，其他功能不受影响。',
   },
   location: {
     title: '需要使用定位',

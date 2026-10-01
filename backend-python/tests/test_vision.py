@@ -7,7 +7,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+JAVA_VISION_PROMPT = (
+    REPO_ROOT / "backend-java" / "xa-agent" / "src" / "main" / "resources"
+    / "agent" / "vision-prompt.md"
+)
 
 # 注意：**不要**在模块导入期 import app.services.vision —— 它会在 conftest 设置
 # DATABASE_URL 之前就把 app.config 读进内存，于是整套用例跑去连开发库（踩过）。
@@ -80,3 +88,62 @@ def test_unconfigured_model_reports_unavailable() -> None:
         vision.recognize(b"\x89PNG", "image/png", "2026-09-25", "Asia/Shanghai")
     assert failure.value.code == ErrorCode.THIRD_PARTY_UNAVAILABLE
     assert "识别服务未配置" in failure.value.message
+
+
+# ------------------------------------------------ OCR 文字 → 日程草稿（第二段，parse-text）
+
+
+def test_parse_text_prompt_is_the_same_file_as_java() -> None:
+    """两版用同一份抽取提示词：文件逐字节相同，否则线上跑的可能不是你以为的那版。"""
+    from app.services import vision_text
+
+    assert vision_text.template() == JAVA_VISION_PROMPT.read_text(encoding="utf-8")
+    prompt = vision_text.template()
+    # 三条口径是这轮产品的核心，缺一条都会让「中秋假期」这种叙述性内容混进草稿
+    assert "要你做的事" in prompt
+    assert "没写就留空" in prompt
+    assert "不要猜时刻" in prompt
+
+
+def test_parse_text_keeps_items_without_date() -> None:
+    """缺日期是**合法结果**：照常返回这一条，让确认页补；不能因为它没日期就丢掉。"""
+    from app.services import vision_text
+
+    reply = """
+    好的，识别结果如下：
+    ```json
+    {"items":[
+      {"title":"离返校登记","at":"2026-09-24T00:00:00+08:00","timezone":"Asia/Shanghai"},
+      {"title":"填写返校情况统计表","timezone":"Asia/Shanghai","description":"金山文档填写"}
+    ]}
+    ```
+    """
+    items = vision_text.parse_items(reply, "Asia/Shanghai")
+
+    assert [item.title for item in items] == ["离返校登记", "填写返校情况统计表"]
+    assert items[0].at == "2026-09-24T00:00:00+08:00"
+    assert items[0].timezone == "Asia/Shanghai"
+    assert items[1].at is None
+    # 只产出日程：没有 kind / confidence
+    assert "kind" not in items[0].to_dict()
+    assert "confidence" not in items[0].to_dict()
+
+
+def test_parse_text_tolerates_bad_reply() -> None:
+    """解析不出来就回空列表，而不是抛异常把整条链路打断。"""
+    from app.services import vision_text
+
+    assert vision_text.parse_items("这张图里好像没有要做的事", "Asia/Shanghai") == []
+    assert vision_text.parse_items('{"items":[{"timezone":"Asia/Shanghai"}]}', "Asia/Shanghai") == []
+    assert vision_text.parse_items(None, "Asia/Shanghai") == []
+
+
+def test_parse_text_unconfigured_reports_unavailable() -> None:
+    from app.errors import ApiError, ErrorCode
+    from app.services import vision_text
+
+    assert vision_text.configured() is False
+    with pytest.raises(ApiError) as failure:
+        vision_text.parse("9 月 24 日前登记", "2026-09-30", "Asia/Shanghai")
+    assert failure.value.code == ErrorCode.THIRD_PARTY_UNAVAILABLE
+    assert "解析模型未配置" in failure.value.message

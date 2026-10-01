@@ -186,6 +186,13 @@ public class DashScopeAgentModelClient implements AgentModelClient {
         root.put("max_tokens", properties.getMaxTokens());
         // 最后一帧带上 token 用量：成本要能观测，否则「为什么这个月账单涨了」无处可查
         root.putObject("stream_options").put("include_usage", true);
+        // 结构化抽取（OCR 文字 → 日程草稿）走 JSON 模式 + 温度 0：要的是稳定，不是想象力
+        if (request.jsonMode()) {
+            root.putObject("response_format").put("type", "json_object");
+        }
+        if (request.temperature() != null) {
+            root.put("temperature", request.temperature());
+        }
 
         ArrayNode messages = root.putArray("messages");
         for (AgentMessage message : request.messages()) {

@@ -474,9 +474,10 @@ def check_permission_rationale() -> None:
     text = read(helper)
     require_contains(
         text,
-        ["photo", "location", "notification"],
+        ["photo", "camera", "location", "notification"],
         "domain/permissions.ts",
-        "相册 / 定位 / 通知三类权限都要有用途说明文案（第一版不做拍照识别，因此不申请相机权限）",
+        "相册 / 相机 / 定位 / 通知四类权限都要有用途说明文案（拍照识别重新上线后，"
+        "相机也要「先说明用途再申请」）",
     )
     for screen in [
         "AgendaScreen.tsx",

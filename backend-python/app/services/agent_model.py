@@ -61,6 +61,14 @@ class AgentModelClient:
     def complete(self, messages: list[dict], tools: list[dict], on_delta) -> CompletionResult:
         raise NotImplementedError
 
+    def complete_json(self, prompt: str) -> str:
+        """一次性的结构化补全（JSON 模式 + 温度 0），给「OCR 文字 → 日程草稿」这类抽取用。
+
+        与 `complete` 分开：抽取不需要流式、不需要工具，要的是**稳定**的 JSON，
+        所以单独一条缝；注入假上游时也只需覆盖这一个方法。
+        """
+        raise NotImplementedError
+
     def transcribe(self, audio: bytes, content_type: str) -> TranscriptionResult:
         raise NotImplementedError
 
@@ -213,6 +221,55 @@ class DashScopeAgentModelClient(AgentModelClient):
             logger.warning("助手上游不可达: %s", ex)
             raise ApiError(ErrorCode.THIRD_PARTY_UNAVAILABLE, "助手模型暂时不可用") from None
         return accumulator.result()
+
+    def complete_json(self, prompt: str) -> str:
+        """非流式的 JSON 抽取：`response_format={"type":"json_object"}` + `temperature=0`。
+
+        与 Java 版 `AgentTextParseService` 调上游的形状一致：模型时不时会在 JSON 前后
+        带一句「好的，识别结果如下」，约束解码能挡掉大部分，剩下的交给容错解析。
+        """
+        if not self.available():
+            raise ApiError(ErrorCode.THIRD_PARTY_UNAVAILABLE, "解析模型未配置")
+
+        payload = {
+            "model": settings.agent_model,
+            "stream": False,
+            "enable_thinking": settings.agent_enable_thinking,
+            "max_tokens": settings.agent_max_tokens,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if _dump_enabled():
+            logger.info("vision upstream request: %s", json.dumps(payload, ensure_ascii=False))
+
+        request = urllib.request.Request(
+            settings.agent_base_url.rstrip("/") + "/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {settings.agent_api_key}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=settings.agent_timeout) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as ex:
+            detail = ex.read().decode("utf-8", errors="replace")[:200]
+            logger.warning("解析上游返回 HTTP %s: %s", ex.code, detail)
+            raise ApiError(ErrorCode.THIRD_PARTY_UNAVAILABLE,
+                           f"解析服务返回 HTTP {ex.code}") from None
+        except (urllib.error.URLError, TimeoutError, OSError) as ex:
+            logger.warning("解析上游不可达: %s", ex)
+            raise ApiError(ErrorCode.THIRD_PARTY_UNAVAILABLE, "解析服务暂时不可用") from None
+        except json.JSONDecodeError:
+            raise ApiError(ErrorCode.THIRD_PARTY_UNAVAILABLE, "解析服务返回了非法响应") from None
+
+        choices = body.get("choices") or []
+        if not choices:
+            return ""
+        return (choices[0].get("message") or {}).get("content") or ""
 
     def transcribe(self, audio: bytes, content_type: str) -> TranscriptionResult:
         if not self.transcription_available():

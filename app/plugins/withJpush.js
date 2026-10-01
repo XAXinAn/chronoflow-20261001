@@ -21,9 +21,6 @@
 
 const { withAppBuildGradle, withProjectBuildGradle } = require('@expo/config-plugins');
 
-/** 与极光后台「应用包名」逐字一致；改了要同步 app.json 的 android.package 与极光后台。 */
-const PKGNAME_PLACEHOLDER = '${applicationId}';
-
 const JPUSH_VERSION = '6.2.1';
 
 /** 厂商通道 → 依赖坐标 + 需要的 manifestPlaceholders（没配 key 的不要打开，否则编译期就报错）。 */
@@ -73,7 +70,13 @@ function withJpushRepositories(config) {
 
 function placeholderBlock(options) {
   const lines = [
-    `            JPUSH_PKGNAME : ${PKGNAME_PLACEHOLDER},`,
+    // 直接写**字面量**包名，不写 `${applicationId}`：
+    //   ① 这段 manifestPlaceholders 注入在 `defaultConfig {` 之后、`applicationId` 赋值**之前**，
+    //      Groovy 立刻求值，那时 applicationId 还是 null；
+    //   ② 早先写成不加引号的 `${applicationId}`，Groovy 会把它当成方法调用 `$()`，
+    //      配置阶段直接报 "Could not find method $()"（2026-09-30 实测）。
+    // 包名与极光后台「应用包名」逐字一致；改了要同步 app.json 的 android.package 与极光后台。
+    `            JPUSH_PKGNAME : "${options.packageName}",`,
     `            JPUSH_APPKEY  : "${options.appKey}",`,
     // 渠道号只影响极光后台的统计维度，不是密钥
     `            JPUSH_CHANNEL : "${options.channel || 'default_developer'}",`,
@@ -113,13 +116,24 @@ function withJpushAndroidGradle(config, options) {
       }
     }
 
-    // ② ABI 过滤：只打 arm 架构（模拟器 x86 用不到极光的 so）
+    // ② ABI 过滤：**跟着 reactNativeArchitectures 走**，不再写死一组。
+    //
+    //    早先这里写死 `'armeabi-v7a','arm64-v8a'`（为了压上架包体积），结果
+    //    ①x86_64 模拟器装不上（INSTALL_FAILED_NO_MATCHING_ABIS）；
+    //    ②`reactNativeArchitectures=x86_64` 对 App 自己的原生构建**不生效**——
+    //      于是开发时也硬编 3 个 ABI，把 7GB 内存的 WSL 直接打爆（2026-09-30 实测两次）。
+    //    现在默认仍是 arm 两档（上架包体积不变），开发时一行 `reactNativeArchitectures=x86_64`
+    //    就能把 RN 模块与 App 原生代码一起收敛成一个架构。
     if (!contents.includes('abiFilters')) {
       contents = contents.replace(
         /defaultConfig\s*\{/,
         (match) =>
           match +
-          `\n        ndk {\n            abiFilters 'armeabi-v7a', 'arm64-v8a'\n        }`
+          `\n        ndk {\n`
+          + `            def rnArchitectures = (project.findProperty("reactNativeArchitectures")\n`
+          + `                    ?: "armeabi-v7a,arm64-v8a").toString()\n`
+          + `            abiFilters(*rnArchitectures.split(",").collect { it.trim() }.findAll { it })\n`
+          + `        }`
       );
     }
 
@@ -150,6 +164,12 @@ module.exports = function withJpush(config, options = {}) {
   if (!options.appKey) {
     throw new Error('withJpush: 缺少 appKey（极光后台「应用设置」里的 AppKey）');
   }
+  // 包名从 app.json 的 android.package 取，别在插件里再写一份（两处写死了早晚会不一致）
+  const packageName = options.packageName || config.android?.package;
+  if (!packageName) {
+    throw new Error('withJpush: 缺少 packageName（app.json 的 android.package）');
+  }
+  options = { ...options, packageName };
   config = withJpushRepositories(config);
   config = withJpushAndroidGradle(config, options);
   return config;

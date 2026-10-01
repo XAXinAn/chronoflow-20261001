@@ -24,6 +24,7 @@ import type {
   Task,
   TokenResponse,
   UploadedImage,
+  ParsedEventItem,
 } from './types';
 
 export interface CalendarSummary {
@@ -259,6 +260,16 @@ export function createEndpoints(client: ApiClient) {
       form.append('file', new File(uri) as unknown as Blob);
       return client.upload<UploadedImage>('/api/v1/uploads/images', form);
     },
+    /**
+     * OCR 文字 → 日程草稿（spec §4.1.9）。
+     *
+     * <p>**图片不出手机**：这里只把手机端 ML Kit OCR 出来的**文字**发上去，
+     * 由服务端模型负责「一段通知里有几件事、哪句是时间」。
+     * `items[].at` 可能是空的（通知里没写日期），交给确认页让用户补；
+     * 解析模型未配置时返回 90002，界面如实说明，不假装识别成功。
+     */
+    parseScheduleText: (payload: { text: string; today: string; timezone: string }) =>
+      client.post<{ items: ParsedEventItem[] }>('/api/v1/ai/events/parse-text', payload),
     /**
      * 系统元信息（免登录）。App 用它判断「小安」有没有接入模型（aiAgentEnabled），
      * 避免界面看起来能用、点了却装死（spec §11 阶段三）。

@@ -44,7 +44,7 @@
         "expo-image-picker",
         {
           "photosPermission": "用于选择头像、为待办或意见反馈添加图片",
-          "cameraPermission": false,
+          "cameraPermission": "用于拍一张日程通知/行程单，在手机本地识别成日程草稿",
           "microphonePermission": false
         }
       ],

@@ -34,6 +34,9 @@ class ScriptedModel:
         self.requests: list[dict] = []
         self.last_transcription = ""
         self.transcribe_calls = 0
+        # 「OCR 文字 → 日程草稿」那一路的返回值与请求（与对话脚本分开，互不串味）
+        self.last_json = '{"items":[]}'
+        self.json_prompts: list[str] = []
 
     def enqueue(self, text: str, tool_calls: list[dict] | None = None) -> None:
         from app.services.agent_model import CompletionResult
@@ -71,6 +74,10 @@ class ScriptedModel:
 
         self.transcribe_calls += 1
         return TranscriptionResult(text=self.last_transcription, language="zh")
+
+    def complete_json(self, prompt):
+        self.json_prompts.append(prompt)
+        return self.last_json
 
 
 @pytest.fixture()
@@ -179,6 +186,53 @@ def test_agent_prompt_is_the_same_file_as_java() -> None:
     })
     assert "2026-09-30" in rendered and "周三" in rendered
     assert "{{" not in rendered
+
+
+def test_parse_text_endpoint_extracts_todos_with_optional_date(client, model) -> None:
+    """OCR 文字 → 日程草稿：缺日期的条目照样返回、带 timezone、没有 kind（spec §4.1.9）。"""
+    tokens = register(client, "13900007010")
+    model.last_json = """
+    好的，识别结果如下：
+    ```json
+    {"items":[
+      {"title":"离返校登记","at":"2026-09-24T00:00:00+08:00","timezone":"Asia/Shanghai"},
+      {"title":"填写返校情况统计表","timezone":"Asia/Shanghai","description":"金山文档填写"}
+    ]}
+    ```
+    """
+    body = client.post(
+        "/api/v1/ai/events/parse-text",
+        json={
+            "text": "9 月 24 日前登记；二、返校情况统计请填写",
+            "today": "2026-09-30",
+            "timezone": "Asia/Shanghai",
+        },
+        headers=auth(tokens),
+    ).json()
+
+    assert body["code"] == 0, body
+    items = body["data"]["items"]
+    assert [item["title"] for item in items] == ["离返校登记", "填写返校情况统计表"]
+    assert items[0]["at"].startswith("2026-09-24T00:00")
+    assert items[0]["timezone"] == "Asia/Shanghai"
+    assert "kind" not in items[0]
+    # 没写日期的那条：at 为 null，但条目本身必须在
+    assert items[1]["at"] is None
+    # 提示词里带上了今天与时区，模型才有依据换算相对时间
+    prompt = model.json_prompts[-1]
+    assert "2026-09-30" in prompt and "Asia/Shanghai" in prompt
+    assert "要你做的事" in prompt
+
+
+def test_parse_text_reports_unavailable_when_model_missing(client, model) -> None:
+    tokens = register(client, "13900007011")
+    model.available_flag = False
+    body = client.post(
+        "/api/v1/ai/events/parse-text",
+        json={"text": "9 月 24 日前登记", "today": "2026-09-30", "timezone": "Asia/Shanghai"},
+        headers=auth(tokens),
+    ).json()
+    assert body["code"] == 90002
 
 
 def test_agent_tools_are_personal_only(client) -> None:

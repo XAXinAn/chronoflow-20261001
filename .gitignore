@@ -35,6 +35,11 @@ venv/
 # 日志与本地运行数据
 logs/
 *.log
+
+# Expo/RN 的原生工程：由 `npx expo prebuild` 生成（CNG），不进版本库——
+# 源配置在 app/app.json 与 app/plugins/，提交生成物只会让两边打架
+app/android/
+app/ios/
 # 图片上传目录（spec §5.10）：本地运行产物，不进版本库。
 # 用 **/ 前缀：后端从各自的模块目录启动（CWD 不同），路径会落在不同层级
 **/data/uploads/

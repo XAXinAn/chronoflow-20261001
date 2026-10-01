@@ -396,15 +396,24 @@ export function AgentChatScreen({
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: theme.spacing.md, gap: 18, paddingBottom: 24 }}
+        contentContainerStyle={[
+          { padding: theme.spacing.md, gap: 18, paddingBottom: 24 },
+          // 空态整块在页面里**垂直居中**（内容比视口矮时 flexGrow 才会撑满，
+          // 只写 justifyContent 是没用的）。有对话之后恢复成从上往下排。
+          messages.length === 0 ? { flexGrow: 1, justifyContent: 'center' } : null,
+        ]}
         onContentSizeChange={scrollToEnd}
       >
         {messages.length === 0 ? (
-          <View style={{ marginTop: theme.spacing.lg }}>
-            <Text style={{ color: theme.color.textPrimary, fontSize: 30, fontWeight: '700' }}>
-              {AGENT_NAME}
-            </Text>
-            <Text style={{ color: theme.color.textSecondary, fontSize: 15, marginTop: 8 }}>
+          <View>
+            {/*
+              这里**不再重复**「小安」：上面那条标题栏已经写了一次
+              （它还得留着，右上角的「清空对话」挂在它上面）。
+              空态直接从一句话说明开始——同一个页面出现两次同名标题很别扭。
+            */}
+            <Text
+              style={{ color: theme.color.textSecondary, fontSize: 15, textAlign: 'center' }}
+            >
               {AGENT_TAGLINE}
             </Text>
             {/* 空态只放「你可以问我什么」。服务端可不可用不该写在这里，出问题会在对话流里如实报 */}
@@ -867,7 +876,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 12,
-    minHeight: 68,
+    /**
+     * 高度跟着文字走。
+     *
+     * <p>原来写死 `minHeight: 68`（那是按**两行**文案量的：两行 38 + 上下 padding 24 = 62），
+     * 但现在的四句快捷问法在 13pt 下都只占一行（19 + 24 = 43），于是每张卡片下面
+     * 空出整整一行——看着像"少写了一行"。44 是能点得动的最小高度，留个 1pt 余量即可。
+     */
+    minHeight: 44,
   },
   userRow: { flexDirection: 'row', justifyContent: 'flex-end' },
   agentBlock: { gap: 10 },

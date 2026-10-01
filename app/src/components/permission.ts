@@ -99,6 +99,15 @@ function gatewayFor(
       reject,
     };
   }
+  if (kind === 'camera') {
+    // 相机的申请入口在 expo-image-picker 里（与相册同一个模块），别再去引第二个库
+    return {
+      current: async () => (await ImagePicker.getCameraPermissionsAsync()).granted,
+      request: async () => (await ImagePicker.requestCameraPermissionsAsync()).granted,
+      explain,
+      reject,
+    };
+  }
   return {
     current: async () => (await ImagePicker.getMediaLibraryPermissionsAsync()).granted,
     request: async () => (await ImagePicker.requestMediaLibraryPermissionsAsync()).granted,

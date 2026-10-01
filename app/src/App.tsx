@@ -17,12 +17,14 @@ import {
 } from './context/AppContext';
 import { createRuntime } from './runtime';
 import { buildConsentRecord, hasAcceptedPolicy } from './domain/consent';
+import { registerBundledOcrEngine } from './vision/register';
 import { createSecureConsentStore, type ConsentStore } from './auth/consentStore';
 import { AgendaScreen } from './screens/AgendaScreen';
 import { AccountDeletionScreen } from './screens/AccountDeletionScreen';
 import { EventEditorScreen, type PlaceSelection } from './screens/EventEditorScreen';
 import { EventPickerScreen, type PickedEvent } from './screens/EventPickerScreen';
 import { FeedbackScreen } from './screens/FeedbackScreen';
+import { EventImportScreen } from './screens/EventImportScreen';
 import { AgentChatScreen } from './screens/AgentChatScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { LocationPickerScreen } from './screens/LocationPickerScreen';
@@ -42,6 +44,7 @@ import { localDateKey } from './domain/agenda';
 import { APP_TIMEZONE } from './domain/calendar';
 import type { LegalDoc } from './domain/legal';
 import type { OrgEvent } from './api/types';
+import type { RecognizedDraft } from './domain/vision';
 import { refreshLocalReminders } from './notifications/actions';
 import { subscribeNotificationResponses } from './notifications/listener';
 import type { NotificationRoute } from './notifications/route';
@@ -103,6 +106,8 @@ type MainTabsProps = {
   onCreateTask: () => void;
   onOpenTask: (taskId: number) => void;
   onOpenOrgAccounts: () => void;
+  /** 图片识别出来一批日程草稿：进确认页让用户补日期 / 改标题，再一键添加（spec §4.1.9） */
+  onReviewDrafts: (drafts: RecognizedDraft[]) => void;
   /** 组织管理员在手机上新建并下发组织日程（spec §4.2.2） */
   onCreateOrgEvent: (dateKey: string) => void;
   /** 编辑自己下发的组织日程（spec §4.2.2：只有发起人能改） */
@@ -124,6 +129,7 @@ function MainTabs({
   onCreateOrgEvent,
   onEditOrgEvent,
   onOpenOrgEvent,
+  onReviewDrafts,
   onOpenFeedback,
   onOpenLegal,
   onOpenDeletion,
@@ -155,6 +161,8 @@ function MainTabs({
             // 日历页的检索会跨到待办，所以这里也要能直接打开待办编辑页（spec §4.1.7）
             onOpenTask={onOpenTask}
             onOpenOrgEvent={onOpenOrgEvent}
+            // 图片识别出草稿后进确认页（spec §4.1.9）
+            onReviewDrafts={onReviewDrafts}
           />
         )}
       </Tabs.Screen>
@@ -199,6 +207,8 @@ function MainTabs({
 type AppStackParamList = {
   Main: undefined;
   EventEditor: { dateKey: string; eventId?: number; occurrenceDate?: string | null };
+  /** 图片识别出的日程草稿 → 确认页（补日期 / 改标题 / 一键添加，spec §4.1.9） */
+  EventImport: { drafts: RecognizedDraft[] };
   TaskEditor: { taskId?: number };
   OrgEventEditor: { dateKey: string; event?: OrgEvent };
   OrgRecipientPicker: undefined;
@@ -261,6 +271,18 @@ function MainStack() {
   const today = useMemo(() => localDateKey(new Date().toISOString(), APP_TIMEZONE), []);
   const { setActiveOrgIdentityId, setOrgFocusDateKey, notificationEnabled } = useAppSessionState();
   const { api, reminders } = useRuntime();
+
+  /**
+   * 注册端侧 OCR 引擎（spec §4.1.9）。
+   *
+   * <p>「上传图片 → 识别日程」的第一段是手机本地的 OCR（图片不出手机），它是原生模块：
+   * 开发版 / 正式版里能注册上；**Expo Go 里拿不到模块，就保持未注册**，
+   * 界面会如实说「端侧识别需要开发版构建」，而不是静默失败或偷偷改成上传图片到服务器。
+   * 第二段（文字 → 日程草稿）在服务端做。
+   */
+  useEffect(() => {
+    void registerBundledOcrEngine();
+  }, []);
 
   /**
    * 本机提醒的定期重排（spec §4.5）。
@@ -370,6 +392,7 @@ function MainStack() {
               setReminderSelection({ version: 0, minutes: [] });
               navigation.navigate('TaskEditor', { taskId });
             }}
+            onReviewDrafts={(drafts) => navigation.navigate('EventImport', { drafts })}
             onOpenOrgAccounts={() => navigation.navigate('OrgAccounts')}
             onCreateOrgEvent={(dateKey) => navigation.navigate('OrgEventEditor', { dateKey })}
             onEditOrgEvent={(event) =>
@@ -426,6 +449,17 @@ function MainStack() {
             onPickReminder={(current) => navigation.navigate('ReminderPicker', { initial: current })}
             onCancel={() => navigation.goBack()}
             onSaved={() => navigation.goBack()}
+          />
+        )}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="EventImport">
+        {({ navigation, route }) => (
+          <EventImportScreen
+            drafts={route.params.drafts}
+            onCancel={() => navigation.goBack()}
+            // 全部添加成功 → 回日历；日历页的 useFocusEffect 会自动重新拉取，新建的日程立刻可见
+            onAdded={() => navigation.navigate('Main', { screen: 'Agenda' })}
           />
         )}
       </AppStack.Screen>

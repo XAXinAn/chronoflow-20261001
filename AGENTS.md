@@ -2,12 +2,33 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-09-30（第十三轮：**组织日历管理端的两处欠账收口** —— `canEdit` 上列表、
-> 撤回后可查历史；并清掉「回执」下线后残留的用户可见文案）
+> 最后更新：2026-10-01（第十四轮：**图片识别日程改走服务端解析** —— 只抽「要你做的事」、
+> 日期可有可无、确认页补全后一键添加；端侧小模型从包里拿掉）
 >
 > ⚠️ **数据模型变了**：`event.start_at` / `event.end_at` 已被 V18 迁移合并成 `event.at`（单时间点），
 > 不再有起止与时长；`event_exception.override_*` 同样合成 `override_at`。
 > 两版后端、Web 组织管理端与 App 都已对齐。改动前先读 §0.0 第九轮摘要。
+
+---
+
+## 0.0 本次交接摘要（2026-10-01，第十四轮：图片识别日程改走服务端解析 + 确认页）
+
+上一轮接端侧小模型（`llama.rn` + 0.5B GGUF）没接完，这一轮**换掉整个方向**：解析交回服务端，
+端侧只做 OCR。理由与结论都记在 §0.0 第十三轮末尾的追加里，这里只列**改动与口径**。
+
+| # | 内容 |
+| --- | --- |
+| 1 | **抽取口径重写**：`agent/vision-prompt.md`（Java / Python **逐字节相同**）改成「只抽**要你做的事**」（登记 / 报名 / 交材料 / 开会 / 缴费…），叙述性内容（放假区间、「@所有人」「各部门」抬头、情况统计的说明）不抽；**日期有就写、没有就留空**，不拿今天兜底、不猜时刻（只说了哪天 → 当天 00:00，「上午」不折算成 09:00）。 |
+| 2 | **`POST /ai/events/parse-text` 返回形状变了**：`{ items:[{ title, at?, timezone, locationName?, description? }] }` —— 去掉 `kind` / `confidence`，新增 `timezone`（客户端靠它判定「00:00 = 只说了哪天」）；**`at` 为空是合法返回**（通知里没写日期），不得因为缺日期就丢条目。两版后端都把调用改成**结构化输出**：`response_format=json_object` + `temperature=0`（Java：`CompletionRequest.structured(...)`；Python：`AgentModelClient.complete_json`）。 |
+| 3 | **Python 版补齐**：`app/services/vision_text.py` + `app/resources/agent/vision-prompt.md`（与 Java 同文件），端点在 `app/routers/ai.py`。这个端点**进了契约**（**112 个端点**），两版都受门禁约束。 |
+| 4 | **App 链路改了**：端侧 OCR（ML Kit，图片不出手机）→ 云端 `/parse-text` → **确认页**（`EventImportScreen`，每条可改标题 / 补日期 / 删除）→ 逐条 `POST /events`。没日期的条目标红「请选择日期」，全都有日期后底部「添加 N 条日程」才可点；全部成功回日历刷新，部分失败列出失败项留在页面重试。 |
+| 5 | **端侧小模型整个拿掉**：删 `llama.rn` 依赖、`assets/models/*.gguf`、`vision/llamaTextModel.ts`、`metro.config.js`；`vision/onDevice.ts` 现在只留 OCR 接口 + 注册，`vision/register.ts` 只注册 OCR。APK 从 ~570MB 回到 ~100MB。要回退见第十三轮末尾那段。 |
+| 6 | **合规同步**：隐私政策 §2.7 改为「图片只在手机本地处理，但 OCR 出的**文字**会上传至我们的服务端解析」；《与第三方共享个人信息清单》补第 5 条（OCR 文字 → 阿里云百炼）；《已收集个人信息清单》补第 21 条；App 相机权限说明也照实改了。`check_compliance.py`（20 项 + `--strict`）全过。 |
+
+**已知边界（这一轮没验的）**：**没有打真实百炼上游**（两版测试注入的都是假模型），所以
+「模型拿到这份提示词到底抽得准不准」只有提示词不变量测试兜底，**上线前建议真图 + 真模型跑一遍**
+（那张学院通知图：应出现「离返校登记 · 9/24」、不出现「中秋假期」、允许「返校情况统计」无日期）。
+模拟器端到端也没在本机跑（环境起不来）。
 
 ---
 
@@ -48,6 +69,56 @@ web-admin **21** + 类型检查与构建、App **206** + typecheck、合规门�
 > ⚠️ 验证边界：**没有打真实百炼上游**（两版测试注入的都是假模型），也没跑真机 ——
 > Python 那版助手在真环境里还没跑过一次。下一轮如果要继续，剩下的是：
 > release 包的明网 HTTP 验证、P95 性能验收、App 组件渲染测试（都是明确推迟的项）。
+
+### 追加（同日）：日历页的「上传图片 → 识别日程」入口按**端侧**重做
+
+产品改口径：**识别全程在手机本地**（不给服务端、也不用第三方云），两段式
+——端侧 OCR（图片→文字）＋端侧轻量文本模型（文字→结构化草稿）。
+
+已经落地的（**不依赖原生构建的那一半**，App 侧 211 项测试 + 合规门禁全绿）：
+
+- `domain/vision.ts`：抽取提示词 + 模型输出的**容错解析**（抠 JSON、时间归一化、
+  编出来的时间一律不认），纯逻辑、有 5 项单测；
+- `vision/onDevice.ts`：**注册制**接口（`OcrEngine` + `TextModelEngine` +
+  `registerOnDeviceEngines`）。Expo Go 下没有引擎，调用方**如实说明「需要开发版构建」**，
+  **不偷偷回落服务端**——「图片不出手机」就是这个功能的承诺；
+- `AgendaScreen`：按钮 → 「相册上传 / 拍照上传」（Android 用 Alert 当 ActionSheet）→
+  选图 → 端侧链路 → 结果先列出给用户核对（「一键添加」还没接）；
+- **拍照回到合规文本里**：`PermissionKind` 加 `camera`、`app.json` 的
+  `cameraPermission` 从 `false` 改回文案、隐私政策 §2.7/§9.2 与「不会申请相机」那句同步改，
+  `check_compliance.py` 的权限四类断言跟着改（20 项 + `--strict` 都过）。
+
+**已经不是 Expo Go 了——改成出真 APK**（2026-09-30 晚）。工具链与出包方法：
+
+- WSL 里的 Linux Android SDK：`/home/jiang/tools/android-sdk`（build-tools 36 / platform 36 /
+  **NDK 27.1.12297006 / CMake 3.22.1**，NDK 与 CMake 是构建时自动装的）、JDK 17
+  （`/home/jiang/tools/jdk-17`，Android 工具链要 17，本机只有 21）、系统 Gradle 9.3.1
+  （`/home/jiang/tools/gradle-9.3.1`，**别用 `./gradlew`**：`expo prebuild` 会把 wrapper
+  的 distributionUrl 改回不通的官方源，且会丢掉自定义镜像）
+- 国内镜像：`~/.gradle/init.gradle`（用户级，prebuild 重生成工程也不会丢）统一加阿里云；
+  Gradle 发行包走腾讯镜像 `mirrors.cloud.tencent.com/gradle/`；JDK 17 走清华 Adoptium
+- 出包：`npx expo prebuild --platform android --clean` → 在 `app/android` 里跑
+  `gradle :app:assembleDebug`（`ANDROID_HOME=/home/jiang/tools/android-sdk`）。
+  **必须把 ABI 砍成 x86_64**（`app/android/gradle.properties` 的 `reactNativeArchitectures`）：
+  4 个 ABI 时编了 28 分钟还卡在原生库合并，砍成一个后 **1 分半**出包
+- 装：`adb.exe install -r app/android/app/build/outputs/apk/debug/app-debug.apk`
+  （debug 包要 Metro：`npm run dev:app` + `adb reverse tcp:8081 tcp:8081`）
+- **adb.exe 是 Windows 程序，读不了 WSL 路径**：`adb push` 要用 `wslpath -w <路径>` 转一次
+
+**已经跑通的**：端侧 **OCR** = `@react-native-ml-kit/text-recognition`（中文脚本），
+`src/vision/mlkitOcr.ts` 实现 + `src/vision/register.ts` 动态注册（Expo Go 下不加载、保持未注册）。
+在真图上验证过：串起「按钮 → 弹层 → 相册/拍照 → 选图 → 端侧 OCR → 文字」，
+识别质量与桌面 RapidOCR 接近（「提醒」误成「提程」、「一、」误成「-」，其余一致）。
+
+**「端侧小模型」这条路已放弃，改成服务端解析**（2026-10-01）：0.5B（`llama.rn` + GGUF）
+在「一份通知抽多条」上不够用（真机对比），而且把 APK 撑到 ~570MB。现在链路是
+**端侧 OCR → `POST /ai/events/parse-text`（百炼，结构化输出）→ 确认页**；
+`llama.rn` 依赖、`assets/models/*.gguf`、`vision/llamaTextModel.ts`、`metro.config.js`
+都已删除（包体回到 ~100MB），`vision/register.ts` 现在只注册 OCR。
+**要回退**：把 `llama.rn` 与 `.gguf` 加回、恢复 `metro.config.js` 的 `gguf` assetExts，
+并在 `register.ts` 里把文本模型实现也注册上——旧实现可从 git 历史里翻。
+解析口径写在 `agent/vision-prompt.md`（Java / Python **两份逐字节相同**，有测试守着）：
+只抽「要你做的事」、日期有就写没有就留空、不猜时刻。
 
 ---
 
@@ -743,12 +814,12 @@ setsid nohup /home/jiang/tools/jdk-21.0.12.1+1/bin/java -jar target/xa-bootstrap
 | 部分 | 状态 | 测试 |
 | --- | --- | --- |
 | spec.md | 完成（v1.2） | — |
-| 跨语言契约 | `contract/api-contract.json`，**111 个端点** | Java 与 Python 各自校验 |
-| backend-java（8 模块，含 `xa-support` 与 `xa-agent`） | 完成 | **149 项集成测试全绿** |
-| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **70 项全绿** |
+| 跨语言契约 | `contract/api-contract.json`，**112 个端点** | Java 与 Python 各自校验 |
+| backend-java（8 模块，含 `xa-support` 与 `xa-agent`） | 完成 | **150 项集成测试全绿** |
+| backend-python（FastAPI 平行重写） | 完成，**契约覆盖率 100%** | **76 项全绿** |
 | packages/design-tokens | 完成 | 8 个用例（1 个测试文件；`node --test` 汇总会显示 1） |
 | web-admin（React + Vite + AntD） | 完成：超管六页 + **组织管理端五页** + 意见反馈 | 21 项 |
-| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程（无回执，与个人日程同一长相）、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记、头像上传、意见反馈、组织账号认领与账户管理、小安（对话 + 授权面板 + 长按说话）、深色模式偏好持久化 | **206 项**（**仅纯逻辑层，组件未做渲染测试**） |
+| app（React Native + Expo） | **核心流程可用**：日程/待办增删改、地图选点、组织日程（无回执，与个人日程同一长相）、**组织管理员在 App 内下发（选人页选下发对象）**、日历页检索（跨个人+所有组织）/滚轮跳转/节假日标记、头像上传、意见反馈、组织账号认领与账户管理、小安（对话 + 授权面板 + 长按说话）、**图片识别日程（端侧 OCR → 云端解析 → 确认页）**、深色模式偏好持久化 | **215 项**（**仅纯逻辑层，组件未做渲染测试**） |
 
 最近几次提交（倒序）：
 
@@ -1165,8 +1236,8 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 
 ### 6.2 跨语言契约（`contract/api-contract.json`）
 
-Java 与 Python 两版后端**读同一份契约**做校验，共 **111 个端点**（含助手的三个端点，
-第十二/十三轮加的）。改动等于改契约，必须两版同步。
+Java 与 Python 两版后端**读同一份契约**做校验，共 **112 个端点**（含助手的三个端点，
+第十二/十三轮加的；以及第十四轮加的 `POST /ai/events/parse-text`）。改动等于改契约，必须两版同步。
 
 > 组织管理端的 6 个端点（`GET /org-admin/departments`、`GET /org-admin/events`、`GET|PATCH /org-admin/settings`、
 > `GET /org-admin/logs`、`GET /org-admin/imports/{id}/failures`）是 2026-09-26 补上的：

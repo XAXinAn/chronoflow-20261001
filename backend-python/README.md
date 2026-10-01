@@ -48,9 +48,9 @@ CI 上有 root，直接 `apt-get install postgresql redis-server` 并设置
 | 智能助手「小安」（`/ai/agent/chat` SSE + `/ai/agent/approvals` + `/ai/transcribe`） | 完成（与 Java 版同一套工具语义、同一份提示词、同一套事件形状） |
 | 平台超管后台（组织、账号、管理员、配置、看板、审计） | 完成 |
 
-**契约覆盖率 100%（111/111 端点）**，由 `tests/test_contract.py` 里的棘轮常量守着，不允许倒退。
-测试 70 项，覆盖认证链路、时区展开、THIS/FUTURE 范围、部门递归权限、下发快照、
-以及助手的工具循环 / 授权回路 / 隔离沙盒。
+**契约覆盖率 100%（112/112 端点）**，由 `tests/test_contract.py` 里的棘轮常量守着，不允许倒退。
+测试 76 项，覆盖认证链路、时区展开、THIS/FUTURE 范围、部门递归权限、下发快照、
+助手的工具循环 / 授权回路 / 隔离沙盒，以及「OCR 文字 → 日程草稿」的解析。
 
 助手的模型配置与 Java 版**同名环境变量**（`XATODO_AGENT_BASE_URL` / `XATODO_AGENT_API_KEY` /
 `XATODO_AGENT_MODEL` / `XATODO_ASR_*`），两边可以指向同一个模型、共用同一份 `.env`。

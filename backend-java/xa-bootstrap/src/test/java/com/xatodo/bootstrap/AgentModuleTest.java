@@ -40,6 +40,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -855,9 +856,69 @@ class AgentModuleTest {
                             .header("Authorization", "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value(90002));
+
+            // 图片识别日程的第二段（OCR 文字 → 草稿）：没配模型同样当场拒绝，不空跑
+            mockMvc.perform(post("/api/v1/ai/events/parse-text")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"text\":\"9 月 24 日前完成离返校登记\","
+                                    + "\"today\":\"2026-09-30\",\"timezone\":\"Asia/Shanghai\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(90002));
         } finally {
             model.available.set(true);
         }
+    }
+
+    @Test
+    @DisplayName("OCR 文字 → 日程草稿：只抽要做的事、缺日期照样返回、带 timezone 无 kind（spec §4.1.9）")
+    void parsesOcrTextIntoDrafts() throws Exception {
+        JsonNode account = registerAccount("13800000635", "识别用户");
+        String token = account.path("data").path("accessToken").asText();
+
+        // 模型爱包的 ```json 围栏 + 前后解释都要能吃下去（这条链路上最常见的脏输出）。
+        // 第二条没写日期：这是**合法结果**，必须原样返回，不能丢掉。
+        model.enqueue("""
+                好的，识别结果如下：
+                ```json
+                {"items":[
+                  {"title":"离返校登记","at":"2026-09-24T00:00:00+08:00",
+                   "timezone":"Asia/Shanghai","description":"9 月 24 日前在学工系统完成离返校登记"},
+                  {"title":"填写返校情况统计表","timezone":"Asia/Shanghai","description":"金山文档填写"}
+                ]}
+                ```
+                """, List.of());
+
+        JsonNode parsed = postJsonWithBearer("/api/v1/ai/events/parse-text", token,
+                "{\"text\":\"一、假期安排与离返校登记\\n中秋假期：9月25日—9月27日（共3天）"
+                        + "\\n登记截止：9月24日前\\n二、返校情况统计：请各班填写统计表\","
+                        + "\"today\":\"2026-09-30\",\"timezone\":\"Asia/Shanghai\"}");
+
+        JsonNode items = parsed.path("data").path("items");
+        assertThat(items).as("一份通知要抽出多条: %s", parsed).hasSize(2);
+        // 只产出日程：没有 kind / confidence 这些我们不再需要的字段
+        assertThat(items.get(0).path("kind").isMissingNode()).as("不再有 kind").isTrue();
+        assertThat(items.get(0).path("confidence").isMissingNode()).isTrue();
+        assertThat(items.get(0).path("title").asText()).isEqualTo("离返校登记");
+        // at 直接给原时区字符串（不再是 Jackson 归一后的 UTC），客户端一眼能看懂
+        assertThat(OffsetDateTime.parse(items.get(0).path("at").asText()).toInstant())
+                .as("2026-09-24T00:00+08:00")
+                .isEqualTo(Instant.parse("2026-09-23T16:00:00Z"));
+        assertThat(items.get(0).path("timezone").asText()).isEqualTo("Asia/Shanghai");
+        // 没写日期的那条：at 缺失（non_null），但条目本身必须在
+        assertThat(items.get(1).path("title").asText()).isEqualTo("填写返校情况统计表");
+        assertThat(items.get(1).path("at").isMissingNode()).as("缺日期的条目照样返回").isTrue();
+
+        // 提示词里必须带「今天」与「时区」，并把抽取口径钉住；占位符不能原样漏给模型
+        CompletionRequest request = model.requests.get(model.requests.size() - 1);
+        String prompt = firstMessageContent(request);
+        assertThat(prompt).contains("2026-09-30").contains("Asia/Shanghai")
+                .contains("要你做的事").contains("没写就留空")
+                .contains("不要拿今天兜底").contains("不要猜时刻")
+                .doesNotContain("{{");
+        // 结构化输出 + 温度 0：抽取要的是稳定，不是想象力
+        assertThat(request.jsonMode()).isTrue();
+        assertThat(request.temperature()).isEqualTo(0.0);
     }
 
     @Test
