@@ -34,7 +34,7 @@ uvicorn app.main:app --reload --port 8080
 ```
 
 CI 上有 root，直接 `apt-get install postgresql redis-server` 并设置
-`XA_TODO_PG_BIN` 即可，见 `.github/workflows/ci.yml`。
+`CHRONOFLOW_PG_BIN` 即可，见 `.github/workflows/ci.yml`。
 
 ## 当前实现范围
 
@@ -53,12 +53,12 @@ CI 上有 root，直接 `apt-get install postgresql redis-server` 并设置
 测试 76 项，覆盖认证链路、时区展开、THIS/FUTURE 范围、部门递归权限、下发快照、
 助手的工具循环 / 授权回路 / 隔离沙盒，以及「OCR 文字 → 日程草稿」的解析。
 
-助手的模型配置与 Java 版**同名环境变量**（`XATODO_AGENT_BASE_URL` / `XATODO_AGENT_API_KEY` /
-`XATODO_AGENT_MODEL` / `XATODO_ASR_*`），两边可以指向同一个模型、共用同一份 `.env`。
-`XATODO_AGENT_API_KEY` 留空 = 未接入：`/ai/agent/chat` 直接返回 `90002`，
+助手的模型配置与 Java 版**同名环境变量**（`CHRONOFLOW_AGENT_BASE_URL` / `CHRONOFLOW_AGENT_API_KEY` /
+`CHRONOFLOW_AGENT_MODEL` / `CHRONOFLOW_ASR_*`），两边可以指向同一个模型、共用同一份 `.env`。
+`CHRONOFLOW_AGENT_API_KEY` 留空 = 未接入：`/ai/agent/chat` 直接返回 `90002`，
 `/system/info` 的 `aiAgentEnabled=false`，App 保持「还没有接入模型」的提示。
 
-> 提示词正文在 `app/resources/agent/prompt.md`，与 Java 版 `xa-agent` 里那一份
+> 提示词正文在 `app/resources/agent/prompt.md`，与 Java 版 `chronoflow-agent` 里那一份
 > **必须逐字节相同**（`tests/test_agent.py` 钉住了）。改提示词要同时改两份与两边的 VERSION。
 
 ## 踩过的三个坑

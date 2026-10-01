@@ -109,9 +109,9 @@ export function OrgMembersPage() {
   };
 
   return (
-    <div className="xa-page">
+    <div className="cf-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 className="xa-page-title">成员管理</h2>
+        <h2 className="cf-page-title">成员管理</h2>
         <Space>
           <Button icon={<UploadOutlined />} onClick={importState.open}>
             批量导入

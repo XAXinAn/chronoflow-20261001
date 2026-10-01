@@ -62,12 +62,12 @@ export function AppLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider theme={scheme} width={208} style={{ borderRight: '1px solid var(--xa-border)' }}>
+      <Sider theme={scheme} width={208} style={{ borderRight: '1px solid var(--cf-border)' }}>
         <div style={{ padding: '20px 16px 12px' }}>
           <Typography.Text strong style={{ fontSize: 16, letterSpacing: '-0.02em' }}>
             时纪流
           </Typography.Text>
-          <div className="xa-metric-label">时纪流 · 平台后台</div>
+          <div className="cf-metric-label">时纪流 · 平台后台</div>
         </div>
         <Menu
           theme={scheme}
@@ -81,8 +81,8 @@ export function AppLayout() {
       <Layout>
         <Header
           style={{
-            background: 'var(--xa-bg)',
-            borderBottom: '1px solid var(--xa-border)',
+            background: 'var(--cf-bg)',
+            borderBottom: '1px solid var(--cf-border)',
             paddingInline: 24,
             display: 'flex',
             alignItems: 'center',

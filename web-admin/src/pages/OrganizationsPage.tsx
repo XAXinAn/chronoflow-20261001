@@ -56,9 +56,9 @@ export function OrganizationsPage() {
   };
 
   return (
-    <div className="xa-page">
+    <div className="cf-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 className="xa-page-title">组织管理</h2>
+        <h2 className="cf-page-title">组织管理</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
           新建组织
         </Button>

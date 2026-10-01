@@ -8,7 +8,7 @@ RUN apk add --no-cache tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && echo "Asia/Shanghai" > /etc/timezone
 
-COPY xa-bootstrap-0.1.0-SNAPSHOT.jar /app/app.jar
+COPY chronoflow-bootstrap-0.1.0-SNAPSHOT.jar /app/app.jar
 
 # 上传目录挂卷（头像 / 反馈图片，spec §5.10）
 VOLUME ["/data/uploads"]

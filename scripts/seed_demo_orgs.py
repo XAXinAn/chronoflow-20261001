@@ -23,12 +23,12 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
-# 默认打本机后端；部署到远端时用 XATODO_API_BASE 指过去（例如 http://127.0.0.1:18080/api/v1）
-BASE_URL = os.environ.get("XATODO_API_BASE", "http://localhost:8080/api/v1")
-# 默认是本地开发用的超管账号；部署环境用 XATODO_ADMIN_USER / XATODO_ADMIN_PASSWORD 覆盖
+# 默认打本机后端；部署到远端时用 CHRONOFLOW_API_BASE 指过去（例如 http://127.0.0.1:18080/api/v1）
+BASE_URL = os.environ.get("CHRONOFLOW_API_BASE", "http://localhost:8080/api/v1")
+# 默认是本地开发用的超管账号；部署环境用 CHRONOFLOW_ADMIN_USER / CHRONOFLOW_ADMIN_PASSWORD 覆盖
 SUPER_ADMIN = (
-    os.environ.get("XATODO_ADMIN_USER", "admin"),
-    os.environ.get("XATODO_ADMIN_PASSWORD", "admin123456"),
+    os.environ.get("CHRONOFLOW_ADMIN_USER", "admin"),
+    os.environ.get("CHRONOFLOW_ADMIN_PASSWORD", "admin123456"),
 )
 
 # 组织拥有者：先前的脚本已经把这个手机号认领成两个组织的成员，这里只做校验不重复建

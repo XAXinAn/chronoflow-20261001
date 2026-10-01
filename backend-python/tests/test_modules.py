@@ -1561,8 +1561,8 @@ def test_org_console_token_is_scoped_across_organizations(client, db) -> None:
 
 def test_app_release_is_public_and_empty_when_unconfigured(client, monkeypatch) -> None:
     """没配发布信息 = 这个部署不提供应用内更新：回 versionCode 0，App 据此不弹窗。"""
-    monkeypatch.delenv("XATODO_APP_RELEASE_VERSION_CODE", raising=False)
-    monkeypatch.delenv("XATODO_APP_RELEASE_APK_URL", raising=False)
+    monkeypatch.delenv("CHRONOFLOW_APP_RELEASE_VERSION_CODE", raising=False)
+    monkeypatch.delenv("CHRONOFLOW_APP_RELEASE_APK_URL", raising=False)
 
     body = client.get("/api/v1/system/app-release").json()
     assert body["code"] == 0
@@ -1573,14 +1573,14 @@ def test_app_release_is_public_and_empty_when_unconfigured(client, monkeypatch) 
 
 
 def test_app_release_carries_release_info_when_configured(client, monkeypatch) -> None:
-    monkeypatch.setenv("XATODO_APP_RELEASE_VERSION_NAME", "0.2.0")
-    monkeypatch.setenv("XATODO_APP_RELEASE_VERSION_CODE", "2")
-    monkeypatch.setenv("XATODO_APP_RELEASE_APK_URL", "/downloads/app-0.2.0.apk")
-    monkeypatch.setenv("XATODO_APP_RELEASE_SIZE_BYTES", "78643200")
-    monkeypatch.setenv("XATODO_APP_RELEASE_SHA256", "abc123")
-    monkeypatch.setenv("XATODO_APP_RELEASE_CHANGELOG", "图片识别日程 | 草稿可编辑 ||修复重复日程")
-    monkeypatch.setenv("XATODO_APP_RELEASE_FORCE", "true")
-    monkeypatch.setenv("XATODO_APP_RELEASE_MIN_SUPPORTED_VERSION_CODE", "2")
+    monkeypatch.setenv("CHRONOFLOW_APP_RELEASE_VERSION_NAME", "0.2.0")
+    monkeypatch.setenv("CHRONOFLOW_APP_RELEASE_VERSION_CODE", "2")
+    monkeypatch.setenv("CHRONOFLOW_APP_RELEASE_APK_URL", "/downloads/app-0.2.0.apk")
+    monkeypatch.setenv("CHRONOFLOW_APP_RELEASE_SIZE_BYTES", "78643200")
+    monkeypatch.setenv("CHRONOFLOW_APP_RELEASE_SHA256", "abc123")
+    monkeypatch.setenv("CHRONOFLOW_APP_RELEASE_CHANGELOG", "图片识别日程 | 草稿可编辑 ||修复重复日程")
+    monkeypatch.setenv("CHRONOFLOW_APP_RELEASE_FORCE", "true")
+    monkeypatch.setenv("CHRONOFLOW_APP_RELEASE_MIN_SUPPORTED_VERSION_CODE", "2")
 
     data = client.get("/api/v1/system/app-release").json()["data"]
 
@@ -1597,8 +1597,8 @@ def test_app_release_carries_release_info_when_configured(client, monkeypatch) -
 
 def test_app_release_needs_both_version_and_apk(client, monkeypatch) -> None:
     """只配了版本号、没配包地址同样是「不提供」——否则 App 会去下载一个空地址。"""
-    monkeypatch.setenv("XATODO_APP_RELEASE_VERSION_CODE", "9")
-    monkeypatch.delenv("XATODO_APP_RELEASE_APK_URL", raising=False)
+    monkeypatch.setenv("CHRONOFLOW_APP_RELEASE_VERSION_CODE", "9")
+    monkeypatch.delenv("CHRONOFLOW_APP_RELEASE_APK_URL", raising=False)
 
     data = client.get("/api/v1/system/app-release").json()["data"]
     assert data["versionCode"] == 0

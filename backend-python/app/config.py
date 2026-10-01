@@ -84,14 +84,14 @@ class Settings:
 def load_settings() -> Settings:
     return Settings(
         database_url=os.getenv(
-            "DATABASE_URL", "postgresql+psycopg://xatodo:xatodo@localhost:5432/xatodo"
+            "DATABASE_URL", "postgresql+psycopg://chronoflow:chronoflow@localhost:5432/chronoflow"
         ),
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
         # 与 Java 版同源：两边用同一密钥与 claim 结构，令牌可互换
         jwt_secret=os.getenv(
-            "JWT_SECRET", "xa-todo-development-secret-key-change-me-in-production"
+            "JWT_SECRET", "chronoflow-development-secret-key-change-me-in-production"
         ),
-        jwt_issuer=os.getenv("JWT_ISSUER", "xa-todo"),
+        jwt_issuer=os.getenv("JWT_ISSUER", "chronoflow"),
         access_token_ttl=_int("ACCESS_TOKEN_TTL", 2 * 60 * 60),
         refresh_token_ttl=_int("REFRESH_TOKEN_TTL", 90 * 24 * 60 * 60),
         refresh_rotation_grace=_int("REFRESH_ROTATION_GRACE", 60),
@@ -132,38 +132,38 @@ def load_settings() -> Settings:
         holiday_sync_timeout=float(os.getenv("HOLIDAY_SYNC_TIMEOUT", "15")),
         # 本地轻量多模态识别（spec §4.1.9）。指向本机/内网的 OpenAI 兼容推理服务，
         # 留空表示未接入：那时 /ai/events/recognize 返回 90002，App 会明说「识别未接入」。
-        vision_base_url=os.getenv("XATODO_VISION_BASE_URL", ""),
-        vision_model=os.getenv("XATODO_VISION_MODEL", ""),
-        vision_api_key=os.getenv("XATODO_VISION_API_KEY", ""),
-        vision_timeout=float(os.getenv("XATODO_VISION_TIMEOUT_SECONDS", "60")),
+        vision_base_url=os.getenv("CHRONOFLOW_VISION_BASE_URL", ""),
+        vision_model=os.getenv("CHRONOFLOW_VISION_MODEL", ""),
+        vision_api_key=os.getenv("CHRONOFLOW_VISION_API_KEY", ""),
+        vision_timeout=float(os.getenv("CHRONOFLOW_VISION_TIMEOUT_SECONDS", "60")),
         # json_object（支持面最广）/ json_schema（约束最强）/ none（只靠提示词，排查用）
-        vision_structured_output=os.getenv("XATODO_VISION_STRUCTURED_OUTPUT", "json_object"),
-        vision_max_attempts=_int("XATODO_VISION_MAX_ATTEMPTS", 2),
+        vision_structured_output=os.getenv("CHRONOFLOW_VISION_STRUCTURED_OUTPUT", "json_object"),
+        vision_max_attempts=_int("CHRONOFLOW_VISION_MAX_ATTEMPTS", 2),
         # 智能助手「小安」（spec §11 阶段三）。api-key 留空 = 未接入：
         # /ai/agent/chat 直接返回 90002，/system/info 的 aiAgentEnabled=false。
         agent_base_url=os.getenv(
-            "XATODO_AGENT_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            "CHRONOFLOW_AGENT_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
         ),
-        agent_api_key=os.getenv("XATODO_AGENT_API_KEY", ""),
-        agent_model=os.getenv("XATODO_AGENT_MODEL", "qwen3.6-flash"),
-        agent_enable_thinking=_bool("XATODO_AGENT_ENABLE_THINKING", False),
-        agent_max_tokens=_int("XATODO_AGENT_MAX_TOKENS", 600),
-        agent_timeout=float(os.getenv("XATODO_AGENT_TIMEOUT_SECONDS", "90")),
-        agent_max_tool_rounds=_int("XATODO_AGENT_MAX_TOOL_ROUNDS", 4),
-        agent_max_history_messages=_int("XATODO_AGENT_MAX_HISTORY_MESSAGES", 10),
-        agent_event_limit=_int("XATODO_AGENT_EVENT_LIMIT", 20),
+        agent_api_key=os.getenv("CHRONOFLOW_AGENT_API_KEY", ""),
+        agent_model=os.getenv("CHRONOFLOW_AGENT_MODEL", "qwen3.6-flash"),
+        agent_enable_thinking=_bool("CHRONOFLOW_AGENT_ENABLE_THINKING", False),
+        agent_max_tokens=_int("CHRONOFLOW_AGENT_MAX_TOKENS", 600),
+        agent_timeout=float(os.getenv("CHRONOFLOW_AGENT_TIMEOUT_SECONDS", "90")),
+        agent_max_tool_rounds=_int("CHRONOFLOW_AGENT_MAX_TOOL_ROUNDS", 4),
+        agent_max_history_messages=_int("CHRONOFLOW_AGENT_MAX_HISTORY_MESSAGES", 10),
+        agent_event_limit=_int("CHRONOFLOW_AGENT_EVENT_LIMIT", 20),
         # 解释「明天下午三点」这类相对时间用的时区，与 Java 版一致
-        agent_timezone=os.getenv("XATODO_AGENT_TIMEZONE", "Asia/Shanghai"),
+        agent_timezone=os.getenv("CHRONOFLOW_AGENT_TIMEZONE", "Asia/Shanghai"),
         agent_asr_url=os.getenv(
-            "XATODO_ASR_URL",
+            "CHRONOFLOW_ASR_URL",
             "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
         ),
-        agent_asr_api_key=os.getenv("XATODO_ASR_API_KEY", ""),
-        agent_asr_model=os.getenv("XATODO_ASR_MODEL", "qwen3-asr-flash"),
-        agent_asr_timeout=float(os.getenv("XATODO_ASR_TIMEOUT_SECONDS", "60")),
-        agent_asr_language=os.getenv("XATODO_ASR_LANGUAGE", ""),
+        agent_asr_api_key=os.getenv("CHRONOFLOW_ASR_API_KEY", ""),
+        agent_asr_model=os.getenv("CHRONOFLOW_ASR_MODEL", "qwen3-asr-flash"),
+        agent_asr_timeout=float(os.getenv("CHRONOFLOW_ASR_TIMEOUT_SECONDS", "60")),
+        agent_asr_language=os.getenv("CHRONOFLOW_ASR_LANGUAGE", ""),
         # 录音上限 60 秒，正常也就几百 KB；超了多半是传错了文件
-        agent_asr_max_bytes=_int("XATODO_ASR_MAX_BYTES", 5 * 1024 * 1024),
+        agent_asr_max_bytes=_int("CHRONOFLOW_ASR_MAX_BYTES", 5 * 1024 * 1024),
     )
 
 

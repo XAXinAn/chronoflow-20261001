@@ -19,7 +19,7 @@ export interface StoredOrgAccount extends OrgAccount {
   expiresAt: number;
 }
 
-const STORAGE_KEY = 'xa-todo.org-accounts';
+const STORAGE_KEY = 'chronoflow.org-accounts';
 /** 与个人会话一致：剩余有效期不足 5 分钟就提前刷新（spec §3.7.2） */
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
 

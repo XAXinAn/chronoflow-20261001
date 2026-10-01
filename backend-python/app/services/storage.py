@@ -50,11 +50,11 @@ def sniff(content: bytes) -> tuple[str, str] | None:
 
 class ImageStorage:
     def __init__(self, directory: str | None = None, max_bytes: int | None = None):
-        self._root = Path(directory or os.getenv("XATODO_UPLOAD_DIR") or DEFAULT_DIR).resolve()
+        self._root = Path(directory or os.getenv("CHRONOFLOW_UPLOAD_DIR") or DEFAULT_DIR).resolve()
         self._max_bytes = (
             max_bytes
             if max_bytes is not None
-            else int(os.getenv("XATODO_UPLOAD_MAX_BYTES", str(DEFAULT_MAX_BYTES)))
+            else int(os.getenv("CHRONOFLOW_UPLOAD_MAX_BYTES", str(DEFAULT_MAX_BYTES)))
         )
 
     @property

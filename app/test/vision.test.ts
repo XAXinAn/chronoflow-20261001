@@ -19,7 +19,7 @@ import { buildCreatePayload } from '../src/domain/eventDraft';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VISION_PROMPT = resolve(
   HERE,
-  '../../backend-java/xa-agent/src/main/resources/agent/vision-prompt.md',
+  '../../backend-java/chronoflow-agent/src/main/resources/agent/vision-prompt.md',
 );
 
 describe('识别草稿的归一', () => {

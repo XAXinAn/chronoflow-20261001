@@ -1,6 +1,6 @@
 """助手模型接入点（spec §11 阶段三）。
 
-与 Java 版 `xa-agent` 的 `AgentModelClient` 是同一条缝：**照 OpenAI 兼容形状说话**，
+与 Java 版 `chronoflow-agent` 的 `AgentModelClient` 是同一条缝：**照 OpenAI 兼容形状说话**，
 所以换模型只换实现（百炼 / 本地 vLLM / 以后的其它云），而测试可以注入假上游——
 这里要验证的是我们这一侧的行为（工具循环、授权回路、事件序列、越权拦截），
 不是模型本身聪不聪明。

@@ -2,9 +2,9 @@ import { ConfigProvider, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { antdThemeToken, isColorScheme, type ColorScheme } from '@xa-todo/design-tokens';
+import { antdThemeToken, isColorScheme, type ColorScheme } from '@chronoflow/design-tokens';
 
-const SCHEME_KEY = 'xa-todo.admin.scheme';
+const SCHEME_KEY = 'chronoflow.admin.scheme';
 
 interface ThemeContextValue {
   scheme: ColorScheme;
@@ -22,14 +22,14 @@ function initialScheme(): ColorScheme {
 }
 
 /**
- * 通过 `data-xa-theme` 切换 CSS 变量，并把同一套令牌交给 Ant Design，
+ * 通过 `data-cf-theme` 切换 CSS 变量，并把同一套令牌交给 Ant Design，
  * 保证自定义样式与组件库使用的是同一来源（spec §7.6.6）。
  */
-export function XaThemeProvider({ children }: { children: ReactNode }) {
+export function CfThemeProvider({ children }: { children: ReactNode }) {
   const [scheme, setScheme] = useState<ColorScheme>(initialScheme);
 
   useEffect(() => {
-    document.documentElement.dataset.xaTheme = scheme;
+    document.documentElement.dataset.cfTheme = scheme;
     globalThis.localStorage?.setItem(SCHEME_KEY, scheme);
   }, [scheme]);
 

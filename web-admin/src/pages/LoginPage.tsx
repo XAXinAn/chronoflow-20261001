@@ -41,18 +41,18 @@ export function LoginPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'var(--xa-bg)',
-        padding: 'var(--xa-space-lg)',
+        background: 'var(--cf-bg)',
+        padding: 'var(--cf-space-lg)',
       }}
     >
       <div style={{ width: 360 }}>
-        <div style={{ marginBottom: 'var(--xa-space-lg)' }}>
+        <div style={{ marginBottom: 'var(--cf-space-lg)' }}>
           <Typography.Title level={2} style={{ marginBottom: 4, letterSpacing: '-0.02em' }}>
             时纪流
           </Typography.Title>
           <Typography.Text type="secondary">ChronoFlow · 平台管理后台</Typography.Text>
         </div>
-        <Card className="xa-card" variant="borderless" styles={{ body: { padding: 0 } }}>
+        <Card className="cf-card" variant="borderless" styles={{ body: { padding: 0 } }}>
           <Form<LoginForm> layout="vertical" onFinish={submit} requiredMark={false} autoComplete="off">
             <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
               <Input prefix={<UserOutlined />} placeholder="用户名" size="large" autoFocus />

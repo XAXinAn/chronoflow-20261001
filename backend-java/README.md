@@ -6,14 +6,14 @@ Java 21 + Spring Boot 3 实现，对应 [spec.md](../spec.md) 阶段一。阶段
 
 | 模块 | 内容 | 状态 |
 | --- | --- | --- |
-| `xa-common` | 统一响应体 `ApiResponse`、错误码 `ErrorCode`、分页 `PageResult`、`BizException`、`TraceIdFilter` | 已完成 |
-| `xa-auth` | 短信验证码登录、身份列表 / 选择 / 切换、JWT 与刷新令牌、个人身份创建 | 已完成 |
-| `xa-personal` | 个人日历、日程（RRULE 重复 + 例外 + THIS/FUTURE/ALL 范围）、待办与子任务、节假日同步 | 已完成 |
-| `xa-org` | 组织、部门树、成员管理、组织日历下发（**不收集回执**） | 已完成 |
-| `xa-admin` | 平台超管后台：组织、账号、管理员、全局配置、看板、审计 | 已完成 |
-| `xa-support` | 意见反馈、推送设备登记与极光推送（JPush） | 已完成 |
-| `xa-agent` | 智能助手「小安」：对话 / 工具循环 / 逐条授权 / 语音转写，以及「OCR 文字 → 日程草稿」的解析 | 已完成 |
-| `xa-bootstrap` | 启动入口、安全配置、全局异常、OpenAPI、系统探活接口、Flyway 全量建表脚本 | 已完成 |
+| `chronoflow-common` | 统一响应体 `ApiResponse`、错误码 `ErrorCode`、分页 `PageResult`、`BizException`、`TraceIdFilter` | 已完成 |
+| `chronoflow-auth` | 短信验证码登录、身份列表 / 选择 / 切换、JWT 与刷新令牌、个人身份创建 | 已完成 |
+| `chronoflow-personal` | 个人日历、日程（RRULE 重复 + 例外 + THIS/FUTURE/ALL 范围）、待办与子任务、节假日同步 | 已完成 |
+| `chronoflow-org` | 组织、部门树、成员管理、组织日历下发（**不收集回执**） | 已完成 |
+| `chronoflow-admin` | 平台超管后台：组织、账号、管理员、全局配置、看板、审计 | 已完成 |
+| `chronoflow-support` | 意见反馈、推送设备登记与极光推送（JPush） | 已完成 |
+| `chronoflow-agent` | 智能助手「小安」：对话 / 工具循环 / 逐条授权 / 语音转写，以及「OCR 文字 → 日程草稿」的解析 | 已完成 |
+| `chronoflow-bootstrap` | 启动入口、安全配置、全局异常、OpenAPI、系统探活接口、Flyway 全量建表脚本 | 已完成 |
 
 数据库结构已按 spec §5 全量落地（**V1–V19** 共 19 个迁移脚本）；
 认证、个人日程 / 待办、组织下发、平台超管后台、智能助手端到端可用。
@@ -181,12 +181,12 @@ mvn -q clean verify
 ## 运行
 
 ```bash
-# 默认连接 localhost:5432/xatodo，可用环境变量覆盖
-export DB_URL=jdbc:postgresql://localhost:5432/xatodo
-export DB_USERNAME=xatodo
-export DB_PASSWORD=xatodo
+# 默认连接 localhost:5432/chronoflow，可用环境变量覆盖
+export DB_URL=jdbc:postgresql://localhost:5432/chronoflow
+export DB_USERNAME=chronoflow
+export DB_PASSWORD=chronoflow
 
-mvn -pl xa-bootstrap spring-boot:run
+mvn -pl chronoflow-bootstrap spring-boot:run
 ```
 
 已开放接口：
@@ -245,7 +245,7 @@ mvn -pl xa-bootstrap spring-boot:run
 
 ### 认证联调示例
 
-开发环境（`dev` profile）下 `xatodo.auth.expose-sms-code=true`，发送验证码接口会在
+开发环境（`dev` profile）下 `chronoflow.auth.expose-sms-code=true`，发送验证码接口会在
 `data.debugCode` 中回显验证码，便于本地联调。生产环境该项必须为 `false`。
 
 ```bash

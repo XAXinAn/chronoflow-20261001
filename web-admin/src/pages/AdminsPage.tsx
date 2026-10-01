@@ -66,9 +66,9 @@ export function AdminsPage() {
   };
 
   return (
-    <div className="xa-page">
+    <div className="cf-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 className="xa-page-title">后台管理员</h2>
+        <h2 className="cf-page-title">后台管理员</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
           新建管理员
         </Button>

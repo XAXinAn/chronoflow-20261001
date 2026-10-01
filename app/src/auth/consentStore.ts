@@ -8,7 +8,7 @@ import { hasAcceptedPolicy, type ConsentRecord } from '../domain/consent';
  * 只影响本次会话（不会误判成「已同意」）。
  */
 
-const STORAGE_KEY = 'xa-todo.privacy-consent';
+const STORAGE_KEY = 'chronoflow.privacy-consent';
 
 export interface ConsentStore {
   read: () => Promise<ConsentRecord | null>;

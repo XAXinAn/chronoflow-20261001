@@ -9,18 +9,18 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: xa-todo-postgres
+    container_name: chronoflow-postgres
     environment:
-      POSTGRES_DB: xatodo
-      POSTGRES_USER: xatodo
-      POSTGRES_PASSWORD: xatodo
+      POSTGRES_DB: chronoflow
+      POSTGRES_USER: chronoflow
+      POSTGRES_PASSWORD: chronoflow
       TZ: Asia/Shanghai
     ports:
       - "5432:5432"
     volumes:
-      - xa-todo-pgdata:/var/lib/postgresql/data
+      - chronoflow-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U xatodo -d xatodo"]
+      test: ["CMD-SHELL", "pg_isready -U chronoflow -d chronoflow"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -28,12 +28,12 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: xa-todo-redis
+    container_name: chronoflow-redis
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
     volumes:
-      - xa-todo-redisdata:/data
+      - chronoflow-redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -43,16 +43,16 @@ services:
 
   minio:
     image: minio/minio
-    container_name: xa-todo-minio
+    container_name: chronoflow-minio
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      MINIO_ROOT_USER: xatodo
-      MINIO_ROOT_PASSWORD: xatodo123
+      MINIO_ROOT_USER: chronoflow
+      MINIO_ROOT_PASSWORD: chronoflow123
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - xa-todo-miniodata:/data
+      - chronoflow-miniodata:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 15s
@@ -61,6 +61,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  xa-todo-pgdata:
-  xa-todo-redisdata:
-  xa-todo-miniodata:
+  chronoflow-pgdata:
+  chronoflow-redisdata:
+  chronoflow-miniodata:

@@ -3,7 +3,7 @@
 图片识别日程分两段：手机端 ML Kit 的**中文 OCR 又准又不花钱**（图片不出手机），
 「一段通知里有几件要做的事、哪句是时间」这种理解活交给服务端模型（百炼）。
 
-提示词正文在 `app/resources/agent/vision-prompt.md`，与 Java 版 `xa-agent` 里那一份
+提示词正文在 `app/resources/agent/vision-prompt.md`，与 Java 版 `chronoflow-agent` 里那一份
 **逐字节相同**（`tests/test_vision.py` 钉住了这一点）。抽取口径全部写在提示词里：
 只抽「要你去做的事」、日期有就写没有就留空、不猜时刻。这里只负责调用与容错解析。
 """

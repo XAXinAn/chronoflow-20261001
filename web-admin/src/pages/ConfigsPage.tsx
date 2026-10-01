@@ -27,8 +27,8 @@ export function ConfigsPage() {
   };
 
   return (
-    <div className="xa-page">
-      <h2 className="xa-page-title">全局配置</h2>
+    <div className="cf-page">
+      <h2 className="cf-page-title">全局配置</h2>
       <Alert
         type="info"
         showIcon

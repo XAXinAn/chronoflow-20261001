@@ -1,10 +1,10 @@
-# @xa-todo/design-tokens
+# @chronoflow/design-tokens
 
 时纪流设计令牌的**唯一来源**（spec §7.6）。Web 后台与 App 端都从这里取值，禁止在业务组件里硬编码色值。
 
 ```bash
-npm run build -w @xa-todo/design-tokens   # 产出 dist/index.js 与 dist/tokens.css
-npm run test  -w @xa-todo/design-tokens   # 校验 CSS 与 TS 同源
+npm run build -w @chronoflow/design-tokens   # 产出 dist/index.js 与 dist/tokens.css
+npm run test  -w @chronoflow/design-tokens   # 校验 CSS 与 TS 同源
 ```
 
 ## 消费方式
@@ -13,23 +13,23 @@ Web（CSS 变量由 `dist/tokens.css` 提供）：
 
 ```css
 .card {
-  background: var(--xa-surface-raised);
-  border: 1px solid var(--xa-border);
-  border-radius: var(--xa-radius-card);
+  background: var(--cf-surface-raised);
+  border: 1px solid var(--cf-border);
+  border-radius: var(--cf-radius-card);
 }
 ```
 
 Ant Design 主题：
 
 ```ts
-import { antdThemeToken } from '@xa-todo/design-tokens';
+import { antdThemeToken } from '@chronoflow/design-tokens';
 <ConfigProvider theme={{ token: antdThemeToken(scheme) }} />
 ```
 
 App（TS 常量）：
 
 ```ts
-import { colors, spacing, radius } from '@xa-todo/design-tokens';
+import { colors, spacing, radius } from '@chronoflow/design-tokens';
 ```
 
 ## 设计约束（有测试守着）

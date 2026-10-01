@@ -7,7 +7,7 @@
 ## 仓库结构
 
 ```
-xa-todo/
+chronoflow/
 ├── spec.md             产品与技术规格说明书（唯一事实来源）
 ├── contract/           跨语言 API 契约（Java 与 Python 两版共同校验）
 ├── backend-java/       阶段一后端：Java 21 + Spring Boot 3
@@ -48,7 +48,7 @@ Java 版与阶段二的 Python 版都必须满足它——改动这个文件等�
 2. **实际发一次未携带令牌的请求**，验证受保护接口确实返回 401、公开接口确实不返回 401。
 
 第 2 点是行为验证而非文档验证——注解写错了同样会导致失败。
-构建产物中的 `target/openapi/xatodo-api.json` 可在 CI 里作为 artifact 下载。
+构建产物中的 `target/openapi/chronoflow-api.json` 可在 CI 里作为 artifact 下载。
 
 详见 [backend-java/README.md](./backend-java/README.md) 与 [web-admin/README.md](./web-admin/README.md)。
 
@@ -80,19 +80,19 @@ docker compose -f deploy/docker-compose.infra.yml up -d
 cd backend-java && mvn clean verify
 
 # 3) 运行后端
-mvn -pl xa-bootstrap spring-boot:run
+mvn -pl chronoflow-bootstrap spring-boot:run
 
 # 4) 构建并测试前端（设计令牌需先构建）
 cd .. && npm install
-npm run build -w @xa-todo/design-tokens
-npm run test  -w @xa-todo/web-admin
+npm run build -w @chronoflow/design-tokens
+npm run test  -w @chronoflow/web-admin
 
 # 5) 启动 Web 后台（默认 http://127.0.0.1:5173）
 npm run dev:web
 
 # 6) App 端：类型检查与逻辑测试
 npm run typecheck
-npm run test -w @xa-todo/app
+npm run test -w @chronoflow/app
 
 # 7) 启动 App（模拟器调试步骤见 app/README.md）
 npm run dev:app

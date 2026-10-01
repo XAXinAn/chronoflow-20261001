@@ -29,7 +29,7 @@
         --url https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/2027.json
 
     # 生产：指向运维自己的目录，顺带清理上游已撤掉的日子
-    backend-python/.venv/bin/python scripts/load_holidays.py --dir /etc/xatodo/holidays --prune
+    backend-python/.venv/bin/python scripts/load_holidays.py --dir /etc/chronoflow/holidays --prune
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from pathlib import Path
 
 import psycopg
 
-DB_URL = os.getenv("XATODO_DB_URL", "postgresql://postgres@localhost:5432/xatodo")
+DB_URL = os.getenv("CHRONOFLOW_DB_URL", "postgresql://postgres@localhost:5432/chronoflow")
 DEFAULT_DIR = Path(__file__).resolve().parent / "data" / "holidays"
 DEFAULT_COUNTRY = "zh-CN"
 DAY_TYPES = {"HOLIDAY", "WORKDAY"}
@@ -103,7 +103,7 @@ def fetch(url: str, directory: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="把节假日 JSON 数据灌入 holiday 表（幂等）")
-    parser.add_argument("--dir", default=os.getenv("XATODO_HOLIDAY_DIR") or str(DEFAULT_DIR),
+    parser.add_argument("--dir", default=os.getenv("CHRONOFLOW_HOLIDAY_DIR") or str(DEFAULT_DIR),
                         help="数据目录，目录下所有 *.json 都会被加载（默认 scripts/data/holidays）")
     parser.add_argument("--file", help="只加载单个文件（与 --dir 二选一）")
     parser.add_argument("--url", action="append", default=[],

@@ -2,11 +2,46 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-10-01（第十五轮：**应用内更新**上线 + **WSL 被 OOM 拖崩**的复盘与防护）
+> 最后更新：2026-10-01（第十六轮：**全项目改名 `xa-todo`/`xatodo` → `chronoflow`/`时纪流`**）
+>
+> ⚠️ **本文件下方的历史段落里出现的 `xa-*` / `xatodo` / `XATODO_*` 是改名前的旧标识，保留原文不改**
+> （那是当时的现场记录，改了就成假历史）。**当前代码里已经没有这些标识**，新写的东西一律用
+> `chronoflow`：Java 包 `com.chronoflow`、模块 `chronoflow-*`、环境变量 `CHRONOFLOW_*`、
+> npm scope `@chronoflow/*`、部署路径 `/opt/chronoflow`、库名/容器名 `chronoflow*`。
 >
 > ⚠️ **数据模型变了**：`event.start_at` / `event.end_at` 已被 V18 迁移合并成 `event.at`（单时间点），
 > 不再有起止与时长；`event_exception.override_*` 同样合成 `override_at`。
 > 两版后端、Web 组织管理端与 App 都已对齐。改动前先读 §0.0 第九轮摘要。
+
+---
+
+## 0.0 本次交接摘要（2026-10-01，第十六轮：全项目改名）
+
+把项目里从第一轮一路带过来的旧标识一次性清干净。**产品名早就是「时纪流 / ChronoFlow」**
+（App 显示名、Android 包名 `com.chronoflow.frontend`、web 后台标题、GitHub 仓库名），
+但工程与部署标识一直是 `xa-todo`。这一轮全部换成 `chronoflow`：
+
+| 层 | 旧 → 新 |
+| --- | --- |
+| Java 包 | `com.xatodo` → `com.chronoflow`（236 个文件 / 153 个目录） |
+| Java 模块与坐标 | `xa-common…xa-bootstrap` → `chronoflow-common…chronoflow-bootstrap`；`groupId` → `com.chronoflow`；`artifactId` `xa-todo-backend` → `chronoflow-backend`；jar 名 → `chronoflow-bootstrap-0.1.0-SNAPSHOT.jar` |
+| 配置前缀 / 环境变量 | `xatodo.*` → `chronoflow.*`；`XATODO_*` → `CHRONOFLOW_*`（含 `XATODO_APP_RELEASE_*`、`XATODO_AGENT_*` 等全部） |
+| Python | 项目名 `chronoflow-backend-python`；测试依赖缓存 `~/.cache/chronoflow/`；`CHRONOFLOW_PG_BIN` / `CHRONOFLOW_REDIS_BIN` |
+| npm scope | `@xa-todo/{app,web-admin,design-tokens}` → `@chronoflow/*`；根包名 `chronoflow` |
+| 前端样式 | CSS 变量 `--xa-*` → `--cf-*`、类名 `xa-*` → `cf-*`、`data-xa-theme` → `data-cf-theme`、组件 `XaThemeProvider` → `CfThemeProvider`；localStorage 键 `xa-todo.admin.*` → `chronoflow.admin.*` |
+| App 本地存储键 | `xa-todo.session` 等 7 个 → `chronoflow.*`，**并配了启动期一次性迁移**（`auth/storageMigration.ts`，新键有值就不覆盖、搬完删旧键），老包升级上来不会掉登录态 / 重弹隐私同意 |
+| 部署标识 | 容器 `xatodo-*` → `chronoflow-*`、镜像 `chronoflow-*`、卷 `chronoflow_pgdata`、库名与用户 `chronoflow`、路径 `/opt/xatodo` → `/opt/chronoflow` |
+
+**两个不能碰的地方（踩过就懂）**：
+
+1. **`db/migration/**` 一个字节都不能改**——Flyway 校验和覆盖整个文件（连注释算）。`V11__holiday_calendar.sql`
+   里现在**仍留着 `xatodo` 字样**，那是刻意的：改它 = 老库起不来。真要清掉得**新开一个迁移**（V20）改索引名。
+2. **老服务器（8.136.20.182）跑的还是旧标识那套**：它的 compose/Dockerfile 指向 `xa-bootstrap-*.jar`、
+   `.env` 里是 `XATODO_*`、库名 `xatodo`。**新 jar 不能直接往它上面扔**，要么先按新名字改它的 compose/.env，
+   要么就用新服务器（60.205.142.205，按新标识部署）。
+
+**验证**：改完跑全量 —— Java **154**、Python **76**、App **228**（新增存储键迁移 4 项）、
+web-admin **21** + 构建、合规门禁 **20** 项，全绿。
 
 ---
 

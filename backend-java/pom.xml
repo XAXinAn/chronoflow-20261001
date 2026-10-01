@@ -11,22 +11,22 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.xatodo</groupId>
-    <artifactId>xa-todo-backend</artifactId>
+    <groupId>com.chronoflow</groupId>
+    <artifactId>chronoflow-backend</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>xa-todo-backend</name>
+    <name>chronoflow-backend</name>
     <description>时纪流后端服务</description>
 
     <modules>
-        <module>xa-common</module>
-        <module>xa-auth</module>
-        <module>xa-personal</module>
-        <module>xa-org</module>
-        <module>xa-support</module>
-        <module>xa-agent</module>
-        <module>xa-admin</module>
-        <module>xa-bootstrap</module>
+        <module>chronoflow-common</module>
+        <module>chronoflow-auth</module>
+        <module>chronoflow-personal</module>
+        <module>chronoflow-org</module>
+        <module>chronoflow-support</module>
+        <module>chronoflow-agent</module>
+        <module>chronoflow-admin</module>
+        <module>chronoflow-bootstrap</module>
     </modules>
 
     <properties>
@@ -48,38 +48,38 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>com.xatodo</groupId>
-                <artifactId>xa-common</artifactId>
+                <groupId>com.chronoflow</groupId>
+                <artifactId>chronoflow-common</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.xatodo</groupId>
-                <artifactId>xa-auth</artifactId>
+                <groupId>com.chronoflow</groupId>
+                <artifactId>chronoflow-auth</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.xatodo</groupId>
-                <artifactId>xa-personal</artifactId>
+                <groupId>com.chronoflow</groupId>
+                <artifactId>chronoflow-personal</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.xatodo</groupId>
-                <artifactId>xa-org</artifactId>
+                <groupId>com.chronoflow</groupId>
+                <artifactId>chronoflow-org</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.xatodo</groupId>
-                <artifactId>xa-admin</artifactId>
+                <groupId>com.chronoflow</groupId>
+                <artifactId>chronoflow-admin</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.xatodo</groupId>
-                <artifactId>xa-support</artifactId>
+                <groupId>com.chronoflow</groupId>
+                <artifactId>chronoflow-support</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.xatodo</groupId>
-                <artifactId>xa-agent</artifactId>
+                <groupId>com.chronoflow</groupId>
+                <artifactId>chronoflow-agent</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

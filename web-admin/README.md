@@ -1,4 +1,4 @@
-# @xa-todo/web-admin
+# @chronoflow/web-admin
 
 时纪流（ChronoFlow）Web 后台：平台超管端（spec §4.4）+ 组织管理端（spec §4.3）。
 React 18 + Vite + TypeScript + Ant Design 5，**菜单按登录管理员的角色渲染**。
@@ -9,14 +9,14 @@ React 18 + Vite + TypeScript + Ant Design 5，**菜单按登录管理员的角�
 
 ```bash
 # 先构建设计令牌（web-admin 依赖它）
-npm run build -w @xa-todo/design-tokens
+npm run build -w @chronoflow/design-tokens
 
 # 启动开发服务器（默认 http://127.0.0.1:5173）
 npm run dev:web
 
 # 生产构建 / 测试
-npm run build -w @xa-todo/web-admin
-npm run test  -w @xa-todo/web-admin
+npm run build -w @chronoflow/web-admin
+npm run test  -w @chronoflow/web-admin
 ```
 
 后端地址通过环境变量注入（见 `.env.example`）：
@@ -64,8 +64,8 @@ VITE_API_BASE_URL=http://localhost:8080
 - `20001 / 20002`（未登录 / 过期）→ 清会话并跳登录页
 - `20003`（无权限）→ **不清会话**，仅提示，避免一次越权就把用户踢出去
 
-**设计令牌**：所有颜色、间距、圆角、动效都来自 `@xa-todo/design-tokens`，
-通过 `data-xa-theme` 切换 CSS 变量，并把同一套令牌交给 Ant Design `ConfigProvider`，
+**设计令牌**：所有颜色、间距、圆角、动效都来自 `@chronoflow/design-tokens`，
+通过 `data-cf-theme` 切换 CSS 变量，并把同一套令牌交给 Ant Design `ConfigProvider`，
 保证自定义样式与组件库同源（spec §7.6.6）。业务组件里不应出现硬编码色值。
 
 **导出接口**：审计日志导出需要 `Authorization` 头，普通 `<a href>` 带不上令牌，

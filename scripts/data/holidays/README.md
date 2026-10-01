@@ -29,7 +29,7 @@ backend-python/.venv/bin/python scripts/load_holidays.py
 backend-python/.venv/bin/python scripts/load_holidays.py --prune
 ```
 
-生产环境可以把目录换到运维自己的位置：`--dir /etc/xatodo/holidays` 或环境变量 `XATODO_HOLIDAY_DIR`。
+生产环境可以把目录换到运维自己的位置：`--dir /etc/chronoflow/holidays` 或环境变量 `CHRONOFLOW_HOLIDAY_DIR`。
 后端有 5 分钟缓存（spec §5.11），所以数据变更最迟 5 分钟生效，不需要重启服务。
 
 ## 没有数据时会怎样

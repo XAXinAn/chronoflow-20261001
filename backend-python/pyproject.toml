@@ -1,5 +1,5 @@
 [project]
-name = "xa-todo-backend-python"
+name = "chronoflow-backend-python"
 version = "0.1.0"
 description = "时纪流后端 —— 阶段二：FastAPI 平行重写，对外契约与 Java 版一致"
 requires-python = ">=3.11"

@@ -1,14 +1,14 @@
-# @xa-todo/app
+# @chronoflow/app
 
 时纪流（ChronoFlow）App 端（React Native + Expo）。Expo SDK 57 / React Native 0.86 / React 19。
 
 ## 开发
 
 ```bash
-npm run build -w @xa-todo/design-tokens   # App 依赖设计令牌
-npm run typecheck -w @xa-todo/app
-npm run test -w @xa-todo/app
-npm run start -w @xa-todo/app             # 启动 Expo dev server
+npm run build -w @chronoflow/design-tokens   # App 依赖设计令牌
+npm run typecheck -w @chronoflow/app
+npm run test -w @chronoflow/app
+npm run start -w @chronoflow/app             # 启动 Expo dev server
 ```
 
 ## 界面结构
@@ -109,7 +109,7 @@ python3 scripts/generate_app_icons.py          # 生成 icon / adaptive-icon / s
 adb.exe devices
 
 # 3) 启动 dev server
-npm run start -w @xa-todo/app
+npm run start -w @chronoflow/app
 
 # 4) 端口反向映射，让模拟器能回连 WSL 内的 dev server
 adb.exe reverse tcp:8081 tcp:8081

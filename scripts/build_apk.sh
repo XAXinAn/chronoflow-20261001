@@ -20,14 +20,14 @@
 #                                               # 独立可用的包（JS 打进包里，装到手机就能跑）
 #
 # 编译完会**顺手复制一份到 Windows 桌面**（`/mnt/c/Users/jiang/Desktop/时纪流-<版本>(<versionCode>)-<debug|release>.apk`），
-# 联调时从桌面拖进模拟器/手机最省事；换目录用 `XATODO_DESKTOP_DIR=...`。
+# 联调时从桌面拖进模拟器/手机最省事；换目录用 `CHRONOFLOW_DESKTOP_DIR=...`。
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/app"
 ANDROID="$APP/android"
-GRADLE_HOME_DIR="${XATODO_GRADLE_HOME:-/home/jiang/tools/gradle-9.3.1/gradle-9.3.1}"
+GRADLE_HOME_DIR="${CHRONOFLOW_GRADLE_HOME:-/home/jiang/tools/gradle-9.3.1/gradle-9.3.1}"
 export JAVA_HOME="${JAVA_HOME:-/home/jiang/tools/jdk-17}"
 export ANDROID_HOME="${ANDROID_HOME:-/home/jiang/tools/android-sdk}"
 
@@ -36,7 +36,7 @@ export ANDROID_HOME="${ANDROID_HOME:-/home/jiang/tools/android-sdk}"
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-2}"
 
 BUILD_TYPE="debug"
-ARCHS="${XATODO_ARCHS:-x86_64}"
+ARCHS="${CHRONOFLOW_ARCHS:-x86_64}"
 for arg in "$@"; do
   case "$arg" in
     --prebuild) PREBUILD=1 ;;
@@ -103,7 +103,7 @@ ls -lh "$OUT"
 
 # 顺手放一份到 Windows 桌面（WSL 路径 /mnt/c/...）。联调时从桌面拖进模拟器/手机最省事。
 # 文件名带版本号与构建类型，桌面上堆多个包时一眼能分辨是哪个。
-DESKTOP_DIR="${XATODO_DESKTOP_DIR:-/mnt/c/Users/jiang/Desktop}"
+DESKTOP_DIR="${CHRONOFLOW_DESKTOP_DIR:-/mnt/c/Users/jiang/Desktop}"
 if [ -d "$DESKTOP_DIR" ]; then
   VERSION_NAME=$(python3 -c "import json;print(json.load(open('$APP/app.json'))['expo']['version'])")
   VERSION_CODE=$(python3 -c "import json;print(json.load(open('$APP/app.json'))['expo']['android']['versionCode'])")
@@ -114,5 +114,5 @@ if [ -d "$DESKTOP_DIR" ]; then
     echo "⚠️ 复制到桌面失败（$DESKTOP_APK），APK 仍在 $OUT" >&2
   fi
 else
-  echo "（桌面目录 $DESKTOP_DIR 不存在，跳过复制；可用 XATODO_DESKTOP_DIR 指定）"
+  echo "（桌面目录 $DESKTOP_DIR 不存在，跳过复制；可用 CHRONOFLOW_DESKTOP_DIR 指定）"
 fi

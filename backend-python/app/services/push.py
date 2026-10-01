@@ -1,6 +1,6 @@
 """推送（spec §4.5）：设备注册表 + 极光通道 + 业务侧发通知的入口。
 
-与 Java 版一一对应（`com.xatodo.support.push.*` / `PushDeviceService` / `PushNotifier`）：
+与 Java 版一一对应（`com.chronoflow.support.push.*` / `PushDeviceService` / `PushNotifier`）：
 同样的表、同样的三条硬规则、同样的「按账号而不是按身份找设备」。
 
 三条硬规则：

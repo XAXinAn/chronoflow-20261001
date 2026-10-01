@@ -34,8 +34,8 @@ export function AccountsPage() {
   };
 
   return (
-    <div className="xa-page">
-      <h2 className="xa-page-title">账号管理</h2>
+    <div className="cf-page">
+      <h2 className="cf-page-title">账号管理</h2>
 
       <Form
         layout="inline"

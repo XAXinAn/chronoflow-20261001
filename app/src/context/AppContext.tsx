@@ -27,7 +27,7 @@ import {
   nextScheme,
   type ThemePreferenceStore,
 } from '../theme/preference';
-import type { ColorScheme } from '@xa-todo/design-tokens';
+import type { ColorScheme } from '@chronoflow/design-tokens';
 import {
   createSecureNotificationPrefsStore,
   DEFAULT_NOTIFICATION_PREFS,

@@ -18,7 +18,7 @@ import { OrgLogsPage } from './pages/OrgLogsPage';
 import { OrgMembersPage } from './pages/OrgMembersPage';
 import { OrgSettingsPage } from './pages/OrgSettingsPage';
 import { OrganizationsPage } from './pages/OrganizationsPage';
-import { XaThemeProvider } from './theme/ThemeProvider';
+import { CfThemeProvider } from './theme/ThemeProvider';
 
 export const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
@@ -58,10 +58,10 @@ export function App() {
   }, []);
 
   return (
-    <XaThemeProvider>
+    <CfThemeProvider>
       <AntdApp>
         <RouterProvider router={router} />
       </AntdApp>
-    </XaThemeProvider>
+    </CfThemeProvider>
   );
 }

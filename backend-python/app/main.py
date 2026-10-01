@@ -151,6 +151,6 @@ app.include_router(agent.router)
 # 上传目录映射成 /uploads/**（spec §5.10）。
 # 必须免鉴权：<Image> 直接按 URL 取图，带不了 Authorization 头——
 # 代价是这里不能放任何私有内容，只有头像与反馈图片走这条路。
-_upload_dir = Path(os.getenv("XATODO_UPLOAD_DIR", "./data/uploads")).resolve()
+_upload_dir = Path(os.getenv("CHRONOFLOW_UPLOAD_DIR", "./data/uploads")).resolve()
 _upload_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=_upload_dir), name="uploads")

@@ -23,31 +23,31 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_DIR = (
-    REPO_ROOT / "backend-java" / "xa-bootstrap" / "src" / "main" / "resources" / "db" / "migration"
+    REPO_ROOT / "backend-java" / "chronoflow-bootstrap" / "src" / "main" / "resources" / "db" / "migration"
 )
 
 
 def _find_pg_bin() -> str:
-    explicit = os.getenv("XA_TODO_PG_BIN")
+    explicit = os.getenv("CHRONOFLOW_PG_BIN")
     if explicit:
         return explicit
     on_path = shutil.which("pg_ctl")
     if on_path:
         return str(Path(on_path).parent)
-    cached = Path.home() / ".cache" / "xa-todo" / "pg" / "bin"
+    cached = Path.home() / ".cache" / "chronoflow" / "pg" / "bin"
     if (cached / "pg_ctl").exists():
         return str(cached)
     pytest.fail(
         "找不到 PostgreSQL 二进制。请执行 backend-python/scripts/setup-test-deps.sh，"
-        "或设置 XA_TODO_PG_BIN，或在 CI 上安装 postgresql。"
+        "或设置 CHRONOFLOW_PG_BIN，或在 CI 上安装 postgresql。"
     )
 
 
 def _find_redis_bin() -> str:
-    explicit = os.getenv("XA_TODO_REDIS_BIN")
+    explicit = os.getenv("CHRONOFLOW_REDIS_BIN")
     if explicit:
         return explicit
-    cached = Path.home() / ".cache" / "xa-todo" / "redis" / "redis-server"
+    cached = Path.home() / ".cache" / "chronoflow" / "redis" / "redis-server"
     if cached.exists():
         return str(cached)
     on_path = shutil.which("redis-server")
@@ -76,7 +76,7 @@ def _wait_for_redis(port: int, timeout: float = 15.0) -> None:
 @pytest.fixture(scope="session")
 def databases() -> Iterator[dict[str, str]]:
     pg_bin = _find_pg_bin()
-    data_dir = tempfile.mkdtemp(prefix="xa-pg-")
+    data_dir = tempfile.mkdtemp(prefix="cf-pg-")
     # 用 unix socket 目录而不是 TCP 端口，避免与机器上其他服务抢占端口
     socket_dir = data_dir
     # 光把 socket 目录换掉还不够：PostgreSQL 默认仍然会监听 127.0.0.1:5432，
@@ -113,8 +113,8 @@ def databases() -> Iterator[dict[str, str]]:
         with psycopg.connect(
             f"postgresql://postgres@/postgres?host={socket_dir}", autocommit=True
         ) as conn:
-            conn.execute("CREATE DATABASE xatodo")
-        dsn = f"postgresql://postgres@/xatodo?host={socket_dir}"
+            conn.execute("CREATE DATABASE chronoflow")
+        dsn = f"postgresql://postgres@/chronoflow?host={socket_dir}"
         _apply_migrations(dsn)
 
         redis_port = _free_port()
@@ -140,7 +140,7 @@ def databases() -> Iterator[dict[str, str]]:
         # 测试不依赖外网：关掉节假日自动同步（真实环境默认开启，见 app/config.py）
         os.environ["HOLIDAY_SYNC_ENABLED"] = "false"
         # 上传目录指向临时目录：测试不该往仓库里写图片
-        os.environ["XATODO_UPLOAD_DIR"] = tempfile.mkdtemp(prefix="xa-uploads-")
+        os.environ["CHRONOFLOW_UPLOAD_DIR"] = tempfile.mkdtemp(prefix="cf-uploads-")
 
         try:
             yield {"dsn": dsn}

@@ -21,8 +21,8 @@ export function DashboardPage() {
   const { data, loading, error } = useLoad(() => api.dashboard());
 
   return (
-    <div className="xa-page">
-      <h2 className="xa-page-title">数据看板</h2>
+    <div className="cf-page">
+      <h2 className="cf-page-title">数据看板</h2>
       {error ? <Alert type="error" showIcon message={error.message} style={{ marginBottom: 16 }} /> : null}
       {loading || !data ? (
         <Skeleton active />
@@ -30,11 +30,11 @@ export function DashboardPage() {
         <Row gutter={[16, 16]}>
           {METRICS.map((metric) => (
             <Col key={metric.key} xs={24} sm={12} lg={8} xl={6}>
-              <div className="xa-card xa-card--hoverable">
-                <div className="xa-metric-value">
+              <div className="cf-card cf-card--hoverable">
+                <div className="cf-metric-value">
                   {formatter.format((data as unknown as Record<string, number>)[metric.key] ?? 0)}
                 </div>
-                <div className="xa-metric-label">{metric.label}</div>
+                <div className="cf-metric-label">{metric.label}</div>
               </div>
             </Col>
           ))}

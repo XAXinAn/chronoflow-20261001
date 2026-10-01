@@ -29,11 +29,11 @@ describe('admin session', () => {
 
     expect(loadSession()).toBeNull();
     expect(currentToken()).toBeNull();
-    expect(localStorage.getItem('xa-todo.admin.token')).toBeNull();
+    expect(localStorage.getItem('chronoflow.admin.token')).toBeNull();
   });
 
   it('内容损坏时不会抛出异常', () => {
-    localStorage.setItem('xa-todo.admin.token', '{not-json');
+    localStorage.setItem('chronoflow.admin.token', '{not-json');
     expect(loadSession()).toBeNull();
   });
 

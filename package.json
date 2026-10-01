@@ -1,5 +1,5 @@
 {
-  "name": "xa-todo",
+  "name": "chronoflow",
   "version": "0.1.0",
   "private": true,
   "description": "时纪流（ChronoFlow）—— 智能日程与待办",
@@ -9,10 +9,10 @@
     "app"
   ],
   "scripts": {
-    "build": "npm run build -w @xa-todo/design-tokens && npm run build -w @xa-todo/web-admin",
-    "test": "npm run test -w @xa-todo/design-tokens && npm run test -w @xa-todo/web-admin && npm run test -w @xa-todo/app",
-    "typecheck": "npm run typecheck -w @xa-todo/app",
-    "dev:web": "npm run dev -w @xa-todo/web-admin",
-    "dev:app": "npm run start -w @xa-todo/app"
+    "build": "npm run build -w @chronoflow/design-tokens && npm run build -w @chronoflow/web-admin",
+    "test": "npm run test -w @chronoflow/design-tokens && npm run test -w @chronoflow/web-admin && npm run test -w @chronoflow/app",
+    "typecheck": "npm run typecheck -w @chronoflow/app",
+    "dev:web": "npm run dev -w @chronoflow/web-admin",
+    "dev:app": "npm run start -w @chronoflow/app"
   }
 }

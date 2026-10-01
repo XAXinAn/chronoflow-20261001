@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 把测试用的 PostgreSQL 与 Redis 二进制准备到 ~/.cache/xa-todo。
+# 把测试用的 PostgreSQL 与 Redis 二进制准备到 ~/.cache/chronoflow。
 #
 # 本机既没有 root（装不了 postgresql/redis-server），Python 侧也没有嵌入式发行版，
 # 但 Maven 本地仓库里已经有这两个 jar —— Java 测试正是用它们跑起来的。
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 M2="${HOME}/.m2/repository"
-TARGET="${HOME}/.cache/xa-todo"
+TARGET="${HOME}/.cache/chronoflow"
 mkdir -p "${TARGET}/pg" "${TARGET}/redis"
 
 PG_JAR=$(find "${M2}/io/zonky/test/postgres/embedded-postgres-binaries-linux-amd64" -name '*.jar' | head -1)

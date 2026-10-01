@@ -97,9 +97,9 @@ export function OrgDepartmentsPage() {
   };
 
   return (
-    <div className="xa-page">
+    <div className="cf-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 className="xa-page-title">部门管理</h2>
+        <h2 className="cf-page-title">部门管理</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>
           新建根部门
         </Button>

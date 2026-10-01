@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-JAVA_PROMPT = REPO_ROOT / "backend-java" / "xa-agent" / "src" / "main" / "resources" / "agent" / "prompt.md"
+JAVA_PROMPT = REPO_ROOT / "backend-java" / "chronoflow-agent" / "src" / "main" / "resources" / "agent" / "prompt.md"
 
 # 模块导入期**不要**碰 app.* —— conftest 还没把 DATABASE_URL 塞进环境（踩过，见 test_vision）
 

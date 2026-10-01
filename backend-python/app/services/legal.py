@@ -1,6 +1,6 @@
 """合规文本（docs/legal/*.md）的读取与 Markdown → HTML 渲染。
 
-与 Java 版 `com.xatodo.support.legal.LegalController` 行为一致：同一份 Markdown、
+与 Java 版 `com.chronoflow.support.legal.LegalController` 行为一致：同一份 Markdown、
 同样的白名单、同样「输出里不可能出现 <script>」的约束。
 
 为什么两版都要出这个页面：契约里有 `GET /api/v1/legal/{doc}`，
@@ -35,8 +35,8 @@ _TABLE_DIVIDER = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 
 
 def legal_dir() -> Path:
-    """合规文本目录；部署时可用 XATODO_LEGAL_DIR 指到镜像里拷贝的位置。"""
-    return Path(os.getenv("XATODO_LEGAL_DIR", _REPO_ROOT / "docs" / "legal"))
+    """合规文本目录；部署时可用 CHRONOFLOW_LEGAL_DIR 指到镜像里拷贝的位置。"""
+    return Path(os.getenv("CHRONOFLOW_LEGAL_DIR", _REPO_ROOT / "docs" / "legal"))
 
 
 def load_document(doc: str) -> tuple[str, str] | None:

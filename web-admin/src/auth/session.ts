@@ -1,4 +1,4 @@
-const TOKEN_KEY = 'xa-todo.admin.token';
+const TOKEN_KEY = 'chronoflow.admin.token';
 
 /**
  * 会话存储。后台令牌作用域为 ADMIN，与 C 端身份令牌互不通用（spec §3.4）。

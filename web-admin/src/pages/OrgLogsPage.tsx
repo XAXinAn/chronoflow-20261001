@@ -14,9 +14,9 @@ export function OrgLogsPage() {
   const { data, loading, error, reload } = useLoad<AuditLog[]>(() => api.orgLogs({ limit: 200 }));
 
   return (
-    <div className="xa-page">
+    <div className="cf-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 className="xa-page-title">操作日志</h2>
+        <h2 className="cf-page-title">操作日志</h2>
         <Button onClick={() => void reload()}>刷新</Button>
       </div>
       {error ? <Alert type="error" showIcon message={error.message} style={{ marginBottom: 16 }} /> : null}

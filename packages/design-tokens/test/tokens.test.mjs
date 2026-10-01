@@ -28,7 +28,7 @@ test('生成的 CSS 覆盖全部令牌，且与 TS 常量完全一致', async ()
   for (const [name, value] of Object.entries(schemeVariables('dark'))) {
     assert.ok(css.includes(`${name}: ${value};`), `深色方案缺少或值不匹配: ${name}`);
   }
-  assert.ok(css.includes('[data-xa-theme="dark"]'), '缺少深色主题选择器');
+  assert.ok(css.includes('[data-cf-theme="dark"]'), '缺少深色主题选择器');
 });
 
 test('深浅两套方案必须给出不同的前景/背景，避免误用同一套色值', () => {

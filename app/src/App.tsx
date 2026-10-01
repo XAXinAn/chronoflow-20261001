@@ -20,6 +20,7 @@ import { buildConsentRecord, hasAcceptedPolicy } from './domain/consent';
 import { registerBundledOcrEngine } from './vision/register';
 import { AppUpdateProvider } from './updater/AppUpdater';
 import { createSecureConsentStore, type ConsentStore } from './auth/consentStore';
+import { migrateLegacyStorage } from './auth/storageMigration';
 import { AgendaScreen } from './screens/AgendaScreen';
 import { AccountDeletionScreen } from './screens/AccountDeletionScreen';
 import { EventEditorScreen, type PlaceSelection } from './screens/EventEditorScreen';
@@ -649,6 +650,9 @@ function Root() {
     let cancelled = false;
     void (async () => {
       try {
+        // 改名遗留（xa-todo.* → chronoflow.*）：**必须在读任何存储之前**搬完，
+        // 否则老包升上来的用户会莫名其妙掉登录态、重弹隐私同意
+        await migrateLegacyStorage();
         const store = await createSecureConsentStore();
         if (cancelled) {
           return;

@@ -288,7 +288,7 @@ def check_assistant_disclosure() -> None:
         "麦克风也要「先说明用途再申请」（规范 §四「未及时明确告知索取权限的目的和用途」）",
     )
     system = read(
-        ROOT / "backend-java" / "xa-bootstrap" / "src" / "main" / "java" / "com" / "xatodo"
+        ROOT / "backend-java" / "chronoflow-bootstrap" / "src" / "main" / "java" / "com" / "chronoflow"
         / "bootstrap" / "web" / "SystemController.java"
     )
     require_contains(
@@ -318,7 +318,7 @@ def check_contract_endpoints() -> None:
 
 def check_backend_implementations() -> None:
     security = read(
-        ROOT / "backend-java" / "xa-bootstrap" / "src" / "main" / "java" / "com" / "xatodo"
+        ROOT / "backend-java" / "chronoflow-bootstrap" / "src" / "main" / "java" / "com" / "chronoflow"
         / "bootstrap" / "config" / "SecurityConfig.java"
     )
     require_contains(
@@ -332,7 +332,7 @@ def check_backend_implementations() -> None:
     require(java_legal, "Java 版缺少 LegalController（/api/v1/legal/**）")
     require(py_legal.exists(), "Python 版缺少 app/routers/legal.py（/api/v1/legal/**）")
     java_me = read(
-        ROOT / "backend-java" / "xa-auth" / "src" / "main" / "java" / "com" / "xatodo"
+        ROOT / "backend-java" / "chronoflow-auth" / "src" / "main" / "java" / "com" / "chronoflow"
         / "auth" / "web" / "MeController.java"
     )
     require_contains(java_me, ['"/deletion"'], "MeController.java", "账号注销端点 POST /me/deletion 未实现")

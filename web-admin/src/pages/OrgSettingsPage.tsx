@@ -50,8 +50,8 @@ export function OrgSettingsPage() {
   };
 
   return (
-    <div className="xa-page">
-      <h2 className="xa-page-title">组织设置</h2>
+    <div className="cf-page">
+      <h2 className="cf-page-title">组织设置</h2>
       {error ? <Alert type="error" showIcon message={error.message} style={{ marginBottom: 16 }} /> : null}
 
       <Descriptions

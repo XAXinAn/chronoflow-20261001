@@ -81,9 +81,9 @@ fi
 
 echo "两步都通过，这个 Key 可以直接接进项目："
 echo
-echo "  cd /home/jiang/develop/xa-todo/backend-java/xa-bootstrap"
+echo "  cd /home/jiang/develop/xa-todo/backend-java/chronoflow-bootstrap"
 echo "  GEO_AMAP_KEY=${KEY:0:6}… setsid nohup /home/jiang/tools/jdk-21.0.12.1+1/bin/java \\"
-echo "      -jar target/xa-bootstrap-0.1.0-SNAPSHOT.jar > /tmp/xa-backend.log 2>&1 < /dev/null & disown"
+echo "      -jar target/chronoflow-bootstrap-0.1.0-SNAPSHOT.jar > /tmp/cf-backend.log 2>&1 < /dev/null & disown"
 echo
 echo "然后确认已切到真实高德（degraded 应为 false）："
 echo "  curl -s -H 'Authorization: Bearer <accessToken>' http://localhost:8080/api/v1/geo/config"

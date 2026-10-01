@@ -13,7 +13,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 JAVA_VISION_PROMPT = (
-    REPO_ROOT / "backend-java" / "xa-agent" / "src" / "main" / "resources"
+    REPO_ROOT / "backend-java" / "chronoflow-agent" / "src" / "main" / "resources"
     / "agent" / "vision-prompt.md"
 )
 

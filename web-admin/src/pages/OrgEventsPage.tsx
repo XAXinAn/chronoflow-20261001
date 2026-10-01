@@ -99,9 +99,9 @@ export function OrgEventsPage() {
   };
 
   return (
-    <div className="xa-page">
+    <div className="cf-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 className="xa-page-title">组织日历</h2>
+        <h2 className="cf-page-title">组织日历</h2>
         <Space>
           <Switch
             checked={includeRevoked}

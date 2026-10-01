@@ -1,4 +1,4 @@
-import type { ColorScheme } from '@xa-todo/design-tokens';
+import type { ColorScheme } from '@chronoflow/design-tokens';
 
 /**
  * 深色模式偏好（spec §7.6.6「App 端通过 ThemeProvider 注入，支持跟随系统深浅色切换」）。
@@ -6,7 +6,7 @@ import type { ColorScheme } from '@xa-todo/design-tokens';
  * 之前这个偏好只活在 React state 里，App 一重启就丢——用户选了深色，下次打开又是浅色。
  * 偏好是设备级设置，跟会话无关：登出、换账号都不该把它重置。
  */
-const STORAGE_KEY = 'xa-todo.scheme';
+const STORAGE_KEY = 'chronoflow.scheme';
 
 export interface ThemePreferenceStore {
   read(): Promise<ColorScheme | null>;

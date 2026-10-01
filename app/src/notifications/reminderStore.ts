@@ -10,7 +10,7 @@
  * 内容很小（每个目标一行 id 数组），不会有容量问题。
  */
 
-const STORAGE_KEY = 'xa-todo.reminder-notifications';
+const STORAGE_KEY = 'chronoflow.reminder-notifications';
 
 export type ReminderTargetType = 'EVENT' | 'TASK';
 

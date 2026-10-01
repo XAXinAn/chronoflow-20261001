@@ -35,7 +35,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: openapi
-          path: backend-java/xa-bootstrap/target/openapi/xatodo-api.json
+          path: backend-java/chronoflow-bootstrap/target/openapi/chronoflow-api.json
           if-no-files-found: error
 
   frontend:
@@ -54,10 +54,10 @@ jobs:
 
       # 顺序有依赖：web-admin 与 app 都消费 design-tokens 的构建产物
       - name: 构建设计令牌
-        run: npm run build -w @xa-todo/design-tokens
+        run: npm run build -w @chronoflow/design-tokens
 
       - name: 构建 Web 后台
-        run: npm run build -w @xa-todo/web-admin
+        run: npm run build -w @chronoflow/web-admin
 
       - name: App 类型检查
         run: npm run typecheck
@@ -82,7 +82,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql redis-server
 
       - name: 定位 PostgreSQL 二进制
-        run: echo "XA_TODO_PG_BIN=$(dirname "$(find /usr/lib/postgresql -name pg_ctl | head -1)")" >> "$GITHUB_ENV"
+        run: echo "CHRONOFLOW_PG_BIN=$(dirname "$(find /usr/lib/postgresql -name pg_ctl | head -1)")" >> "$GITHUB_ENV"
 
       - name: 安装依赖
         run: pip install -e ".[dev]"

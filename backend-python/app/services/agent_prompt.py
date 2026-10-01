@@ -1,6 +1,6 @@
 """系统提示词的加载与渲染（spec §11 阶段三）。
 
-提示词正文是 `app/resources/agent/prompt.md`，与 Java 版 `xa-agent` 里那一份**逐字节相同**
+提示词正文是 `app/resources/agent/prompt.md`，与 Java 版 `chronoflow-agent` 里那一份**逐字节相同**
 （`tests/test_modules.py::test_agent_prompt_matches_java` 钉住了这一点）。
 两版各存一份而不是互相 import：两边要能独立部署；一致靠测试守，不靠目录结构守。
 

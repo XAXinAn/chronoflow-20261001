@@ -7,7 +7,7 @@ import {
   spacing,
   typography,
   type ColorScheme,
-} from '@xa-todo/design-tokens';
+} from '@chronoflow/design-tokens';
 
 /**
  * App 端主题：直接消费设计令牌，不在组件里写死色值（spec §7.6.6）。

@@ -21,8 +21,8 @@ export interface TokenStore {
   clear(): Promise<void>;
 }
 
-const STORAGE_KEY = 'xa-todo.session';
-const DEVICE_KEY = 'xa-todo.device-id';
+const STORAGE_KEY = 'chronoflow.session';
+const DEVICE_KEY = 'chronoflow.device-id';
 
 export function createMemoryTokenStore(initial: StoredSession | null = null): TokenStore {
   let current = initial;

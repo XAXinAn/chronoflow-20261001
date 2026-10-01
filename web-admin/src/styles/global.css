@@ -1,4 +1,4 @@
-@import '@xa-todo/design-tokens/tokens.css';
+@import '@chronoflow/design-tokens/tokens.css';
 
 * {
   box-sizing: border-box;
@@ -12,55 +12,55 @@ body,
 }
 
 body {
-  background: var(--xa-bg);
-  color: var(--xa-text-primary);
-  font-family: var(--xa-font-sans);
+  background: var(--cf-bg);
+  color: var(--cf-text-primary);
+  font-family: var(--cf-font-sans);
   /* 数字与时间使用等宽字形，保证列表与统计对齐 */
   font-variant-numeric: tabular-nums;
-  transition: background var(--xa-duration-enter) var(--xa-easing-standard);
+  transition: background var(--cf-duration-enter) var(--cf-easing-standard);
 }
 
-.xa-page {
-  padding: var(--xa-space-lg);
-  animation: xa-fade-up var(--xa-duration-enter) var(--xa-easing-standard);
+.cf-page {
+  padding: var(--cf-space-lg);
+  animation: cf-fade-up var(--cf-duration-enter) var(--cf-easing-standard);
 }
 
-.xa-page-title {
+.cf-page-title {
   font-size: 20px;
   font-weight: 600;
-  margin: 0 0 var(--xa-space-md);
+  margin: 0 0 var(--cf-space-md);
 }
 
-.xa-card {
-  background: var(--xa-surface-raised);
-  border: 1px solid var(--xa-border);
-  border-radius: var(--xa-radius-card);
-  box-shadow: var(--xa-shadow);
-  padding: var(--xa-space-md);
+.cf-card {
+  background: var(--cf-surface-raised);
+  border: 1px solid var(--cf-border);
+  border-radius: var(--cf-radius-card);
+  box-shadow: var(--cf-shadow);
+  padding: var(--cf-space-md);
   transition:
-    box-shadow var(--xa-duration-enter) var(--xa-easing-standard),
-    transform var(--xa-duration-enter) var(--xa-easing-standard);
+    box-shadow var(--cf-duration-enter) var(--cf-easing-standard),
+    transform var(--cf-duration-enter) var(--cf-easing-standard);
 }
 
 /* Web 端悬停时阴影加深并上浮 2px（spec §7.6.5） */
-.xa-card--hoverable:hover {
-  box-shadow: var(--xa-shadow), 0 10px 28px rgba(0, 0, 0, 0.08);
+.cf-card--hoverable:hover {
+  box-shadow: var(--cf-shadow), 0 10px 28px rgba(0, 0, 0, 0.08);
   transform: translateY(-2px);
 }
 
-.xa-metric-value {
+.cf-metric-value {
   font-size: 34px;
   font-weight: 600;
   line-height: 40px;
   letter-spacing: -0.02em;
 }
 
-.xa-metric-label {
-  color: var(--xa-text-secondary);
+.cf-metric-label {
+  color: var(--cf-text-secondary);
   font-size: 13px;
 }
 
-@keyframes xa-fade-up {
+@keyframes cf-fade-up {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -72,7 +72,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .xa-page {
+  .cf-page {
     animation: none;
   }
 }

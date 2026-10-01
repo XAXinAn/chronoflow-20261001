@@ -7,7 +7,7 @@
  *
  * 默认**开启**：日程类 App 的到点提醒是核心功能，默认关掉等于让人以为提醒坏了。
  */
-const STORAGE_KEY = 'xa-todo.notification-prefs';
+const STORAGE_KEY = 'chronoflow.notification-prefs';
 
 export interface NotificationPrefs {
   /** 到点提醒总开关（本地通知） */

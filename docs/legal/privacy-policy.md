@@ -171,11 +171,11 @@
 
 | 名称 | 内容 | 位置 | 用途 |
 | --- | --- | --- | --- |
-| `xa-todo.session` | 访问令牌、刷新令牌、身份标识 | 系统安全存储（iOS Keychain / Android Keystore） | 免去每次启动重新登录 |
-| `xa-todo.device-id` | 随机生成的设备标识 | 系统安全存储 | 账号安全中的设备管理 |
-| `xa-todo.org-accounts` | 各组织的登录记录与令牌 | 系统安全存储 | 组织日历的隔离访问 |
-| `xa-todo.theme` | 深色 / 浅色偏好 | 系统安全存储 | 界面偏好 |
-| `xa-todo.privacy-consent` | 本政策的同意版本与时间 | 设备本地存储 | 记录您已同意本政策的版本 |
+| `chronoflow.session` | 访问令牌、刷新令牌、身份标识 | 系统安全存储（iOS Keychain / Android Keystore） | 免去每次启动重新登录 |
+| `chronoflow.device-id` | 随机生成的设备标识 | 系统安全存储 | 账号安全中的设备管理 |
+| `chronoflow.org-accounts` | 各组织的登录记录与令牌 | 系统安全存储 | 组织日历的隔离访问 |
+| `chronoflow.theme` | 深色 / 浅色偏好 | 系统安全存储 | 界面偏好 |
+| `chronoflow.privacy-consent` | 本政策的同意版本与时间 | 设备本地存储 | 记录您已同意本政策的版本 |
 
 ### 3.2 管理方式
 

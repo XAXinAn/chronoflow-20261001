@@ -25,9 +25,9 @@ export function FeedbackPage() {
   );
 
   return (
-    <div className="xa-page">
+    <div className="cf-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 className="xa-page-title">意见反馈</h2>
+        <h2 className="cf-page-title">意见反馈</h2>
         <Space>
           <Segmented
             value={status}

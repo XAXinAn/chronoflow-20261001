@@ -4,7 +4,7 @@
 | --- | --- |
 | 产品英文名 | ChronoFlow |
 | 产品中文名 | 时纪流 |
-| 项目代号 | `xa-todo` |
+| 项目代号 | `chronoflow` |
 | 文档版本 | v1.2 |
 | 文档状态 | 已评审，作为阶段一开发依据 |
 | 适用范围 | App 端（个人 / 组织）、Web 后台（平台超管 / 组织管理员）、服务端 |
@@ -797,7 +797,7 @@ erDiagram
 | 接口 | `POST /uploads/images`，`multipart/form-data`，字段名 `file` |
 | 校验 | 仅 `image/jpeg`、`image/png`、`image/webp`、`image/gif`；单文件 ≤ 5 MB |
 | 校验方式 | **按文件头字节判定格式，不信任客户端声明的 MIME**——把 `a.exe` 改名成 `a.jpg` 声明 `image/jpeg` 是拦不住的；落盘扩展名由嗅探结果决定 |
-| 存储 | 可配置目录（`XATODO_UPLOAD_DIR`）；文件名取内容哈希，天然去重 |
+| 存储 | 可配置目录（`CHRONOFLOW_UPLOAD_DIR`）；文件名取内容哈希，天然去重 |
 | 对外 | 返回相对 URL（如 `/uploads/ab12cd34.jpg`），由服务端映射 `/uploads/**` 静态目录 |
 | 演进 | 换成 MinIO/OSS 时**接口不变**，只替换存储实现；业务侧不感知 |
 | 错误码 | `90003` 不支持的图片格式、`90004` 图片超出大小上限（两版后端一致） |
@@ -837,8 +837,8 @@ erDiagram
 - 唯一约束 `(country_code, holiday_date)`：同一天在同一国家日历下只有一条记录，热更新按它 upsert，重复执行不会产生重复数据。
 - **只记「与常规周末不同的日子」**：普通周六周日不落库，由客户端按星期几判断；`WORKDAY` 专指被调成工作日的周末与调休上班日。
 - **数据源是数据文件 + 上游定时同步，不是代码、也不是迁移**：迁移**只建表**。数据来自 holiday-cn（国务院办公厅通知整理），落库由两条通道完成：
-  1. **后端每天自动同步**：默认每天 03:10（东八区，`xatodo.holiday.sync.cron` / `HOLIDAY_SYNC_CRON` 可配）拉当年与次年，幂等 upsert 后清缓存；启动后 30 秒再补跑一次，新部署不必等到凌晨。`enabled=false` 可整体关闭（测试就是这么关的）。
-  2. **离线/CI/需要立刻生效时用脚本**：`scripts/load_holidays.py`（`--url` 拉指定年份、`--dir` / `XATODO_HOLIDAY_DIR` 指向运维自己的目录、`--prune` 清理上游已撤掉的日子）。仓库里的 `scripts/data/holidays/*.json` 是上游文件的原样拷贝，供无外网环境使用。
+  1. **后端每天自动同步**：默认每天 03:10（东八区，`chronoflow.holiday.sync.cron` / `HOLIDAY_SYNC_CRON` 可配）拉当年与次年，幂等 upsert 后清缓存；启动后 30 秒再补跑一次，新部署不必等到凌晨。`enabled=false` 可整体关闭（测试就是这么关的）。
+  2. **离线/CI/需要立刻生效时用脚本**：`scripts/load_holidays.py`（`--url` 拉指定年份、`--dir` / `CHRONOFLOW_HOLIDAY_DIR` 指向运维自己的目录、`--prune` 清理上游已撤掉的日子）。仓库里的 `scripts/data/holidays/*.json` 是上游文件的原样拷贝，供无外网环境使用。
 - **同步失败不影响服务**：失败只告警 + 记状态，界面继续用库里已有的数据；**次年文件是空占位或 404 都算正常**（通知通常当年 11 月才发），不报错。
 - **同步状态可见**：`GET /system/info` 返回 `holidaySync.lastRunAt / lastSuccessAt / lastError / years`。后台任务最糟的失败方式是静默失败——库里还是去年的安排、界面上看不出来。
 - **缓存**：服务端按 `(国家, 年, 月)` 做进程内缓存（TTL 5 分钟）；同步成功后主动清缓存，所以自动更新是「同步完立刻可见」。
@@ -1174,16 +1174,16 @@ erDiagram
 
 | Token | Light | Dark | 用途 |
 | --- | --- | --- | --- |
-| `--xa-bg` | `#FFFFFF` | `#0A0A0A` | 页面底色 |
-| `--xa-surface` | `#FAFAFA` | `#141414` | 卡片 / 面板 |
-| `--xa-surface-raised` | `#FFFFFF` | `#1C1C1C` | 浮层 / 弹窗 / 下拉 |
-| `--xa-border` | `#E5E5E5` | `#2A2A2A` | 分割线与边框 |
-| `--xa-text-primary` | `#0A0A0A` | `#FAFAFA` | 主文本 |
-| `--xa-text-secondary` | `#6B6B6B` | `#A3A3A3` | 次级文本 |
-| `--xa-text-tertiary` | `#9E9E9E` | `#6B6B6B` | 辅助信息与占位符 |
-| `--xa-accent` | `#0A0A0A` | `#FFFFFF` | 主操作（实心按钮底色） |
-| `--xa-accent-contrast` | `#FFFFFF` | `#0A0A0A` | 主操作前景色 |
-| `--xa-focus-ring` | `rgba(10,10,10,.20)` | `rgba(255,255,255,.20)` | 焦点环 |
+| `--cf-bg` | `#FFFFFF` | `#0A0A0A` | 页面底色 |
+| `--cf-surface` | `#FAFAFA` | `#141414` | 卡片 / 面板 |
+| `--cf-surface-raised` | `#FFFFFF` | `#1C1C1C` | 浮层 / 弹窗 / 下拉 |
+| `--cf-border` | `#E5E5E5` | `#2A2A2A` | 分割线与边框 |
+| `--cf-text-primary` | `#0A0A0A` | `#FAFAFA` | 主文本 |
+| `--cf-text-secondary` | `#6B6B6B` | `#A3A3A3` | 次级文本 |
+| `--cf-text-tertiary` | `#9E9E9E` | `#6B6B6B` | 辅助信息与占位符 |
+| `--cf-accent` | `#0A0A0A` | `#FFFFFF` | 主操作（实心按钮底色） |
+| `--cf-accent-contrast` | `#FFFFFF` | `#0A0A0A` | 主操作前景色 |
+| `--cf-focus-ring` | `rgba(10,10,10,.20)` | `rgba(255,255,255,.20)` | 焦点环 |
 
 - 语义色仅在状态提示中使用，且需降饱和：成功 `#2E7D5B`、警告 `#B58500`、危险 `#B3352F`（深色模式同色相提亮 15%）。
 - **组织日程与个人日程的区分不依赖颜色**，改用边框线型（组织日程实线加粗描边 / 个人日程常规描边）与极浅灰度层次区分，保证黑白模式下依然可辨。
@@ -1215,7 +1215,7 @@ erDiagram
 #### 7.6.5 组件规范要点
 
 - 按钮：主按钮实心（浅色黑底白字 / 深色白底黑字）、次按钮 1px 描边、文字按钮无边框。
-- 输入框：聚焦时描边由 `--xa-border` 过渡到 `--xa-accent`，不用彩色高亮。
+- 输入框：聚焦时描边由 `--cf-border` 过渡到 `--cf-accent`，不用彩色高亮。
 - 卡片：1px 描边 + 极轻阴影；Web 端悬停时阴影加深并上浮 2px。
 - 空状态：大面积留白 + 单色细线稿插画，禁止彩色插画。
 - 图标：统一线性图标，线宽 1.5，圆角端点。
@@ -1296,7 +1296,7 @@ adb.exe reverse tcp:8081 tcp:8081
 ### 8.4 推荐仓库结构
 
 ```
-xa-todo/
+chronoflow/
 ├── spec.md                 # 本文档
 ├── docs/                   # 补充设计文档、接口样例、截图
 ├── backend-java/           # 阶段一：Spring Boot 后端
@@ -1481,7 +1481,7 @@ flowchart LR
    组织日程的读写留到下一阶段，以**新工具**加入（不改造上面这五个）。
 
 **模型与成本**：默认 `qwen3.6-flash`（阿里云百炼，OpenAI 兼容模式），
-实测在「中文 + 工具 + 流式」这个形状下首字最快、总耗时最短；`XATODO_AGENT_MODEL`
+实测在「中文 + 工具 + 流式」这个形状下首字最快、总耗时最短；`CHRONOFLOW_AGENT_MODEL`
 一行即可切到 `qwen3.7-plus`。关思考（省 reasoning token）、`max_tokens=600`、
 只送最近 10 轮、工具结果紧凑 JSON 且默认 20 条、`stream_options.include_usage=true`
 记录 token 用量——这些都是「跑得起」而不是「跑得爽」的前提。
@@ -1545,7 +1545,7 @@ GET /api/v1/legal/{doc}  →  纯静态 HTML（无脚本、无跳转、免登录
 | 不得用「登录即表示同意」代替主动确认 | 未勾选时「登录 / 注册」与「获取验证码」都不可点 |
 | 儿童（14 周岁以下）要单独明示并取得监护人同意（§二-3二） | 首启页与登录页都给出《时纪流儿童个人信息保护声明》的入口 |
 
-同意记录存本机安全存储（`xa-todo.privacy-consent`，含版本号）；隐私政策升版后
+同意记录存本机安全存储（`chronoflow.privacy-consent`，含版本号）；隐私政策升版后
 `hasAcceptedPolicy` 会判定为「未同意」，重新弹窗（规范 §2.4）。
 
 判定逻辑在 `app/src/domain/consent.ts`（纯函数，`app/test/compliance.test.ts` 盯着），
