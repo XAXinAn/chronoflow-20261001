@@ -20,9 +20,9 @@
 set -euo pipefail
 
 # 默认指向**新环境**（2026-10-01 建，新标识那套）。要往老环境发就覆盖：
-#   CHRONOFLOW_DEPLOY_KEY=~/develop/workspace/XAXINAN.pem \
+#   CHRONOFLOW_DEPLOY_KEY=~/develop/workspace/XAXINAN-杭州.pem \
 #   CHRONOFLOW_DEPLOY_HOST=root@8.136.20.182 CHRONOFLOW_PUBLIC_BASE=http://8.136.20.182:8088
-SSH_KEY="${CHRONOFLOW_DEPLOY_KEY:-$HOME/.ssh/xaxinan-new.pem}"
+SSH_KEY="${CHRONOFLOW_DEPLOY_KEY:-$HOME/.ssh/xaxinan-new-北京.pem}"
 SSH_HOST="${CHRONOFLOW_DEPLOY_HOST:-root@60.205.142.205}"
 REMOTE_DIR="${CHRONOFLOW_DOWNLOAD_DIR:-/opt/chronoflow/web/downloads}"
 PUBLIC_BASE="${CHRONOFLOW_PUBLIC_BASE:-http://60.205.142.205:8080}"
