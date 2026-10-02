@@ -153,6 +153,16 @@
       "auth": "access"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/me/phone/code",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/phone",
+      "auth": "access"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/calendars",
       "auth": "access"

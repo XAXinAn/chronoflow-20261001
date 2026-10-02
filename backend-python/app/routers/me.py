@@ -40,6 +40,16 @@ class BindEmailRequest(BaseModel):
     code: str = Field(min_length=6, max_length=6)
 
 
+class SendPhoneCodeRequest(BaseModel):
+    phone: str = Field(min_length=11, max_length=11)
+
+
+class ChangePhoneRequest(BaseModel):
+    newPhone: str = Field(min_length=11, max_length=11)
+    newCode: str = Field(min_length=6, max_length=6)
+    oldCode: str = Field(min_length=6, max_length=6)
+
+
 class RealNameRequest(BaseModel):
     realName: str = Field(min_length=2, max_length=32)
     idCardNumber: str = Field(min_length=18, max_length=18)
@@ -84,6 +94,41 @@ def bind_email(
     email = payload.email.strip().lower()
     service.verify_email_code(email, payload.code)
     return envelope(service.bind_email(principal.account_id, email))
+
+
+@router.post("/phone/code")
+def send_phone_code(
+    payload: SendPhoneCodeRequest,
+    principal: IdentityPrincipal = Depends(current_identity),
+    service=Depends(get_auth_service),
+) -> dict:
+    """换绑手机号第一步：给指定号码发验证码（旧号与新号都允许，频控与登录发码同一套）。"""
+    return envelope(service.send_sms_code(payload.phone.strip(), None))
+
+
+@router.post("/phone")
+def change_phone(
+    payload: ChangePhoneRequest,
+    principal: IdentityPrincipal = Depends(current_identity),
+    session: Session = Depends(get_session),
+    codes=Depends(get_code_store),
+    security: SecurityService = Depends(_security),
+) -> dict:
+    """换绑手机号第二步：**旧号与新号的验证码都校验**，通过才改。
+
+    只验新号的话，任何拿到 access token 的人都能把手机号换成自己的，等于把账号偷走。
+    """
+    current = security.view(principal.account_id)["phone"]
+
+    def verify(phone: str, code: str) -> None:
+        expected = codes.find_code(phone)
+        if expected is None or expected != code:
+            raise ApiError(ErrorCode.SMS_CODE_INVALID, "验证码不正确或已过期")
+        codes.delete_code(phone)
+
+    verify(current, payload.oldCode)
+    verify(payload.newPhone.strip(), payload.newCode)
+    return envelope(security.change_phone(principal.account_id, payload.newPhone))
 
 
 @router.post("/realname")

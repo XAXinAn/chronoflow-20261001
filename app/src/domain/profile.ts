@@ -41,3 +41,20 @@ export function displayName(nickname: string | null | undefined): string {
   const normalized = normalizeNickname(nickname ?? '');
   return normalized || '未命名';
 }
+
+/**
+ * 手机号脱敏（「我的」页头部展示用）：`13800001111` → `138****1111`。
+ *
+ * <p>为什么不做成"用户名 = 手机号"那种完整展示：截图、旁人一眼扫到全号都不合适；
+ * 但用户需要能确认「这是我的号」，所以留前 3 位与后 4 位。
+ */
+export function maskPhone(phone: string | null | undefined): string {
+  if (!phone) {
+    return '未绑定';
+  }
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length !== 11) {
+    return phone;
+  }
+  return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
+}

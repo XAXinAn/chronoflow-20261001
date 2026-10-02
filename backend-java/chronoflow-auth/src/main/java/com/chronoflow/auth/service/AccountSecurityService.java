@@ -29,10 +29,33 @@ public class AccountSecurityService {
     public AccountSecurityView view(Long accountId) {
         Account account = requireAccount(accountId);
         return new AccountSecurityView(
+                account.getPhone(),
                 account.getEmail(),
                 account.getEmailVerifiedAt() != null,
                 Boolean.TRUE.equals(account.getRealNameVerified()),
                 account.getRealName());
+    }
+
+    /**
+     * 换绑手机号（spec §6.2）。**调用方必须先把旧号与新号的验证码都验过**（见 MeController）。
+     *
+     * <p>手机号是账号唯一登录凭证（`uk_account_phone`）：被别的账号占了就如实拒绝，不覆盖别人。
+     */
+    @Transactional
+    public AccountSecurityView changePhone(Long accountId, String newPhone) {
+        String normalized = newPhone.trim();
+        Long taken = accountMapper.selectCount(new QueryWrapper<Account>()
+                .eq("phone", normalized)
+                .ne("id", accountId));
+        if (taken != null && taken > 0) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "该手机号已被其他账号使用");
+        }
+        Account update = new Account();
+        update.setId(accountId);
+        update.setPhone(normalized);
+        update.setPhoneVerifiedAt(OffsetDateTime.now());
+        accountMapper.updateById(update);
+        return view(accountId);
     }
 
     /**

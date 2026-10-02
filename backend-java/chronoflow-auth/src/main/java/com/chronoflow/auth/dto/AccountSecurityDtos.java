@@ -52,9 +52,28 @@ public final class AccountSecurityDtos {
 
     /** 「账号与安全」页要展示的东西：邮箱、是否已验证、是否已实名、实名姓名。 */
     public record AccountSecurityView(
+            /** 手机号（登录凭证）：这四项都是**账号级**信息，「我的」页头部要直接展示 */
+            String phone,
             String email,
             boolean emailVerified,
             boolean realNameVerified,
             String realName) {
+    }
+
+    /** 换绑手机号第一步：给某个号码发验证码（旧号与新号各要一次）。 */
+    public record SendPhoneCodeRequest(
+            @NotBlank @Pattern(regexp = "1\\d{10}", message = "手机号格式不正确") String phone) {
+    }
+
+    /**
+     * 换绑手机号第二步：**两个验证码都要给**。
+     *
+     * <p>只验新号是不够的：拿到 access token 的人就能把手机号换成自己的，等于把账号偷走。
+     * 所以旧号也要验一次（证明是本人），新号验证证明新号码可用。
+     */
+    public record ChangePhoneRequest(
+            @NotBlank @Pattern(regexp = "1\\d{10}", message = "手机号格式不正确") String newPhone,
+            @NotBlank @Pattern(regexp = "\\d{6}", message = "验证码是 6 位数字") String newCode,
+            @NotBlank @Pattern(regexp = "\\d{6}", message = "验证码是 6 位数字") String oldCode) {
     }
 }

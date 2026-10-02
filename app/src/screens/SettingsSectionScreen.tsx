@@ -8,6 +8,7 @@ import { Screen } from '../components/ui';
 import { useAppScheme, useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import { useAppUpdate } from '../updater/AppUpdater';
 import { LEGAL_DOCS, OPERATOR_NAME, type LegalDoc } from '../domain/legal';
+import { maskPhone } from '../domain/profile';
 
 /** 「我的」页的五个分类。**每一个都是独立路由**（`SettingsSection`），不是在同一页里换内容。 */
 export type SettingsSectionKey = 'account' | 'preferences' | 'support' | 'legal' | 'about';
@@ -32,6 +33,7 @@ export function SettingsSectionScreen({
   onBack,
   onOpenRealName,
   onOpenEmail,
+  onOpenPhoneChange,
   onOpenDeletion,
   onOpenFeedback,
   onOpenLegal,
@@ -41,6 +43,8 @@ export function SettingsSectionScreen({
   /** 实名认证是独立页（自己的 H5 流程），邮箱绑定也是——所以这里是两个各自的入口 */
   onOpenRealName: () => void;
   onOpenEmail: () => void;
+  /** 切换手机号（要旧号 + 新号两个验证码，见 PhoneChangeScreen） */
+  onOpenPhoneChange: () => void;
   onOpenDeletion: () => void;
   onOpenFeedback: () => void;
   onOpenLegal: (doc: LegalDoc) => void;
@@ -52,6 +56,7 @@ export function SettingsSectionScreen({
   const { api } = useRuntime();
   /** 账号与安全那一屏要显示「已实名 / 未绑定」这类状态，进这一屏时拉一次 */
   const [security, setSecurity] = useState<{
+    phone: string;
     email: string | null;
     realName: string | null;
     realNameVerified: boolean;
@@ -93,6 +98,14 @@ export function SettingsSectionScreen({
                 : '未认证（可选，认证后可用于找回账号）'
             }
             onPress={onOpenRealName}
+            trailing={<Chevron />}
+          />
+          <ListSeparator inset={52} />
+          <ListRow
+            leading={<RowIcon name="call-outline" />}
+            title="手机号"
+            subtitle={maskPhone(security?.phone)}
+            onPress={onOpenPhoneChange}
             trailing={<Chevron />}
           />
           <ListSeparator inset={52} />

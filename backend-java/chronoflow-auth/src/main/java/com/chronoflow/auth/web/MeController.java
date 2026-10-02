@@ -1,16 +1,19 @@
 package com.chronoflow.auth.web;
 
 import com.chronoflow.auth.dto.AuthDtos.DeviceResponse;
+import com.chronoflow.auth.dto.AuthDtos.SendSmsCodeResponse;
 import com.chronoflow.auth.dto.AuthDtos.NotificationPrefsRequest;
 import com.chronoflow.auth.dto.AuthDtos.SetPasswordRequest;
 import com.chronoflow.auth.dto.AuthDtos.UpdateProfileRequest;
 import com.chronoflow.auth.dto.AccountSecurityDtos.AccountSecurityView;
 import com.chronoflow.auth.dto.AccountSecurityDtos.BindEmailRequest;
+import com.chronoflow.auth.dto.AccountSecurityDtos.ChangePhoneRequest;
 import com.chronoflow.auth.dto.AccountSecurityDtos.EmailCodeResponse;
 import com.chronoflow.auth.dto.AccountSecurityDtos.RealNameInitResponse;
 import com.chronoflow.auth.dto.AccountSecurityDtos.RealNameRequest;
 import com.chronoflow.auth.dto.AccountSecurityDtos.RealNameResultResponse;
 import com.chronoflow.auth.dto.AccountSecurityDtos.SendEmailCodeRequest;
+import com.chronoflow.auth.dto.AccountSecurityDtos.SendPhoneCodeRequest;
 import com.chronoflow.auth.dto.IdentityView;
 import com.chronoflow.auth.security.CurrentIdentity;
 import com.chronoflow.auth.security.IdentityPrincipal;
@@ -19,6 +22,7 @@ import com.chronoflow.auth.service.AccountSecurityService;
 import com.chronoflow.auth.service.AuthService;
 import com.chronoflow.auth.service.EmailCodeService;
 import com.chronoflow.auth.service.RealNameService;
+import com.chronoflow.auth.service.VerificationCodeService;
 import com.chronoflow.common.api.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
@@ -51,17 +55,20 @@ public class MeController {
     private final AccountSecurityService accountSecurity;
     private final EmailCodeService emailCodeService;
     private final RealNameService realNameService;
+    private final VerificationCodeService smsCodeService;
 
     public MeController(AuthService authService,
                         AccountService accountService,
                         AccountSecurityService accountSecurity,
                         EmailCodeService emailCodeService,
-                        RealNameService realNameService) {
+                        RealNameService realNameService,
+                        VerificationCodeService smsCodeService) {
         this.authService = authService;
         this.accountService = accountService;
         this.accountSecurity = accountSecurity;
         this.emailCodeService = emailCodeService;
         this.realNameService = realNameService;
+        this.smsCodeService = smsCodeService;
     }
 
     // ------------------------------------------------------------ 账号与安全（spec §6.2）
@@ -77,6 +84,33 @@ public class MeController {
     public ApiResponse<EmailCodeResponse> sendEmailCode(@Valid @RequestBody SendEmailCodeRequest request) {
         EmailCodeService.SendResult result = emailCodeService.send(normalizeEmail(request.email()));
         return ApiResponse.ok(new EmailCodeResponse(result.expiresIn(), result.debugCode()));
+    }
+
+    /**
+     * 换绑手机号第一步：给**指定号码**发验证码。
+     *
+     * <p>发码本身不泄露信息（码只发到那个号码），所以旧号与新号都允许调用；
+     * 频控、日限额由 {@code VerificationCodeService} 统一管着（与登录发码同一套规则）。
+     */
+    @PostMapping("/phone/code")
+    public ApiResponse<EmailCodeResponse> sendPhoneCode(@Valid @RequestBody SendPhoneCodeRequest request) {
+        SendSmsCodeResponse result = smsCodeService.send(request.phone().trim(), null);
+        return ApiResponse.ok(new EmailCodeResponse(result.expiresIn(), result.debugCode()));
+    }
+
+    /**
+     * 换绑手机号第二步：**旧号与新号的验证码都校验**，通过才改。
+     *
+     * <p>为什么两个都要：只验新号的话，任何拿到 access token 的人都能把手机号换成自己的，
+     * 等于把账号偷走。旧号验证证明是本人，新号验证证明新号码可用。
+     */
+    @PostMapping("/phone")
+    public ApiResponse<AccountSecurityView> changePhone(@Valid @RequestBody ChangePhoneRequest request) {
+        IdentityPrincipal principal = CurrentIdentity.require();
+        String oldPhone = accountSecurity.view(principal.accountId()).phone();
+        smsCodeService.verify(oldPhone, request.oldCode());
+        smsCodeService.verify(request.newPhone().trim(), request.newCode());
+        return ApiResponse.ok(accountSecurity.changePhone(principal.accountId(), request.newPhone()));
     }
 
     /** 绑定 / 改绑邮箱：验证码校验通过才写库（邮箱在库里唯一）。 */

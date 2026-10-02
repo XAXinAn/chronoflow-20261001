@@ -144,7 +144,13 @@ export function createEndpoints(client: ApiClient) {
     // ----------------------------------------------------- 账号与安全（实名 / 邮箱）
     /** 「账号与安全」页的当前状态：邮箱 / 是否已验证 / 是否已实名（spec §6.2）。 */
     meSecurity: () =>
-      client.get<{ email: string | null; emailVerified: boolean; realNameVerified: boolean; realName: string | null }>(
+      client.get<{
+        phone: string;
+        email: string | null;
+        emailVerified: boolean;
+        realNameVerified: boolean;
+        realName: string | null;
+      }>(
         '/api/v1/me/security',
       ),
     /**
@@ -158,6 +164,16 @@ export function createEndpoints(client: ApiClient) {
     /** 绑定 / 改绑邮箱：带上刚收到的验证码（邮箱已被别的账号占用会被拒）。 */
     bindEmail: (payload: { email: string; code: string }) =>
       client.post<IdentityView>('/api/v1/me/email', payload),
+    /** 换绑手机号第一步：给指定号码发验证码（旧号与新号各要一次）。 */
+    sendPhoneCode: (phone: string) =>
+      client.post<{ expiresIn: number; debugCode?: string }>('/api/v1/me/phone/code', { phone }),
+    /**
+     * 换绑手机号第二步：**旧号与新号的两个验证码都要给**。
+     *
+     * <p>只验新号是不够的：拿到令牌的人就能把手机号换成自己的，等于把账号偷走。
+     */
+    changePhone: (payload: { newPhone: string; newCode: string; oldCode: string }) =>
+      client.post<{ phone: string }>('/api/v1/me/phone', payload),
     /**
      * 开始实名认证（阿里云 CloudAuth，ID_PRO：姓名 + 身份证 + 活体）。
      *

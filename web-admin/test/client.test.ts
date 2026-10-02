@@ -114,4 +114,24 @@ describe('api client', () => {
   it('baseUrl 会去掉结尾斜杠', () => {
     expect(resolveBaseUrl('http://api.test/')).toBe('http://api.test');
   });
+
+  it('同源（baseUrl 为空）时不抛 Invalid URL，而不是请求不到任何地址', async () => {
+    // 生产部署就是这个形态：静态页面与接口同源，nginx 反代 /api。
+    // 这里踩过：`new URL('/api/...')` 没有 base 会直接抛 TypeError，请求根本发不出去，
+    // 表现是「后台点了登录什么都不发生」，服务端一条日志都没有。
+    const calls: string[] = [];
+    const fetchImpl = (async (input: unknown) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ code: 0, message: 'ok', data: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const client = createClient({ baseUrl: '', getToken: () => null, fetchImpl });
+    await client.get('/api/v1/admin/auth/login');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatch(/^https?:\/\/.+\/api\/v1\/admin\/auth\/login$/);
+  });
 });

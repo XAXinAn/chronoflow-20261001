@@ -438,11 +438,16 @@ def check_login_consent_checkbox() -> None:
 
 
 def check_app_policy_entries() -> None:
+    # 「我的」页 2026-10-02 起是**分类入口**：入口名在 SettingsScreen，具体条目（含四份文档与账号注销）
+    # 在 SettingsSectionScreen 的「隐私与合规」子页。合规要求的是**步数**（主界面 → 我的 →
+    # 隐私与合规 → 隐私政策，共 3 步），不是「必须写在哪一个文件」里，所以这里两处一起看。
     settings = read(APP_SRC / "screens" / "SettingsScreen.tsx")
+    section = read(APP_SRC / "screens" / "SettingsSectionScreen.tsx")
+    entries = settings + "\n" + section
     require_contains(
-        settings,
+        entries,
         ["隐私与合规", "账号注销"],
-        "SettingsScreen.tsx",
+        "SettingsScreen.tsx + SettingsSectionScreen.tsx",
         "「我的」页必须有合规常驻入口。规范 §四 要求主界面到隐私政策入口不超过 4 步："
         "主界面 → 我的 → 隐私与合规 → 隐私政策，正好 3 步",
     )
@@ -453,7 +458,7 @@ def check_app_policy_entries() -> None:
         "personal-info-collected",
         "shared-info-with-third-parties",
     ):
-        require_legal_entry(settings, slug, "SettingsScreen.tsx")
+        require_legal_entry(entries, slug, "SettingsScreen.tsx + SettingsSectionScreen.tsx")
     app = read(APP_SRC / "App.tsx")
     require_contains(
         app,

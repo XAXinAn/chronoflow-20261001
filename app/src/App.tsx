@@ -46,6 +46,7 @@ import Constants from 'expo-constants';
 import { SettingsSectionScreen, type SettingsSectionKey } from './screens/SettingsSectionScreen';
 import { RealNameScreen } from './screens/RealNameScreen';
 import { EmailBindScreen } from './screens/EmailBindScreen';
+import { PhoneChangeScreen } from './screens/PhoneChangeScreen';
 import { TaskEditorScreen } from './screens/TaskEditorScreen';
 import { TasksScreen } from './screens/TasksScreen';
 import type { Recurrence } from './domain/recurrence';
@@ -246,6 +247,7 @@ type AppStackParamList = {
   SettingsSection: { section: SettingsSectionKey };
   RealName: undefined;
   EmailBind: undefined;
+  PhoneChange: undefined;
   /** 头像取景：正方框 + 拖动缩放，确认后按框裁成 1:1（spec §4.1.8） */
   AvatarCrop: { uri: string };
   Legal: { doc: LegalDoc };
@@ -689,6 +691,7 @@ function MainStack() {
             onBack={() => navigation.goBack()}
             onOpenRealName={() => navigation.navigate('RealName')}
             onOpenEmail={() => navigation.navigate('EmailBind')}
+            onOpenPhoneChange={() => navigation.navigate('PhoneChange')}
             onOpenDeletion={() => navigation.navigate('AccountDeletion')}
             onOpenFeedback={() => navigation.navigate('Feedback')}
             onOpenLegal={(doc) => navigation.navigate('Legal', { doc })}
@@ -699,6 +702,12 @@ function MainStack() {
       <AppStack.Screen name="RealName">
         {({ navigation }) => (
           <RealNameScreen onBack={() => navigation.goBack()} onVerified={() => navigation.goBack()} />
+        )}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="PhoneChange">
+        {({ navigation }) => (
+          <PhoneChangeScreen onBack={() => navigation.goBack()} />
         )}
       </AppStack.Screen>
 

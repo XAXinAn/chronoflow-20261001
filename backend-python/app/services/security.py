@@ -82,6 +82,7 @@ class SecurityService:
     def view(self, account_id: int) -> dict:
         row = self._account(account_id)
         return {
+            "phone": row["phone"],
             "email": row["email"],
             "emailVerified": row["email_verified_at"] is not None,
             "realNameVerified": bool(row["real_name_verified"]),
@@ -166,6 +167,29 @@ class SecurityService:
             _env("ALIYUN_DM_ACCESS_KEY_SECRET"),
             "ResultObject",
         )
+
+    # ------------------------------------------------------------- 手机号
+    def change_phone(self, account_id: int, new_phone: str) -> dict:
+        """换绑手机号。**调用方必须先把旧号与新号的验证码都验过**（见 routers/me.py）。
+
+        手机号是唯一登录凭证：被别的账号占了就如实拒绝，不覆盖别人。
+        """
+        normalized = new_phone.strip()
+        taken = self._session.execute(
+            text("SELECT 1 FROM account WHERE phone = :phone AND id <> :id"),
+            {"phone": normalized, "id": account_id},
+        ).first()
+        if taken:
+            raise ApiError(ErrorCode.PARAM_INVALID, "该手机号已被其他账号使用")
+        self._session.execute(
+            text(
+                "UPDATE account SET phone = :phone, phone_verified_at = now(),"
+                " updated_at = now() WHERE id = :id"
+            ),
+            {"phone": normalized, "id": account_id},
+        )
+        self._session.commit()
+        return self.view(account_id)
 
     # ------------------------------------------------------------- 实名
     def init_realname(self, account_id: int, real_name: str, id_card_number: str, meta_info: str) -> dict:
@@ -282,7 +306,7 @@ class SecurityService:
     def _account(self, account_id: int) -> Any:
         row = self._session.execute(
             text(
-                "SELECT email, email_verified_at, real_name, real_name_verified"
+                "SELECT phone, email, email_verified_at, real_name, real_name_verified"
                 " FROM account WHERE id = :id"
             ),
             {"id": account_id},

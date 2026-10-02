@@ -34,7 +34,17 @@ export interface ClientOptions {
   fetchImpl?: typeof fetch;
 }
 
-const DEFAULT_BASE_URL = 'http://localhost:8080';
+/**
+ * 默认 API 地址：**生产用同源**，开发用本机后端。
+ *
+ * <p>踩过的坑（2026-10-02）：这里原来写死 `http://localhost:8080`，而管理端是**浏览器**在跑——
+ * 部署到服务器后，浏览器会去请求**用户自己电脑的 8080**，于是「超管账号无法登录」，
+ * 后端日志里连一条登录请求都没有。
+ *
+ * <p>生产为什么可以直接同源：web 容器的 nginx 已经反代了 `/api`、`/uploads`、`/map`，
+ * 静态页面和接口同源，既没有跨域问题也不怕换域名。
+ */
+const DEFAULT_BASE_URL = import.meta.env.DEV ? 'http://localhost:8080' : '';
 
 export function resolveBaseUrl(explicit?: string): string {
   const configured = explicit ?? import.meta.env.VITE_API_BASE_URL ?? DEFAULT_BASE_URL;
@@ -53,7 +63,12 @@ export function createClient(options: ClientOptions = {}) {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
 
   function buildUrl(path: string, query?: RequestOptions['query']): string {
-    const url = new URL(baseUrl + path);
+    /*
+     * 同源时 `baseUrl` 是空串 —— 这时**不能**写 `new URL(path)`：相对地址没有 base 会直接抛
+     * `TypeError: Invalid URL`，请求根本发不出去（2026-10-02 踩过：后台点了登录什么都不发生，
+     * 服务端日志里一条请求都没有）。所以空串时补上当前页面的 origin。
+     */
+    const url = new URL(baseUrl + path, baseUrl || globalThis.location?.origin || 'http://localhost');
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined && value !== '') {
         url.searchParams.set(key, String(value));

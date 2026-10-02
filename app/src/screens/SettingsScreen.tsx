@@ -11,7 +11,7 @@ import { askPermission } from '../components/permission';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import type { SettingsSectionKey } from './SettingsSectionScreen';
 import { absoluteMediaUrl } from '../domain/media';
-import { displayName } from '../domain/profile';
+import { displayName, maskPhone } from '../domain/profile';
 
 /**
  * 「我的」页。
@@ -47,6 +47,16 @@ export function SettingsScreen({
    * 当前身份信息从服务端读，而不是只在本地会话里取：
    * 头像是身份级属性（spec §4.1.8），本地会话缓存里没有它，重启后也必须还在。
    */
+  /**
+   * 账号级信息（手机号 / 实名 / 邮箱）——「我的」页头部要直接展示，让用户一眼看到自己账号的状态。
+   * 这三项都在 `GET /me/security` 里（与「账号与安全」子页同一份数据，不另设接口）。
+   */
+  const [security, setSecurity] = useState<{
+    phone: string;
+    email: string | null;
+    realNameVerified: boolean;
+    realName: string | null;
+  } | null>(null);
   const [profile, setProfile] = useState<IdentityView | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
@@ -58,6 +68,15 @@ export function SettingsScreen({
       // 资料拿不到不影响本页其他内容（会话里还有昵称）
     }
   }, [api]);
+
+  useEffect(() => {
+    void api
+      .meSecurity()
+      .then(setSecurity)
+      .catch(() => {
+        // 读不到就先不显示这三行：这只是状态展示，不影响页面其它功能
+      });
+  }, [api, profile]);
 
   useEffect(() => {
     void loadProfile();
@@ -201,6 +220,27 @@ export function SettingsScreen({
             那是我们的数据模型术语，用户视角只有「我在用哪个账号」，
             而当前组织在「组织」tab 顶部已经写清楚。
           */}
+          {/*
+            账号级信息放这里（名称下方）：手机号是登录凭证、实名与邮箱是账号状态，
+            用户进「我的」第一眼要能确认「我现在用的是哪个号、绑没绑实名和邮箱」。
+          */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="查看账号与安全"
+            onPress={() => onOpenSection('account')}
+            hitSlop={6}
+            style={{ marginTop: 4 }}
+          >
+            <Text style={{ color: theme.color.textSecondary, fontSize: 13, lineHeight: 20 }}>
+              {maskPhone(security?.phone)}
+              {'  ·  '}
+              {security?.realNameVerified
+                ? `已实名${security.realName ? ` · ${maskName(security.realName)}` : ''}`
+                : '未实名'}
+              {'  ·  '}
+              {security?.email ? security.email : '未绑定邮箱'}
+            </Text>
+          </Pressable>
           {avatarError ? (
             <Text style={{ color: theme.color.danger, fontSize: 12, marginTop: 4 }}>{avatarError}</Text>
           ) : null}
@@ -277,6 +317,11 @@ function RowIcon({ name, tone = 'default' }: { name: string; tone?: 'default' | 
   );
 }
 
+
+/** 实名只露首字：头部空间小，也不适合把全名摆出来。 */
+function maskName(name: string): string {
+  return name.length <= 1 ? name : `${name.charAt(0)}${'*'.repeat(name.length - 1)}`;
+}
 
 const styles = StyleSheet.create({
   profile: { flexDirection: 'row', alignItems: 'center' },

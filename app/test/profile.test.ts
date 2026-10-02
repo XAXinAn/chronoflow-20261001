@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_NICKNAME_LENGTH,
   displayName,
+  maskPhone,
   normalizeNickname,
   validateNickname,
 } from '../src/domain/profile';
@@ -40,5 +41,20 @@ describe('昵称的规整与校验', () => {
     expect(displayName(null)).toBe('未命名');
     expect(displayName('  ')).toBe('未命名');
     expect(displayName(' 小明 ')).toBe('小明');
+  });
+});
+
+describe('手机号脱敏（「我的」页头部展示）', () => {
+  it('留前 3 位与后 4 位，中间打码', () => {
+    expect(maskPhone('13800001111')).toBe('138****1111');
+  });
+
+  it('没绑定时给一句人话，不是空白', () => {
+    expect(maskPhone(null)).toBe('未绑定');
+    expect(maskPhone('')).toBe('未绑定');
+  });
+
+  it('不是 11 位就原样返回（别把英文/短号截断成看不出是什么的东西）', () => {
+    expect(maskPhone('123')).toBe('123');
   });
 });
