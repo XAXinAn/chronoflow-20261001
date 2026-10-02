@@ -44,6 +44,16 @@ export function ListSeparator({ inset = 16 }: { inset?: number }) {
   return <View style={{ height: 1, marginLeft: inset, backgroundColor: theme.color.border }} />;
 }
 
+/**
+ * 行尾的「›」：**让「这行能点」一眼可见**。
+ *
+ * <p>真机上确认过：条目右侧没有它时，用户会把「实名认证 / 邮箱」当成只读信息（截图里就是这么回事）。
+ */
+export function Chevron() {
+  const theme = useAppTheme();
+  return <Text style={{ color: theme.color.textTertiary, fontSize: 16 }}>›</Text>;
+}
+
 interface ListRowProps {
   title: string;
   subtitle?: string;

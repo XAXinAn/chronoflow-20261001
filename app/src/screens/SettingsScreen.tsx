@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { userFacingError } from '../domain/errors';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
@@ -8,11 +8,10 @@ import * as ImagePicker from 'expo-image-picker';
 import type { IdentityView } from '../api/types';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
 import { askPermission } from '../components/permission';
-import { useAppScheme, useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
-import { LEGAL_DOCS, OPERATOR_NAME, type LegalDoc } from '../domain/legal';
+import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
+import type { SettingsSectionKey } from './SettingsSectionScreen';
 import { absoluteMediaUrl } from '../domain/media';
 import { displayName } from '../domain/profile';
-import { useAppUpdate } from '../updater/AppUpdater';
 
 /**
  * 「我的」页。
@@ -21,54 +20,28 @@ import { useAppUpdate } from '../updater/AppUpdater';
  * 之前那版是一行行纯文字，读起来像配置文件——分组、图标、层级都是靠视觉建立的，
  * 不该让用户去逐行读文字。
  */
-/** 「我的」页的四个分类入口。 */
-type Section = 'account' | 'preferences' | 'support' | 'legal' | 'about';
-
-const SECTION_TITLES: Record<Section, string> = {
-  account: '账号与安全',
-  preferences: '偏好',
-  support: '支持',
-  legal: '隐私与合规',
-  about: '关于',
-};
-
 export function SettingsScreen({
-  onOpenFeedback,
-  onOpenLegal,
-  onOpenDeletion,
   onOpenProfileEdit,
   onOpenAvatarCrop,
-  onOpenAccountSecurity,
+  onOpenSection,
   avatarCrop,
 }: {
-  onOpenFeedback: () => void;
-  /** 打开隐私政策 / 用户协议 / 儿童声明 / 双清单（规范 §四「隐私政策常驻入口」） */
-  onOpenLegal: (doc: LegalDoc) => void;
-  onOpenDeletion: () => void;
   /** 改名字（昵称）：昵称是身份级属性，服务端支持 PATCH /me */
   onOpenProfileEdit: () => void;
-  /** 账号与安全：实名认证（阿里云实人认证）与邮箱绑定，两个都可选（spec §6.2） */
-  onOpenAccountSecurity: () => void;
+  /** 打开某一类设置的独立子页（账号与安全 / 偏好 / 支持 / 隐私与合规 / 关于） */
+  onOpenSection: (section: SettingsSectionKey) => void;
   /** 选好图后进取景页（正方框 + 拖动缩放，spec §4.1.8） */
   onOpenAvatarCrop: (uri: string) => void;
   /** 取景页裁完回传的本地图片；version 变了才上传（与地点/重复那套回传同一语义） */
   avatarCrop?: { version: number; uri: string | null } | null;
 }) {
   const theme = useAppTheme();
-  const { check: checkUpdate, currentVersionName } = useAppUpdate();
   const insets = useSafeAreaInsets();
 
-  /**
-   * 「我的」页现在是**分类入口**：主页只放四类入口，点进去才是具体条目。
-   *
-   * <p>为什么改：原来一页里堆了十几行（账号 / 偏好 / 支持 / 合规 / 关于），找一样东西要靠滚。
-   * 分类当入口是通行做法——一眼看到「我有哪些类别的设置」，点进去只看这一类。
-   */
-  const [section, setSection] = useState<Section | null>(null);
-  const scheme = useAppScheme();
+  // 各分类的内容（深色模式、到点提醒、检查更新、合规文档…）都在 SettingsSectionScreen 里；
+  // 这一页只负责「头像 + 五个入口 + 退出登录」。
   const { api, baseUrl } = useRuntime();
-  const { session, toggleScheme, signOut, notificationEnabled, setNotificationEnabled } =
-    useAppSessionState();
+  const { session, signOut } = useAppSessionState();
 
   /**
    * 当前身份信息从服务端读，而不是只在本地会话里取：
@@ -234,30 +207,28 @@ export function SettingsScreen({
         </View>
       </View>
 
-      {section === null ? (
-        // ------------------------------------------------------------ 主页：只放分类入口
-        <>
+
           <SectionHeader title="设置" />
           <ListGroup>
             <ListRow
               leading={<RowIcon name="shield-checkmark-outline" />}
               title="账号与安全"
               subtitle="实名认证、邮箱、账号注销"
-              onPress={() => setSection('account')}
+              onPress={() => onOpenSection('account')}
             />
             <ListSeparator inset={52} />
             <ListRow
               leading={<RowIcon name="options-outline" />}
               title="偏好"
               subtitle="深色模式、到点提醒"
-              onPress={() => setSection('preferences')}
+              onPress={() => onOpenSection('preferences')}
             />
             <ListSeparator inset={52} />
             <ListRow
               leading={<RowIcon name="chatbubble-ellipses-outline" />}
               title="支持"
               subtitle="意见反馈、检查更新"
-              onPress={() => setSection('support')}
+              onPress={() => onOpenSection('support')}
             />
             <ListSeparator inset={52} />
             {/*
@@ -268,192 +239,26 @@ export function SettingsScreen({
               leading={<RowIcon name="document-text-outline" />}
               title="隐私与合规"
               subtitle="隐私政策、用户协议、儿童声明、两份清单"
-              onPress={() => setSection('legal')}
+              onPress={() => onOpenSection('legal')}
             />
             <ListSeparator inset={52} />
             <ListRow
               leading={<RowIcon name="information-circle-outline" />}
               title="关于"
               subtitle="运营主体、版本"
-              onPress={() => setSection('about')}
+              onPress={() => onOpenSection('about')}
             />
           </ListGroup>
-        </>
-      ) : (
-        // ------------------------------------------------------------ 子页：只放这一类的条目
-        <>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="返回我的"
-            onPress={() => setSection(null)}
-            hitSlop={8}
-            style={styles.backBar}
-          >
-            <Ionicons name="chevron-back" size={22} color={theme.color.textPrimary} />
-            <Text style={{ color: theme.color.textPrimary, fontSize: 17, fontWeight: '600' }}>
-              {SECTION_TITLES[section]}
-            </Text>
-          </Pressable>
-
-          {section === 'account' ? (
-            <ListGroup>
-              <ListRow
-                leading={<RowIcon name="shield-checkmark-outline" />}
-                title="账号与安全"
-                subtitle="实名认证、邮箱绑定（两个都可选）"
-                onPress={onOpenAccountSecurity}
-                trailing={<Chevron />}
-              />
-              <ListSeparator inset={52} />
-              <ListRow
-                leading={<RowIcon name="trash-outline" tone="danger" />}
-                title="账号注销"
-                subtitle="删除个人信息并停用账号"
-                tone="danger"
-                onPress={onOpenDeletion}
-                trailing={<Chevron />}
-              />
-            </ListGroup>
-          ) : null}
-
-          {section === 'preferences' ? (
-            <ListGroup>
-              <ListRow
-                leading={<RowIcon name="moon-outline" />}
-                title="深色模式"
-                subtitle={scheme === 'dark' ? '已开启' : '跟随浅色'}
-                trailing={
-                  <Switch
-                    value={scheme === 'dark'}
-                    onValueChange={toggleScheme}
-                    accessibilityLabel="深色模式"
-                    trackColor={{ false: theme.color.border, true: theme.color.accent }}
-                    thumbColor={theme.color.surfaceRaised}
-                  />
-                }
-              />
-              <ListSeparator inset={52} />
-              {/*
-                到点提醒的总开关（spec §4.5）。关掉时不只「以后不排」：已排的本机通知也会被撤掉，
-                否则用户关掉之后照样被提醒，那个开关就成了摆设。
-              */}
-              <ListRow
-                leading={<RowIcon name="notifications-outline" />}
-                title="到点提醒"
-                subtitle={notificationEnabled ? '日程与待办会按时提醒' : '已关闭，到点不会提醒'}
-                trailing={
-                  <Switch
-                    value={notificationEnabled}
-                    onValueChange={setNotificationEnabled}
-                    accessibilityLabel="到点提醒"
-                    trackColor={{ false: theme.color.border, true: theme.color.accent }}
-                    thumbColor={theme.color.surfaceRaised}
-                  />
-                }
-              />
-            </ListGroup>
-          ) : null}
-
-          {section === 'support' ? (
-            <>
-              <ListGroup>
-                <ListRow
-                  leading={<RowIcon name="chatbubble-ellipses-outline" />}
-                  title="意见反馈"
-                  onPress={onOpenFeedback}
-                  trailing={<Chevron />}
-                />
-                <ListSeparator inset={52} />
-                {/*
-                  手动检查更新（spec §4.1.11）：启动时已静默查过一次，这里是「我就是要现在查」——
-                  它**一定会给反馈**：有新版本弹更新说明，没有就明确说「已是最新版本」。
-                */}
-                <ListRow
-                  leading={<RowIcon name="cloud-download-outline" />}
-                  title="检查更新"
-                  subtitle={`当前版本 ${currentVersionName}`}
-                  onPress={() => void checkUpdate(true)}
-                  trailing={<Chevron />}
-                />
-              </ListGroup>
-            </>
-          ) : null}
-
-          {section === 'about' ? (
-            <ListGroup>
-              <ListRow leading={<RowIcon name="business-outline" />} title="运营主体" subtitle={OPERATOR_NAME} />
-              <ListSeparator inset={52} />
-              {/*
-                版本读**真机实际版本**（expo-constants），不再用硬编码常量：
-                那个常量手动维护，早就停在 0.0.1 了，用户看到的就是「装了新版还写着旧版本」。
-              */}
-              <ListRow
-                leading={<RowIcon name="information-circle-outline" />}
-                title="版本"
-                subtitle={currentVersionName}
-              />
-            </ListGroup>
-          ) : null}
-
-          {section === 'legal' ? (
-            <ListGroup>
-              <ListRow
-                leading={<RowIcon name="document-text-outline" />}
-                title={LEGAL_DOCS['privacy-policy'].title}
-                subtitle="我们收集什么、怎么用、怎么删"
-                onPress={() => onOpenLegal('privacy-policy')}
-                trailing={<Chevron />}
-              />
-              <ListSeparator inset={52} />
-              <ListRow
-                leading={<RowIcon name="reader-outline" />}
-                title={LEGAL_DOCS['user-agreement'].title}
-                onPress={() => onOpenLegal('user-agreement')}
-                trailing={<Chevron />}
-              />
-              <ListSeparator inset={52} />
-              <ListRow
-                leading={<RowIcon name="shield-checkmark-outline" />}
-                title={LEGAL_DOCS['children-privacy'].title}
-                onPress={() => onOpenLegal('children-privacy')}
-                trailing={<Chevron />}
-              />
-              <ListSeparator inset={52} />
-              <ListRow
-                leading={<RowIcon name="list-outline" />}
-                title={LEGAL_DOCS['personal-info-collected'].title}
-                onPress={() => onOpenLegal('personal-info-collected')}
-                trailing={<Chevron />}
-              />
-              <ListSeparator inset={52} />
-              <ListRow
-                leading={<RowIcon name="share-social-outline" />}
-                title={LEGAL_DOCS['shared-info-with-third-parties'].title}
-                // 接入方变多了（高德 / 短信 / 邮件推送 / 实人认证 / 百炼），这里要跟着走，
-                // 否则用户点进去看到的清单与入口描述对不上，等于「声明与实际不符」
-                subtitle="高德地图、短信与邮件推送、实人认证、通义千问"
-                onPress={() => onOpenLegal('shared-info-with-third-parties')}
-                trailing={<Chevron />}
-              />
-            </ListGroup>
-          ) : null}
-        </>
-      )}
-
       {/* 退出登录留在主页：它不属于任何一类设置，放子页里用户反而找不到 */}
-      {section === null ? (
-        <>
-          <View style={{ height: theme.spacing.lg }} />
-          <ListGroup>
-            <ListRow
-              leading={<RowIcon name="log-out-outline" tone="danger" />}
-              title="退出登录"
-              tone="danger"
-              onPress={() => void logout()}
-            />
-          </ListGroup>
-        </>
-      ) : null}
+      <View style={{ height: theme.spacing.lg }} />
+      <ListGroup>
+        <ListRow
+          leading={<RowIcon name="log-out-outline" tone="danger" />}
+          title="退出登录"
+          tone="danger"
+          onPress={() => void logout()}
+        />
+      </ListGroup>
     </ScrollView>
   );
 }
@@ -472,15 +277,9 @@ function RowIcon({ name, tone = 'default' }: { name: string; tone?: 'default' | 
   );
 }
 
-function Chevron() {
-  const theme = useAppTheme();
-  return <Text style={{ color: theme.color.textTertiary, fontSize: 16 }}>›</Text>;
-}
 
 const styles = StyleSheet.create({
   profile: { flexDirection: 'row', alignItems: 'center' },
-  /** 子页顶部的返回条：左边箭头 + 当前分类名（一眼知道自己在哪一层） */
-  backBar: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8, marginBottom: 4 },
   /** 名字 + 铅笔图标：一眼看出这行能点（纯文字没人会去点） */
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   avatar: {

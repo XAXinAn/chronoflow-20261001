@@ -25,7 +25,8 @@ export function EditorHeader({
 }: {
   title: string;
   onCancel: () => void;
-  onSave: () => void;
+  /** 右侧动作。**子页只有返回、没有右侧动作时不传**（会给一个等宽占位，标题仍然居中） */
+  onSave?: () => void;
   saving?: boolean;
   saveDisabled?: boolean;
   /** 文案可按页面定制（例如反馈页是「提交」而不是「保存」） */
@@ -70,7 +71,8 @@ export function EditorHeader({
         <Text style={{ color: theme.color.textSecondary, fontSize: 16 }}>{cancelLabel}</Text>
       </Pressable>
       <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>{title}</Text>
-    <Pressable
+    {onSave ? (
+      <Pressable
       accessibilityRole="button"
       // 无障碍标签跟随可见文案：反馈页是「提交」、选人页是「确定」，
       // 一直念「保存」会让读屏用户不知道该按哪个
@@ -89,6 +91,9 @@ export function EditorHeader({
           {saving ? savingLabel : saveLabel}
         </Text>
       </Pressable>
+    ) : (
+      <View style={{ width: 56 }} />
+    )}
         </>
       )}
     </View>

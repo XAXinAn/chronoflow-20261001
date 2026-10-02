@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { userFacingError } from '../domain/errors';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { EditorHeader } from '../components/form';
 import { Checkbox, PrimaryButton } from '../components/ui';
 import { useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
 import { LEGAL_DOCS, type LegalDoc } from '../domain/legal';
@@ -34,7 +33,6 @@ export function AccountDeletionScreen({
   onOpenLegal: (doc: LegalDoc) => void;
 }) {
   const theme = useAppTheme();
-  const insets = useSafeAreaInsets();
   const { api } = useRuntime();
   const { signOut } = useAppSessionState();
 
@@ -61,20 +59,11 @@ export function AccountDeletionScreen({
     <ScrollView
       contentContainerStyle={{
         paddingHorizontal: theme.spacing.md,
-        paddingTop: insets.top + theme.spacing.sm,
         paddingBottom: theme.spacing.xxl,
       }}
       style={{ backgroundColor: theme.color.bg }}
     >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="返回"
-        onPress={onBack}
-        hitSlop={8}
-        style={{ height: 44, justifyContent: 'center' }}
-      >
-        <Ionicons name="chevron-back" size={22} color={theme.color.textPrimary} />
-      </Pressable>
+      <EditorHeader title="注销账号" cancelLabel="返回" onCancel={onBack} />
 
       <Text style={{ color: theme.color.textPrimary, fontSize: 22, fontWeight: '600', marginTop: 4 }}>
         注销账号

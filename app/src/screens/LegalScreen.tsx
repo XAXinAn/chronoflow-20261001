@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { WebView } from 'react-native-webview';
 
 import { LEGAL_DOCS, legalUrl, type LegalDoc } from '../domain/legal';
+import { EditorHeader } from '../components/form';
 import { useAppTheme, useRuntime } from '../context/AppContext';
 
 /**
@@ -18,7 +17,6 @@ import { useAppTheme, useRuntime } from '../context/AppContext';
  */
 export function LegalScreen({ doc, onBack }: { doc: LegalDoc; onBack: () => void }) {
   const theme = useAppTheme();
-  const insets = useSafeAreaInsets();
   const { baseUrl } = useRuntime();
   const [failed, setFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -33,30 +31,14 @@ export function LegalScreen({ doc, onBack }: { doc: LegalDoc; onBack: () => void
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.color.bg, paddingTop: insets.top }}>
-      <View style={[styles.header, { borderBottomColor: theme.color.border }]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="返回"
-          onPress={onBack}
-          hitSlop={8}
-          style={styles.back}
-        >
-          <Ionicons name="chevron-back" size={22} color={theme.color.textPrimary} />
-        </Pressable>
-        <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }} numberOfLines={1}>
-          {entry.title}
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="在浏览器中打开"
-          onPress={openInBrowser}
-          hitSlop={8}
-          style={styles.back}
-        >
-          <Ionicons name="open-outline" size={20} color={theme.color.textSecondary} />
-        </Pressable>
-      </View>
+    <View style={{ flex: 1, backgroundColor: theme.color.bg }}>
+      <EditorHeader
+        title={entry.title}
+        cancelLabel="返回"
+        onCancel={onBack}
+        saveLabel="浏览器打开"
+        onSave={openInBrowser}
+      />
 
       {failed ? (
         <View style={styles.failed}>

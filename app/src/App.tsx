@@ -43,7 +43,9 @@ import { RecurrencePickerScreen } from './screens/RecurrencePickerScreen';
 import { ReminderPickerScreen } from './screens/ReminderPickerScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import Constants from 'expo-constants';
-import { AccountSecurityScreen } from './screens/AccountSecurityScreen';
+import { SettingsSectionScreen, type SettingsSectionKey } from './screens/SettingsSectionScreen';
+import { RealNameScreen } from './screens/RealNameScreen';
+import { EmailBindScreen } from './screens/EmailBindScreen';
 import { TaskEditorScreen } from './screens/TaskEditorScreen';
 import { TasksScreen } from './screens/TasksScreen';
 import type { Recurrence } from './domain/recurrence';
@@ -121,15 +123,10 @@ type MainTabsProps = {
   /** 编辑自己下发的组织日程（spec §4.2.2：只有发起人能改） */
   onEditOrgEvent: (event: OrgEvent) => void;
   onOpenOrgEvent: (identityId: number, dateKey: string) => void;
-  onOpenFeedback: () => void;
-  /** 打开合规文本（隐私政策 / 用户协议 / 儿童声明 / 双清单） */
-  onOpenLegal: (doc: LegalDoc) => void;
-  /** 账号注销（规范 §2.7 要求 App 内必须有对应按钮） */
-  onOpenDeletion: () => void;
   /** 改名字（昵称，spec §4.1.8）：昵称可改，服务端是 PATCH /me */
   onOpenProfileEdit: () => void;
-  /** 「我的 → 账号与安全」：实名认证 + 邮箱绑定 */
-  onOpenAccountSecurity: () => void;
+  /** 打开「我的」里某一类设置的独立子页 */
+  onOpenSection: (section: SettingsSectionKey) => void;
   /** 选好头像原图后进取景页（正方框 + 拖动缩放，spec §4.1.8） */
   onOpenAvatarCrop: (uri: string) => void;
   /** 取景页裁完回传的本地图片（version 变了才处理） */
@@ -146,11 +143,8 @@ function MainTabs({
   onEditOrgEvent,
   onOpenOrgEvent,
   onReviewDrafts,
-  onOpenFeedback,
-  onOpenLegal,
-  onOpenDeletion,
   onOpenProfileEdit,
-  onOpenAccountSecurity,
+  onOpenSection,
   onOpenAvatarCrop,
   avatarCrop,
 }: MainTabsProps) {
@@ -220,11 +214,8 @@ function MainTabs({
       <Tabs.Screen name="Settings" options={{ title: '我的', tabBarIcon: tabIcon('Settings') }}>
         {() => (
           <SettingsScreen
-            onOpenFeedback={onOpenFeedback}
-            onOpenLegal={onOpenLegal}
-            onOpenDeletion={onOpenDeletion}
             onOpenProfileEdit={onOpenProfileEdit}
-            onOpenAccountSecurity={onOpenAccountSecurity}
+            onOpenSection={onOpenSection}
             onOpenAvatarCrop={onOpenAvatarCrop}
             avatarCrop={avatarCrop}
           />
@@ -252,7 +243,9 @@ type AppStackParamList = {
   OrgAccounts: undefined;
   /** 改名字（昵称）：二级页而不是弹窗，键盘与校验都在同一套页面结构里（spec §4.1.8） */
   ProfileEdit: undefined;
-  AccountSecurity: undefined;
+  SettingsSection: { section: SettingsSectionKey };
+  RealName: undefined;
+  EmailBind: undefined;
   /** 头像取景：正方框 + 拖动缩放，确认后按框裁成 1:1（spec §4.1.8） */
   AvatarCrop: { uri: string };
   Legal: { doc: LegalDoc };
@@ -474,11 +467,8 @@ function MainStack() {
               setOrgFocusDateKey(dateKey);
               navigation.navigate('Main', { screen: 'OrgEvents' });
             }}
-            onOpenFeedback={() => navigation.navigate('Feedback')}
-            onOpenLegal={(doc) => navigation.navigate('Legal', { doc })}
-            onOpenDeletion={() => navigation.navigate('AccountDeletion')}
             onOpenProfileEdit={() => navigation.navigate('ProfileEdit')}
-            onOpenAccountSecurity={() => navigation.navigate('AccountSecurity')}
+            onOpenSection={(section) => navigation.navigate('SettingsSection', { section })}
             onOpenAvatarCrop={(uri) => navigation.navigate('AvatarCrop', { uri })}
             avatarCrop={avatarCrop}
           />
@@ -688,8 +678,34 @@ function MainStack() {
         {({ navigation }) => <ProfileEditScreen onBack={() => navigation.goBack()} />}
       </AppStack.Screen>
 
-      <AppStack.Screen name="AccountSecurity">
-        {({ navigation }) => <AccountSecurityScreen onBack={() => navigation.goBack()} />}
+      {/*
+        「我的」里的五个分类各是一个**独立路由**（不是同一页换内容）：这样系统返回键能回到「我的」，
+        也有正常的转场。实名认证与邮箱绑定更是各自独立——它们本身就是一个两步流程。
+      */}
+      <AppStack.Screen name="SettingsSection">
+        {({ navigation, route }) => (
+          <SettingsSectionScreen
+            section={route.params.section}
+            onBack={() => navigation.goBack()}
+            onOpenRealName={() => navigation.navigate('RealName')}
+            onOpenEmail={() => navigation.navigate('EmailBind')}
+            onOpenDeletion={() => navigation.navigate('AccountDeletion')}
+            onOpenFeedback={() => navigation.navigate('Feedback')}
+            onOpenLegal={(doc) => navigation.navigate('Legal', { doc })}
+          />
+        )}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="RealName">
+        {({ navigation }) => (
+          <RealNameScreen onBack={() => navigation.goBack()} onVerified={() => navigation.goBack()} />
+        )}
+      </AppStack.Screen>
+
+      <AppStack.Screen name="EmailBind">
+        {({ navigation }) => (
+          <EmailBindScreen onBack={() => navigation.goBack()} onDone={() => navigation.goBack()} />
+        )}
       </AppStack.Screen>
 
       <AppStack.Screen name="AvatarCrop">

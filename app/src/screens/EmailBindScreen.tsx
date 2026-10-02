@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { PrimaryButton, Card, Screen } from '../components/ui';
+import { EditorHeader } from '../components/form';
 import { useAppTheme, useRuntime } from '../context/AppContext';
 import { userFacingError } from '../domain/errors';
 import { SMS_COOLDOWN_SECONDS, nextCooldown, sendCodeLabel } from '../domain/smsCooldown';
@@ -18,19 +19,33 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * <p>两个按钮的转圈状态复用登录页那套纯逻辑（`domain/loginForm.ts`）——同一个坑不要踩两次：
  * 发码只让发码按钮转，提交只让提交按钮转。
  */
-export function EmailBindScreen({ currentEmail, onDone }: {
-  /** 当前已绑定的邮箱（没绑就是 null），只做展示 */
-  currentEmail: string | null;
+export function EmailBindScreen({ onBack, onDone }: {
+  /** 返回「账号与安全」。**必须有**：之前这一页没有返回入口，进去只能靠系统返回键 */
+  onBack: () => void;
   onDone: (email: string) => void;
 }) {
   const theme = useAppTheme();
   const { api } = useRuntime();
+  /**
+   * 当前邮箱自己拉：这一页是独立路由，上一页不必替它把状态传进来
+   * （传进来反而会出现「绑定完回上一页才刷新」的时机问题）。
+   */
+  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [sending, setSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api
+      .meSecurity()
+      .then((view) => setCurrentEmail(view.email))
+      .catch(() => {
+        // 读不到就当没绑定：用户仍可填写并绑定
+      });
+  }, [api]);
 
   useEffect(() => {
     if (cooldown <= 0) {
@@ -80,9 +95,12 @@ export function EmailBindScreen({ currentEmail, onDone }: {
 
   return (
     <Screen style={styles.container}>
+      <EditorHeader title={currentEmail ? '更换邮箱' : '绑定邮箱'} cancelLabel="返回" onCancel={onBack} />
       <Card>
-        <Text style={{ color: theme.color.textSecondary, fontSize: 13 }}>
-          {currentEmail ? `当前邮箱：${currentEmail}` : '还没有绑定邮箱'}
+        <Text style={{ color: theme.color.textSecondary, fontSize: 13, lineHeight: 20 }}>
+          {currentEmail
+            ? `当前邮箱：${currentEmail}。改成新邮箱需要先用新邮箱收一次验证码。`
+            : '邮箱用于接收通知与找回账号，随时可以更换。'}
         </Text>
         <View style={{ height: theme.spacing.md }} />
 
@@ -139,7 +157,8 @@ export function EmailBindScreen({ currentEmail, onDone }: {
 }
 
 const styles = StyleSheet.create({
-  container: { justifyContent: 'center', paddingHorizontal: 24 },
+  /** 顶部对齐：与「我的」各子页同一节奏（原来垂直居中，看着像另一个 App） */
+  container: { paddingHorizontal: 20 },
   label: { fontSize: 13, marginBottom: 6 },
   input: { height: 48, borderWidth: 1, paddingHorizontal: 12, fontSize: 16 },
   codeRow: { flexDirection: 'row', alignItems: 'center' },
