@@ -252,12 +252,27 @@ iOS 这边出不了包验证）；③ 产品口径：认证后昵称旁显示「
 endpoint 默认 `cloudauth.cn-shanghai.aliyuncs.com`），容器 `printenv` 已验证读得到。
 ⚠️ 老服务器上这套**从来没配过**（`.env` 里没有 CloudAuth 四项），所以那边实名其实一直不可用。
 
-**⚠️ 实名认证当前卡在「场景类型不匹配」（2026-10-02 实测）**：CloudAuth 返回的 `ResultObject`
-**只有 `CertifyId`、没有 `CertifyUrl`** —— SceneId `1000018914` 是老项目给**App 端 SDK**
-用的场景（人脸由客户端 SDK 完成），而我们的方案是 **H5/网页版**（服务端给认证页地址、App 用
-WebView 打开）。**要能跑通，需要用户在阿里云控制台再建一个「网页/H5」场景，把新 SceneId 配到
-`.env` 的 `ALIYUN_CLOUDAUTH_SCENE_ID` 并重启后端**——代码侧不用改。
-另外这一路还修掉两个配置问题：① 老项目那把 AK 已失效（`InvalidAccessKeyId.NotFound`），
+**⚠️ 实名认证当前卡在「MetaInfo 必须来自客户端 SDK」（2026-10-02，官方文档核实）**：
+查了 `InitFaceVerify` 参数表与 OpenAPI 元数据，结论是——
+1. **`MetaInfo` 是必选参数**，官方说明原文「MetaInfo 环境参数，**需要通过客户端 SDK 获取**」，
+   服务端**编不出来**（现在服务端写的是 `{"zimVer":"3.0.0","appVersion":"1.0"}` 这种假值）；
+2. 网页版返回字段 `CertifyUrl` 的说明也写着「**此参数需要入参中 MetaInfo 正确传入**，以返回与
+   客户端匹配的 CertifyUrl」；
+3. **场景不区分接入方式**（控制台新增场景对话框里没有这个字段，FAQ 明确「同一个 AccessKey 支持
+   App、H5 及小程序等不同接入方式共用或独立使用认证场景」）——所以「新建一个 H5 场景」这条
+   **是我之前的错误结论，已作废**；
+4. 实测：`MetaInfo` 带假值 / 不带 / 加 `ReturnUrl` / `Mode=H5` 都只回 `CertifyId`；
+   `CertifyUrlType` 传任何值都被拒（`参数非法(certifyUrlType)`）。
+
+**所以两条可行路，选一条**：
+* **A. App 原生 SDK**（老项目走的就是这条）：客户端 SDK 产生 `MetaInfo` 并做人脸 → 服务端只给
+  `CertifyId`。Android 需要在控制台下载实人认证 SDK（AAR）并在 RN 里写原生模块；iOS 另需 iOS SDK
+  （本机出不了包验证）。
+* **B. Web/H5 SDK**：在 App 的 WebView 里加载阿里云 Web SDK 取 `MetaInfo` → 传服务端 →
+  服务端 `InitFaceVerify` 拿 `CertifyUrl` → WebView 打开认证页。**需要 Web SDK 的接入文档**
+  （SDK 地址 + metaInfo 获取方式），目前还没拿到。
+
+另外这一路修掉两个配置问题：① 老项目那把 AK 已失效（`InvalidAccessKeyId.NotFound`），
 现在实名与邮件都复用**短信那把**（已实测 CloudAuth 返回 200）；② compose 里 `MAIL_PROVIDER`
 曾被写成字面量 `log`，邮件通道其实一直没启用。
 
