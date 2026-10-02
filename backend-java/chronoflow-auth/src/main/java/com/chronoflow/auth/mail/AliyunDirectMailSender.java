@@ -100,19 +100,27 @@ public class AliyunDirectMailSender implements EmailSender {
 
         String codeValue = "";
         String message = "";
+        String requestId = "";
         try {
             JsonNode body = objectMapper.readTree(response.body());
             codeValue = body.path("Code").asText("");
             message = body.path("Message").asText("");
+            requestId = body.path("RequestId").asText("");
         } catch (IOException ex) {
             throw BizException.of(ErrorCode.THIRD_PARTY_UNAVAILABLE, "邮件通道返回了无法解析的响应");
         }
-        if (!"OK".equals(codeValue)) {
+        /*
+         * ⚠️ DirectMail 与短信的响应形状**不一样**：短信成功回 `{"Code":"OK"}`，
+         * 而 DirectMail 成功只回 `{"RequestId":"..."}` —— **没有 Code 字段**。
+         * 曾经按「必须有 Code=OK」判定，于是把发送成功当成失败（日志里 code= message= 全空就是这个原因），
+         * 用户看到的是「邮件发送失败：」。判据改成：**有 Code 才是错误**。
+         */
+        if (!codeValue.isBlank()) {
             log.warn("邮件被拒 email={} code={} message={}", mask(email), codeValue, message);
             throw BizException.of(ErrorCode.THIRD_PARTY_UNAVAILABLE,
                     "邮件发送失败：" + codeValue + (message.isBlank() ? "" : " " + message));
         }
-        log.info("验证码邮件已发出 email={}", mask(email));
+        log.info("验证码邮件已发出 email={} requestId={}", mask(email), requestId);
     }
 
     private String body(String code) {

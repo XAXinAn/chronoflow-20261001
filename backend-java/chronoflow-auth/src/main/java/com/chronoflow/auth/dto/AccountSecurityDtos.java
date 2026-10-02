@@ -29,7 +29,15 @@ public final class AccountSecurityDtos {
     /** 发起实名认证：姓名 + 身份证号（老项目是注册时强制，我们做成登录后可选）。 */
     public record RealNameRequest(
             @NotBlank @Size(min = 2, max = 32, message = "请输入真实姓名") String realName,
-            @NotBlank @Pattern(regexp = "\\d{17}[\\dXx]", message = "请输入 18 位身份证号") String idCardNumber) {
+            @NotBlank @Pattern(regexp = "\\d{17}[\\dXx]", message = "请输入 18 位身份证号") String idCardNumber,
+            /**
+             * 客户端 Web SDK（`jsvm_all.js` 的 `window.getMetaInfo()`）采集的环境参数。
+             *
+             * <p>**必填且必须实时获取**：阿里云靠它识别设备类型并签发匹配的 `CertifyUrl`；
+             * 官方说明原文「此参数需要入参中 MetaInfo 正确传入，以返回与客户端匹配的 CertifyUrl」，
+             * 并且明确「禁止使用硬编码的测试数据，否则可能导致无法获取 CertifyUrl」。
+             */
+            @NotBlank(message = "缺少客户端环境参数") String metaInfo) {
     }
 
     public record EmailCodeResponse(long expiresIn, String debugCode) {

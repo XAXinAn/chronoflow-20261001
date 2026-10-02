@@ -43,6 +43,8 @@ class BindEmailRequest(BaseModel):
 class RealNameRequest(BaseModel):
     realName: str = Field(min_length=2, max_length=32)
     idCardNumber: str = Field(min_length=18, max_length=18)
+    # 客户端 Web SDK（jsvm_all.js 的 window.getMetaInfo()）实时采集，禁止硬编码
+    metaInfo: str = Field(min_length=2, max_length=8192)
 
 
 def _security(
@@ -92,7 +94,7 @@ def init_realname(
 ) -> dict:
     """发起实名认证：返回 CloudAuth 认证页地址（App 用 WebView 打开）。"""
     return envelope(
-        service.init_realname(principal.account_id, payload.realName, payload.idCardNumber)
+        service.init_realname(principal.account_id, payload.realName, payload.idCardNumber, payload.metaInfo)
     )
 
 

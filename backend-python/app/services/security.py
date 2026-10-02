@@ -64,8 +64,11 @@ def _rpc(endpoint: str, params: dict[str, str], access_key_secret: str, object_f
         body = httpx.get(url, timeout=CALL_TIMEOUT).json()
     except Exception as exc:  # noqa: BLE001 —— 统一翻译成「第三方不可用」
         raise ApiError(ErrorCode.THIRD_PARTY_UNAVAILABLE, "第三方服务不可用，请稍后重试") from exc
-    if str(body.get("Code")) != "200":
-        message = body.get("Message") or body.get("Code") or ""
+    code = body.get("Code")
+    # DirectMail 成功时**不带 Code**（只回 RequestId），与短信/CloudAuth 的 200 形状不同：
+    # 所以这里只在"确实有 Code 且不是 200"时才当失败，避免把发送成功判成失败。
+    if code is not None and str(code) != "200":
+        message = body.get("Message") or code or ""
         raise ApiError(ErrorCode.THIRD_PARTY_UNAVAILABLE, f"第三方服务调用失败：{message}")
     return body.get(object_field) or {}
 
@@ -165,7 +168,7 @@ class SecurityService:
         )
 
     # ------------------------------------------------------------- 实名
-    def init_realname(self, account_id: int, real_name: str, id_card_number: str) -> dict:
+    def init_realname(self, account_id: int, real_name: str, id_card_number: str, meta_info: str) -> dict:
         self._require_realname_configured()
         normalized = id_card_number.strip().upper()
         params = self._cloudauth_params("InitFaceVerify")
@@ -179,7 +182,11 @@ class SecurityService:
                 "OuterOrderNo": f"u{account_id}-{uuid.uuid4().hex}",
                 "SceneId": _env("ALIYUN_CLOUDAUTH_SCENE_ID"),
                 "UserId": str(account_id),
-                "MetaInfo": '{"zimVer":"3.0.0","appVersion":"1.0"}',
+                # MetaInfo 必须来自客户端 Web SDK（服务端编不出来）
+                "MetaInfo": meta_info,
+                # H5 + iframe 内嵌：结果走 postMessage 回传；iframe 只支持长链
+                "ReturnUrl": "iframe",
+                "CertifyUrlStyle": "L",
             }
         )
         result = _rpc(

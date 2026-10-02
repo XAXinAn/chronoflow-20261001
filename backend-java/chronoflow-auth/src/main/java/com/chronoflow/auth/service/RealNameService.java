@@ -91,7 +91,7 @@ public class RealNameService {
     }
 
     /** 第一步：换认证页地址。姓名 / 身份证只用于这一次调用和我们自己的加密存储。 */
-    public RealNameInitResponse init(Long accountId, String realName, String idCardNumber) {
+    public RealNameInitResponse init(Long accountId, String realName, String idCardNumber, String metaInfo) {
         requireConfigured();
         String normalizedId = idCardNumber.trim().toUpperCase();
         String certifyId;
@@ -106,7 +106,13 @@ public class RealNameService {
             params.put("OuterOrderNo", "u" + accountId + "-" + UUID.randomUUID().toString().replace("-", ""));
             params.put("SceneId", sceneId);
             params.put("UserId", String.valueOf(accountId));
-            params.put("MetaInfo", "{\"zimVer\":\"3.0.0\",\"appVersion\":\"1.0\"}");
+            // MetaInfo 必须来自客户端 Web SDK（服务端编不出来，见 RealNameRequest 的说明）
+            params.put("MetaInfo", metaInfo);
+            // H5 + iframe 内嵌接入（官方文档「iframe 内嵌接入」）：
+            //   ReturnUrl 固定传 iframe —— 认证结果通过 postMessage 回传，不需要我们自己的公网回跳页；
+            //   CertifyUrlStyle=L —— iframe 只支持长链（短链嵌不进去）。
+            params.put("ReturnUrl", "iframe");
+            params.put("CertifyUrlStyle", "L");
             JsonNode result = call(params, "ResultObject");
             certifyId = result.path("CertifyId").asText("");
             certifyUrl = result.path("CertifyUrl").asText("");

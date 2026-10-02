@@ -164,7 +164,7 @@ export function createEndpoints(client: ApiClient) {
      * <p>服务端**不接收也不回传身份证号**：先由 App 把姓名/身份证交给服务端换 `certifyUrl`，
      * 再用 WebView 打开它做人脸。服务未配置时返回 90002 一类的错误，界面如实说「暂不可用」。
      */
-    initRealName: (payload: { realName: string; idCardNumber: string }) =>
+    initRealName: (payload: { realName: string; idCardNumber: string; metaInfo: string }) =>
       client.post<{ certifyId: string; certifyUrl: string }>('/api/v1/me/realname', payload),
     /** 查实名结果：人脸做完后轮询这个（服务端调 DescribeFaceVerify）。 */
     realNameResult: (certifyId: string) =>

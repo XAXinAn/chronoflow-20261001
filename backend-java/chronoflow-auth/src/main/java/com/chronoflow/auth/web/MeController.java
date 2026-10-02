@@ -91,7 +91,7 @@ public class MeController {
     @PostMapping("/realname")
     public ApiResponse<RealNameInitResponse> initRealName(@Valid @RequestBody RealNameRequest request) {
         IdentityPrincipal principal = CurrentIdentity.require();
-        return ApiResponse.ok(realNameService.init(principal.accountId(), request.realName(), request.idCardNumber()));
+        return ApiResponse.ok(realNameService.init(principal.accountId(), request.realName(), request.idCardNumber(), request.metaInfo()));
     }
 
     /** 人脸做完后回查结果；通过才把实名写进账号。 */
