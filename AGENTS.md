@@ -252,6 +252,15 @@ iOS 这边出不了包验证）；③ 产品口径：认证后昵称旁显示「
 endpoint 默认 `cloudauth.cn-shanghai.aliyuncs.com`），容器 `printenv` 已验证读得到。
 ⚠️ 老服务器上这套**从来没配过**（`.env` 里没有 CloudAuth 四项），所以那边实名其实一直不可用。
 
+**⚠️ 实名认证当前卡在「场景类型不匹配」（2026-10-02 实测）**：CloudAuth 返回的 `ResultObject`
+**只有 `CertifyId`、没有 `CertifyUrl`** —— SceneId `1000018914` 是老项目给**App 端 SDK**
+用的场景（人脸由客户端 SDK 完成），而我们的方案是 **H5/网页版**（服务端给认证页地址、App 用
+WebView 打开）。**要能跑通，需要用户在阿里云控制台再建一个「网页/H5」场景，把新 SceneId 配到
+`.env` 的 `ALIYUN_CLOUDAUTH_SCENE_ID` 并重启后端**——代码侧不用改。
+另外这一路还修掉两个配置问题：① 老项目那把 AK 已失效（`InvalidAccessKeyId.NotFound`），
+现在实名与邮件都复用**短信那把**（已实测 CloudAuth 返回 200）；② compose 里 `MAIL_PROVIDER`
+曾被写成字面量 `log`，邮件通道其实一直没启用。
+
 **还差的代码**（下一步就照这个顺序）：
 1. **V20 迁移**（绝不动 V1–V19）：`identity` 加 `real_name_verified / real_name /
    id_card_number（AES）/ verified_at / email`；

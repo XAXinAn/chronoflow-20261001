@@ -117,7 +117,17 @@ public class RealNameService {
             throw BizException.of(ErrorCode.THIRD_PARTY_UNAVAILABLE, "实名认证服务暂时不可用，请稍后重试");
         }
         if (!StringUtils.hasText(certifyId) || !StringUtils.hasText(certifyUrl)) {
-            throw BizException.of(ErrorCode.THIRD_PARTY_UNAVAILABLE, "实名认证服务没有返回认证地址");
+            /*
+             * 这一步踩过一个真坑（2026-10-02）：**场景类型要匹配接入方式**。
+             *
+             * CloudAuth 的场景分「App 端 SDK」和「Web/H5」两类：前者只返回 `CertifyId`（人脸由客户端 SDK
+             * 完成），后者才返回 `CertifyUrl`（我们 App 用 WebView 打开它）。拿一个 SDK 场景去要网页地址，
+             * 阿里云照样回 200，只是 `ResultObject` 里**只有 CertifyId**——于是这里会抛「没有返回认证地址」，
+             * 看着像服务挂了，其实是场景类型不对。
+             */
+            throw BizException.of(ErrorCode.THIRD_PARTY_UNAVAILABLE,
+                    "实名认证场景类型不匹配：当前 SceneId 没有返回网页版认证地址（需要在阿里云实人认证控制台"
+                            + "新建一个「网页/H5」场景，并把它的 SceneId 配到服务端）");
         }
         // 认证还没做完：把姓名/身份证密文/指纹暂存，回查通过时再落库（30 分钟不完成就作废）
         redis.opsForValue().set(pendingKey(certifyId),
