@@ -18,8 +18,8 @@
 
 | 服务器 | 域名 | 密钥路径（WSL） | 桌面副本 |
 | --- | --- | --- | --- |
-| 北京 `60.205.142.205` | `xaxinan.top`（邮件发信域，暂无 A 记录） | `~/.ssh/xaxinan.top-北京.pem` | `xaxinan.top-北京.pem` |
-| 杭州 `8.136.20.182` | `chronocloud.top`（DNS 指向它，有证书） | `~/develop/workspace/chronocloud.top-杭州.pem` | `chronocloud.top-杭州.pem` |
+| 北京 `60.205.142.205` | `xaxinan.top`（邮件发信域，暂无 A 记录） | `~/.ssh/60.205.142.205-北京.pem` | `60.205.142.205-北京.pem` |
+| 杭州 `8.136.20.182` | `chronocloud.top`（DNS 指向它，有证书） | `~/develop/workspace/8.136.20.182-杭州.pem` | `8.136.20.182-杭州.pem` |
 
 ⚠️ 桌面那两份是**服务器 root 私钥**，Windows 侧所有人可读；用完请删，长期使用放 `C:\Users\jiang\.ssh\` 并收紧权限。
 
@@ -44,12 +44,12 @@ export JAVA_HOME=/home/jiang/tools/jdk-21.0.12.1+1
 /home/jiang/tools/apache-maven-3.9.16/bin/mvn -o -q package -DskipTests
 
 # ② 传 jar（文件名固定，Dockerfile 里写死了）
-scp -i ~/.ssh/xaxinan.top-北京.pem \
+scp -i ~/.ssh/60.205.142.205-北京.pem \
   chronoflow-bootstrap/target/chronoflow-bootstrap-0.1.0-SNAPSHOT.jar \
   root@60.205.142.205:/opt/chronoflow/backend/
 
 # ③ 重建并重启后端容器
-ssh -i ~/.ssh/xaxinan.top-北京.pem root@60.205.142.205 \
+ssh -i ~/.ssh/60.205.142.205-北京.pem root@60.205.142.205 \
   'cd /opt/chronoflow && docker compose up -d --build backend'
 ```
 
@@ -72,8 +72,8 @@ curl -s -o /dev/null -w '%{http_code}\n' http://60.205.142.205:8080/api/v1/me/se
 ```bash
 cd ~/develop/xa-todo
 npm run build -w @chronoflow/web-admin          # 产物在 web-admin/dist
-scp -r -i ~/.ssh/xaxinan.top-北京.pem web-admin/dist root@60.205.142.205:/opt/chronoflow/web/
-ssh -i ~/.ssh/xaxinan.top-北京.pem root@60.205.142.205 \
+scp -r -i ~/.ssh/60.205.142.205-北京.pem web-admin/dist root@60.205.142.205:/opt/chronoflow/web/
+ssh -i ~/.ssh/60.205.142.205-北京.pem root@60.205.142.205 \
   'cd /opt/chronoflow && docker compose up -d --build web'
 ```
 
@@ -122,7 +122,7 @@ bash scripts/publish_apk.sh \
 然后把脚本打印的九行 `CHRONOFLOW_APP_RELEASE_*` 写进服务器 `/opt/chronoflow/.env`（**改前备份**），重启后端：
 
 ```bash
-ssh -i ~/.ssh/xaxinan.top-北京.pem root@60.205.142.205 '
+ssh -i ~/.ssh/60.205.142.205-北京.pem root@60.205.142.205 '
   cd /opt/chronoflow && cp -a .env .env.bak.$(date -u +%Y%m%dT%H%M%SZ) && \
   docker compose up -d backend'
 ```
@@ -173,12 +173,12 @@ curl -sI http://60.205.142.205:8080/downloads/chronoflow-<版本>.apk | head -3 
 
 1. **请求到底有没有到服务器**（最容易分辨"前端问题"还是"后端问题"）：
    ```bash
-   ssh -i ~/.ssh/xaxinan.top-北京.pem root@60.205.142.205 'docker logs --tail 50 chronoflow-web'
+   ssh -i ~/.ssh/60.205.142.205-北京.pem root@60.205.142.205 'docker logs --tail 50 chronoflow-web'
    ```
    nginx 日志里**没有那条请求** → 前端/客户端的问题（缓存、地址、代码抛错）。
 2. **后端日志**（业务异常会带错误码与原因）：
    ```bash
-   ssh -i ~/.ssh/xaxinan.top-北京.pem root@60.205.142.205 'docker logs --tail 100 chronoflow-backend'
+   ssh -i ~/.ssh/60.205.142.205-北京.pem root@60.205.142.205 'docker logs --tail 100 chronoflow-backend'
    ```
 3. **App 端**（真机 / 模拟器）：
    ```bash
@@ -224,13 +224,13 @@ curl -sI http://60.205.142.205:8080/downloads/chronoflow-<版本>.apk | head -3 
 # 后端
 cd ~/develop/xa-todo/backend-java && export JAVA_HOME=/home/jiang/tools/jdk-21.0.12.1+1 && \
   /home/jiang/tools/apache-maven-3.9.16/bin/mvn -o -q package -DskipTests
-scp -i ~/.ssh/xaxinan.top-北京.pem chronoflow-bootstrap/target/chronoflow-bootstrap-0.1.0-SNAPSHOT.jar root@60.205.142.205:/opt/chronoflow/backend/
-ssh -i ~/.ssh/xaxinan.top-北京.pem root@60.205.142.205 'cd /opt/chronoflow && docker compose up -d --build backend'
+scp -i ~/.ssh/60.205.142.205-北京.pem chronoflow-bootstrap/target/chronoflow-bootstrap-0.1.0-SNAPSHOT.jar root@60.205.142.205:/opt/chronoflow/backend/
+ssh -i ~/.ssh/60.205.142.205-北京.pem root@60.205.142.205 'cd /opt/chronoflow && docker compose up -d --build backend'
 
 # 管理端
 cd ~/develop/xa-todo && npm run build -w @chronoflow/web-admin
-scp -r -i ~/.ssh/xaxinan.top-北京.pem web-admin/dist root@60.205.142.205:/opt/chronoflow/web/
-ssh -i ~/.ssh/xaxinan.top-北京.pem root@60.205.142.205 'cd /opt/chronoflow && docker compose up -d --build web'
+scp -r -i ~/.ssh/60.205.142.205-北京.pem web-admin/dist root@60.205.142.205:/opt/chronoflow/web/
+ssh -i ~/.ssh/60.205.142.205-北京.pem root@60.205.142.205 'cd /opt/chronoflow && docker compose up -d --build web'
 
 # App 出包 + 发布
 cd ~/develop/xa-todo && bash scripts/build_apk.sh --release --archs=arm64-v8a,x86_64

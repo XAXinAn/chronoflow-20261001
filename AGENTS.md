@@ -50,7 +50,7 @@ Flyway 迁移规矩、排障顺序（"请求有没有到"最先看 nginx 日志�
 | **「我的」页头部** | 头像/名字下方直接显示 `手机号（脱敏）· 实名状态 · 邮箱`，点一下进「账号与安全」；数据来自 `GET /me/security`（该接口新增 `phone` 字段） |
 | **切换手机号** | 「账号与安全」新增入口：`POST /me/phone/code` 发码 + `POST /me/phone` 换绑，**旧号与新号两个验证码都校验**（只验新号的话，拿到令牌的人就能把账号偷走）；契约 **120 端点** |
 | **管理端登录修复** | 前端 API 地址原来写死 `http://localhost:8080`（浏览器会请求用户自己的机器）→ 改成生产同源；改完又踩了 `new URL('/api/...')` 缺 base 抛 `Invalid URL`（请求根本发不出去，nginx 日志里一条都没有）→ 已修 + 单测 |
-| **SSH 私钥改名** | 统一成 `域名-地域.pem`：北京 `~/.ssh/xaxinan.top-北京.pem`（新服务器）、杭州 `~/develop/workspace/chronocloud.top-杭州.pem`（老服务器）；桌面各有一份副本；`publish_apk.sh` 默认值已同步 |
+| **SSH 私钥改名** | 统一成 `域名-地域.pem`：北京 `~/.ssh/60.205.142.205-北京.pem`（新服务器）、杭州 `~/develop/workspace/8.136.20.182-杭州.pem`（老服务器）；桌面各有一份副本；`publish_apk.sh` 默认值已同步 |
 | **合规门禁判据** | 「我的」页改成分类入口后，合规入口搬到了 `SettingsSectionScreen`，门禁改为**两处一起看**（要求的是步数，不是某个文件） |
 
 ### 待验证（还是那几件，没变）
@@ -1822,7 +1822,7 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 | | 新环境（**推荐用它**，2026-10-01 建） | 老环境（2026-09-27 建） |
 | --- | --- | --- |
 | 地址 | **http://60.205.142.205:8080** | http://8.136.20.182:8088 |
-| SSH | `~/.ssh/xaxinan.top-北京.pem`（另一把密钥；`/mnt/c/Users/jiang/Downloads/chronocloud.top-杭州.pem` 拷来的） | `~/develop/workspace/chronocloud.top-杭州.pem` |
+| SSH | `~/.ssh/60.205.142.205-北京.pem`（另一把密钥；`/mnt/c/Users/jiang/Downloads/8.136.20.182-杭州.pem` 拷来的） | `~/develop/workspace/8.136.20.182-杭州.pem` |
 | 标识 | **新名字那套**：`/opt/chronoflow`、容器 `chronoflow-*`、库/用户 `chronoflow`、环境变量 `CHRONOFLOW_*`、jar `chronoflow-bootstrap-*.jar` | 旧名字那套：`/opt/xatodo`、`xatodo-*`、`XATODO_*`、`xa-bootstrap-*.jar` |
 | 前端 | **容器里的 nginx**（`chronoflow-web`，宿主 8080→容器 80） | 宿主 nginx（80/443 被宝塔占着，才用 8088） |
 | 机器 | Ubuntu 26.04，**2C/1.7G**（已加 2G swap） | Ubuntu 22.04，2C/3.4G |
@@ -1846,7 +1846,7 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 
 | 项 | 说明 |
 | --- | --- |
-| 机器 | 阿里云 ECS，Ubuntu 22.04，2C/3.4G，SSH 密钥 `~/develop/workspace/chronocloud.top-杭州.pem`（权限须 600） |
+| 机器 | 阿里云 ECS，Ubuntu 22.04，2C/3.4G，SSH 密钥 `~/develop/workspace/8.136.20.182-杭州.pem`（权限须 600） |
 | 编排 | `/opt/xatodo/`：`docker-compose.yml` + `backend/`（fat jar + Dockerfile）+ `web/dist/` + `.env`；源文件在仓库 `deploy/` |
 | 容器 | `xatodo-db`（postgres:16-alpine）、`xatodo-redis`、`xatodo-backend`（Temurin 21，`-Xmx512m`，只绑 `127.0.0.1:18080`） |
 | 前端 | 用**宿主 nginx**（80/443 被宝塔既有站点占着，另加 8088 站点，见 `deploy/nginx-host.conf` → `/etc/nginx/conf.d/xatodo.conf`） |
@@ -1880,13 +1880,13 @@ Python 侧的覆盖率棘轮常量在 `backend-python/tests/test_contract.py`，
 # 本机
 cd backend-java && JAVA_HOME=/home/jiang/tools/jdk-21.0.12.1+1 \
   /home/jiang/tools/apache-maven-3.9.16/bin/mvn -o -q -DskipTests package
-ssh -i ~/develop/workspace/chronocloud.top-杭州.pem root@8.136.20.182 \
+ssh -i ~/develop/workspace/8.136.20.182-杭州.pem root@8.136.20.182 \
   'cp -a /opt/xatodo/backend/xa-bootstrap-0.1.0-SNAPSHOT.jar /opt/xatodo/backend/jar.bak'
-scp -i ~/develop/workspace/chronocloud.top-杭州.pem \
+scp -i ~/develop/workspace/8.136.20.182-杭州.pem \
   backend-java/xa-bootstrap/target/xa-bootstrap-0.1.0-SNAPSHOT.jar \
   root@8.136.20.182:/opt/xatodo/backend/
 # 远端（注意：这台机器只有 docker-compose v1，没有 `docker compose` 子命令）
-ssh -i ~/develop/workspace/chronocloud.top-杭州.pem root@8.136.20.182 \
+ssh -i ~/develop/workspace/8.136.20.182-杭州.pem root@8.136.20.182 \
   'cd /opt/xatodo && docker-compose build backend && docker-compose up -d backend'
 ```
 
