@@ -88,8 +88,9 @@ export function RealNameScreen({ onBack, onVerified }: { onBack: () => void; onV
   }
 
   return (
-    <Screen style={styles.container}>
+    <Screen>
       <EditorHeader title="实名认证" cancelLabel="返回" onCancel={onBack} />
+      <View style={styles.body}>
       <Card>
         <Text style={{ color: theme.color.textSecondary, fontSize: 13, lineHeight: 20 }}>
           实名认证由阿里云实人认证完成：填写姓名与身份证号后，会打开一个人脸活体检测页面。
@@ -123,12 +124,14 @@ export function RealNameScreen({ onBack, onVerified }: { onBack: () => void; onV
         <View style={{ height: theme.spacing.lg }} />
         <PrimaryButton title="开始认证" onPress={() => void start()} loading={busy} disabled={!ready} />
       </Card>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { paddingHorizontal: 20 },
+  /** 内边距只给内容：页头必须通栏 */
+  body: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
   label: { fontSize: 13, marginBottom: 6 },
   input: { height: 48, borderWidth: 1, paddingHorizontal: 12, fontSize: 16, borderRadius: 10 },
 });

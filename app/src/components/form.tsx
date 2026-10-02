@@ -67,33 +67,47 @@ export function EditorHeader({
         </>
       ) : (
         <>
-      <Pressable accessibilityRole="button" accessibilityLabel="取消" onPress={onCancel} hitSlop={10}>
-        <Text style={{ color: theme.color.textSecondary, fontSize: 16 }}>{cancelLabel}</Text>
-      </Pressable>
-      <Text style={{ color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}>{title}</Text>
-    {onSave ? (
-      <Pressable
-      accessibilityRole="button"
-      // 无障碍标签跟随可见文案：反馈页是「提交」、选人页是「确定」，
-      // 一直念「保存」会让读屏用户不知道该按哪个
-      accessibilityLabel={saveLabel}
-      onPress={onSave}
-      disabled={dimmed}
-        hitSlop={10}
-      >
-        <Text
-          style={{
-            color: dimmed ? theme.color.textTertiary : theme.color.accent,
-            fontSize: 16,
-            fontWeight: '600',
-          }}
-        >
-          {saving ? savingLabel : saveLabel}
-        </Text>
-      </Pressable>
-    ) : (
-      <View style={{ width: 56 }} />
-    )}
+          {/*
+            两侧各固定 56px，标题占满中间并居中。
+
+            之前是 `space-between`：左右宽度不等（左边「返回」两个字的宽度 ≠ 右边「保存」），
+            标题就被挤得偏右——用户一眼看出「用户服务协议」没居中（2026-10-02 反馈）。
+          */}
+          <View style={styles.side}>
+            <Pressable accessibilityRole="button" accessibilityLabel={cancelLabel} onPress={onCancel} hitSlop={10}>
+              <Text style={{ color: theme.color.textSecondary, fontSize: 16 }}>{cancelLabel}</Text>
+            </Pressable>
+          </View>
+          <Text
+            numberOfLines={1}
+            style={{ flex: 1, textAlign: 'center', color: theme.color.textPrimary, fontSize: 16, fontWeight: '600' }}
+          >
+            {title}
+          </Text>
+          <View style={[styles.side, styles.sideRight]}>
+            {onSave ? (
+              <Pressable
+                accessibilityRole="button"
+                // 无障碍标签跟随可见文案：反馈页是「提交」、选人页是「确定」，
+                // 一直念「保存」会让读屏用户不知道该按哪个
+                accessibilityLabel={saveLabel}
+                onPress={onSave}
+                disabled={dimmed}
+                hitSlop={10}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: dimmed ? theme.color.textTertiary : theme.color.accent,
+                    fontSize: 16,
+                    fontWeight: '600',
+                  }}
+                >
+                  {saving ? savingLabel : saveLabel}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         </>
       )}
     </View>
@@ -353,6 +367,9 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  /** 页头左右两个固定宽度的槽位：等宽才能让中间标题真正居中 */
+  side: { width: 56, flexDirection: 'row', alignItems: 'center' },
+  sideRight: { justifyContent: 'flex-end' },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13 },
   rowBody: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
   segment: { flexDirection: 'row', borderWidth: 1, overflow: 'hidden' },

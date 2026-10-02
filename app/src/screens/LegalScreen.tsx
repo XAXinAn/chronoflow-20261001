@@ -36,7 +36,7 @@ export function LegalScreen({ doc, onBack }: { doc: LegalDoc; onBack: () => void
         title={entry.title}
         cancelLabel="返回"
         onCancel={onBack}
-        saveLabel="浏览器打开"
+        saveLabel="浏览器"
         onSave={openInBrowser}
       />
 

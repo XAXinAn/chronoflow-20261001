@@ -78,8 +78,9 @@ export function SettingsSectionScreen({
   }, [api, section]);
 
   return (
-    <Screen style={styles.container}>
+<Screen>
       <EditorHeader title={SETTINGS_SECTION_TITLES[section]} cancelLabel="返回" onCancel={onBack} />
+      <View style={styles.body}>
 
       {section === 'account' ? (
         <ListGroup>
@@ -233,6 +234,7 @@ export function SettingsSectionScreen({
           />
         </ListGroup>
       ) : null}
+      </View>
     </Screen>
   );
 }
@@ -257,6 +259,7 @@ function RowIcon({ name, tone = 'default' }: { name: string; tone?: 'default' | 
 }
 
 const styles = StyleSheet.create({
-  container: { paddingHorizontal: 20 },
+  /** 内边距只给内容：页头必须通栏（和「新建日程」一致） */
+  body: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
   rowIcon: { width: 36, alignItems: 'flex-start', justifyContent: 'center' },
 });
