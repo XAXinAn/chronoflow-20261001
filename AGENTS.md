@@ -2,7 +2,8 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-10-01（第十九轮：**端侧 OCR 换成 PaddleOCR PP-OCRv4，流水线已接上** + 新验收包 0.0.2）
+> 最后更新：2026-10-02（第二十轮：**两次闪退的真因揪出来了（原生模块没注册 / 麦克风权限被删）+
+> 实名认证与邮箱绑定打通 + 「我的」页改成分类入口**；线上 0.0.6）
 >
 > ⚠️ **本文件下方的历史段落里出现的 `xa-*` / `xatodo` / `XATODO_*` 是改名前的旧标识，保留原文不改**
 > （那是当时的现场记录，改了就成假历史）。**当前代码里已经没有这些标识**，新写的东西一律用
@@ -14,6 +15,82 @@
 > 两版后端、Web 组织管理端与 App 都已对齐。改动前先读 §0.0 第九轮摘要。
 
 ---
+
+## 0.0 本次交接摘要（2026-10-02，第二十轮：闪退真因 + 实名/邮箱打通 + 我的页改版）
+
+### 一句话状态
+
+线上是 **0.0.6（versionCode 7）**，桌面同版本 `chronoflow-0.0.6.apk`。这一轮把用户报的
+**三次闪退 / 一次权限缺失 / 一次界面返工**逐条查清并修掉，同时把**实名认证 + 邮箱绑定**
+从零做到「后端已部署、端点已验证、App 页面已接上」。
+⚠️ **最需要接着做的一件事**：真机上确认「点上传图片」不再闪退、识别准不准（下面「待验证」）。
+
+### 用户报的问题 → 真因 → 修法（这一轮最值钱的部分）
+
+| 反馈 | 真因（都有日志/清单证据） | 修法 |
+| --- | --- | --- |
+| 0.0.2「一打开就闪退」 | 16KB 页机型 + `libonnxruntimejsi.so` 是 4KB 对齐（真问题）；**但真正杀进程的是下面这条** | `patch-third-party-gradle.sh` 补 `-Wl,-z,max-page-size=16384`；`build_apk.sh` 构建后**硬卡**包内所有 `.so` 的对齐 |
+| 0.0.5「点上传图片就闪退」 | **`onnxruntime-react-native` 没被自动链接进 `PackageList`** → `NativeModules.Onnxruntime` 是 null → 该包在模块初始化时执行 `NativeModules.Onnxruntime.install()` 抛 `TypeError` → **release 包里 RN 把「模块加载期异常」当致命错误直接杀进程**（JS 的 try/catch 救不回来） | 新增 `plugins/withOnnxRuntime.js`：手工做自动链接漏掉的三件事（settings.gradle 引入工程、app/build.gradle 加依赖、MainApplication 里 `add(OnnxruntimePackage())`）；另外在 `register.ts` 里 **import 之前先判 `NativeModules.Onnxruntime`**，缺失就如实报「本地识别库没就绪」 |
+| 「权限管理里没有麦克风」 | `app.json` 里 expo-image-picker 的 `"microphonePermission": false` 会让插件往原生清单写 `<uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>` —— **构建期整条删掉**。所以小安「长按说话」在 release 包里一直不可能工作 | 去掉那个 `false`；已用 `aapt2 dump permissions` 核对新包含 `RECORD_AUDIO` |
+| 「获取验证码时提交按钮一起转圈」 | 登录页两个按钮共用一个 `busy`（0.0.1 起就有） | 拆成两个状态；判定抽成 `domain/loginForm.ts` 纯函数 + 5 项单测（「转圈只出现在被点的按钮上」） |
+| 「关于里版本还是 0.0.1」 | `domain/legal.ts` 里手写的 `APP_VERSION = '0.0.1'` 早就不跟版本走了 | 删掉常量，改成读真机实际版本（`expo-constants`） |
+| 「我的页太挤、分类应该当入口」 | 一页堆了 5 组共十几行 | 「我的」页改成 **5 个分类入口**（账号与安全 / 偏好 / 支持 / 隐私与合规 / 关于），点进去是该类的子页；退出登录留在主页 |
+
+### 实名认证 + 邮箱绑定（本轮新功能，后端已上线）
+
+**方案**（用户拍板）：实名走**阿里云 CloudAuth 金融级实人认证**（`ID_PRO`：姓名 + 身份证 + 活体），
+App 端用 **H5（WebView 打开 certifyUrl）**，不用老项目那套 Flutter 原生 SDK；
+邮箱走**阿里云 DirectMail**（`noreply@xaxinan.top`，别名「时纪流」）；两个都**登录后可选**。
+老项目（`XAXinAn/ChronoFlow` develop 分支）里这两件事都做过，技术路线照抄，产品口径按新需求。
+
+| 层 | 落点 | 状态 |
+| --- | --- | --- |
+| 迁移 | `V20__real_name_verification.sql`：`account` 加 `real_name / id_card_cipher(AES-GCM) / id_card_fingerprint(HMAC，唯一) / real_name_verified / real_name_verified_at`。**邮箱不用改表**（V2 已有 `email` + `email_verified_at` + 唯一索引） | ✅ |
+| Java | `RealNameService`（InitFaceVerify → DescribeFaceVerify，不引 SDK、复用既有阿里云 RPC 签名）、`EmailCodeService`（发码/校验/60s 频控）、`mail/*`（DirectMail 三种通道）、`me/security`+`me/email/code`+`me/email`+`me/realname`+`me/realname/result` | ✅ 编译通过，**已部署到演示服务器**（未带令牌返回 401/20001 = 路由存在） |
+| Python | `app/services/security.py` + `routers/me.py` 五个端点，同签名算法、AES-GCM、Redis 频控 | ✅ 应用可加载；**测试套件本机没跑起来**（缺嵌入式 PG/Redis） |
+| 契约 | `contract/api-contract.json` **118 条端点**（新增 5 条） | ✅ 合规门禁 20 项（`--strict`）全绿 |
+| App | 接口客户端 + `AccountSecurityScreen`（实名 H5 + 邮箱绑定入口）+ `EmailBindScreen` + 「我的」页入口 | ✅ typecheck + 280 项测试 |
+| 服务器配置 | `.env` 与 `docker-compose.yml` 补 `ALIYUN_DM_*`、`ALIYUN_CLOUDAUTH_*`（**SceneId `1000018914`**）、`MAIL_PROVIDER=aliyun`、`CHRONOFLOW_IDENTITY_SECRET`（随机生成，身份证加密根密钥） | ✅ 容器 `printenv` 验证 |
+| 合规 | 双清单新增「邮件推送」「实人认证」两条数据流；**改掉「我们不会收集身份证件号码、人脸」这句话**（实名恰恰涉及），写明可选、身份证号加密保存、人脸在阿里云页面完成 | ✅ |
+
+### 部署链路（这一轮补齐的）
+
+演示服务器 `60.205.142.205`：后端是 **`/opt/chronoflow/backend/` + Dockerfile + jar**，compose 从那里构建。
+发新版后端 = 本地 `mvn -o package -DskipTests`（Java 21）→ scp jar 到那个目录 → `docker compose up -d --build backend`。
+⚠️ 这台是 **`docker compose`（v2 插件）**，没有 `docker-compose`（老服务器 8.136.20.182 才是旧的）。
+App 发布 = `scripts/publish_apk.sh` 传包 + 改 `.env` 的 9 行 `CHRONOFLOW_APP_RELEASE_*` + 重启后端，
+每次改动前都留了 `/opt/chronoflow/.env.bak.*` 备份。
+
+### 待验证 / 未做（下一个人从这里接）
+
+1. **真机验 0.0.6**：①「点上传图片」是否还闪退；②OCR 识别率与耗时（ML Kit 基线 1.5–1.7s）。
+   如果还崩，让用户跑：
+   `C:\Users\jiang\AppData\Local\Android\Sdk\platform-tools\adb.exe logcat -d -b crash > %USERPROFILE%\Desktop\crash.txt`
+   —— OCR 那条链路**至今没有在任何设备上真正跑通过**（模拟器没法登录，真机只跑到崩溃为止）。
+2. **实名认证真机验**：需要真人脸 + 阿里云计费；另外要确认那把 RAM 子账号**是否开了 CloudAuth 权限**，
+   以及 SceneId 与实际产品是否匹配（没开权限时第一次调用会报权限错误，日志里能看出来）。
+   建议先只验邮箱那条链路（更便宜）。
+3. **后端两版的测试没跑**：Java 只做了编译 + 部署冒烟（401）；Python 测试套件本机起不来
+   （`scripts/setup-test-deps.sh` 的嵌入式 PG/Redis 没装）。上线前建议补跑一遍。
+4. **iOS 只能到「代码就绪」**（出包要 macOS）。
+5. **APK 166MB 没瘦身**（上一轮就记着，仍未选路线）。
+6. **5 个提交还没 push `origin/main`**。
+
+### 这一轮新增的坑（都踩过、都有代价）
+
+1. **`EXPO_PUBLIC_*` 环境变量在 Gradle 触发的打包里不生效**（值会变成 `undefined`）——
+   想做出包开关就用 `app.json` 的 `extra`；而且 **`app.config` 是 prebuild 时嵌进包的**，
+   改完 `app.json` **必须重跑 `expo prebuild`**，否则 `Constants.expoConfig` 里还是旧值。
+2. **调试入口要放在「同意隐私政策之后」的树里**：新装包停在同意页时，那些 effect 根本不会跑，
+   会让人误判「自检没生效」。这一轮我在这上面白花了三四次出包。
+3. **模块加载期的异常在 release 包里是致命的**：可选的原生功能（OCR、推送…）在 `import` 之前
+   先判 `NativeModules.XXX` 在不在，否则一个没接好的可选依赖能让整个 App 打不开。
+4. **Expo 自动链接会漏包，且 `react-native.config.js` 也救不了**：这一轮是
+   `onnxruntime-react-native`（Java 类进了 dex、`.so` 也在，就是没进 `PackageList`）。
+   遇到「原生模块是 null」先看 `PackageList.java` 里有没有它。
+5. 本机没有 `unzip`；查 APK 内容用 `python3 -c "import zipfile; …"`。
+   `aapt2 dump badging/permissions` 需要 `JAVA_HOME=/home/jiang/tools/jdk-17`。
+   Gradle 要写 `~/.gradle`，在受限沙箱里跑会报「初始化不了 native services」，要放行。
 
 ## 0.0 本次交接摘要（2026-10-01，第十九轮：端侧 OCR 迁向 PaddleOCR，进行中）
 
