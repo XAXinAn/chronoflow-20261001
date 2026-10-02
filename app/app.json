@@ -2,7 +2,7 @@
   "expo": {
     "name": "时纪流",
     "slug": "chronoflow",
-    "version": "0.0.5",
+    "version": "0.0.6",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.chronoflow.frontend",
-      "versionCode": 6,
+      "versionCode": 7,
       "edgeToEdgeEnabled": true,
       "permissions": [
         "ACCESS_COARSE_LOCATION",
@@ -40,8 +40,7 @@
         "expo-image-picker",
         {
           "photosPermission": "用于选择头像、为待办或意见反馈添加图片",
-          "cameraPermission": "用于拍一张日程通知/行程单，在手机本地识别成日程草稿",
-          "microphonePermission": false
+          "cameraPermission": "用于拍一张日程通知/行程单，在手机本地识别成日程草稿"
         }
       ],
       [
@@ -61,6 +60,7 @@
         }
       ],
       "./plugins/withCleartextHttp",
+      "./plugins/withOnnxRuntime",
       [
         "expo-splash-screen",
         {
@@ -76,8 +76,8 @@
       ],
       "onnxruntime-react-native"
     ],
-    "extra": {
-      "apiBaseUrl": "http://60.205.142.205:8080"
-    }
+  "extra": {
+    "apiBaseUrl": "http://60.205.142.205:8080"
   }
+}
 }

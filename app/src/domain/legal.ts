@@ -47,6 +47,3 @@ export function legalUrl(baseUrl: string, doc: LegalDoc): string {
  * 会检查文档侧，这里由 `docs/legal/README.md` 的发版清单兜底。
  */
 export const OPERATOR_NAME = '舟山市时纪云人工智能应用软件开发有限公司';
-
-/** App 版本号，与 app.json 的 expo.version 保持一致（应用内更新按 versionCode 比较，这里只是展示）。 */
-export const APP_VERSION = '0.0.1';

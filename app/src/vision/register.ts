@@ -21,6 +21,7 @@
  */
 
 import { DeviceRecognitionUnavailable, registerOcrEngine, type OcrEngine } from './onDevice';
+import { NativeModules } from 'react-native';
 
 /** 引擎开关：`paddle` = PaddleOCR PP-OCRv4（默认），`mlkit` = Google ML Kit 中文。 */
 const ENGINE: 'paddle' | 'mlkit' = 'paddle';
@@ -57,6 +58,22 @@ async function importEngine(): Promise<OcrEngine> {
     if (ENGINE === 'mlkit') {
       const { mlkitOcrEngine } = await import('./mlkitOcr');
       return mlkitOcrEngine;
+    }
+    /*
+     * **先看原生模块在不在，再 import**。
+     *
+     * `onnxruntime-react-native` 在模块初始化时会执行 `NativeModules.Onnxruntime.install()`；
+     * 如果这个原生模块没被注册（自动链接漏了、或这台设备没带这个库），它抛的是 TypeError，
+     * 而 release 包里 RN 会把「模块加载阶段的异常」当**致命错误直接杀进程**——
+     * JS 的 try/catch 拦不住（异常已经被 ExceptionsManager 上报了）。
+     *
+     * 代价就是 2026-10-01/02 那两次闪退：一次在启动、一次在点「上传图片」。
+     * 所以这里提前判一下：没有原生模块就**不 import**，让这个功能如实报「不可用」。
+     */
+    if (NativeModules.Onnxruntime == null) {
+      throw new DeviceRecognitionUnavailable(
+        '这个安装包里的本地识别库没就绪（请更新到最新版本）',
+      );
     }
     const { paddleOcrEngine } = await import('./paddleOcr');
     return paddleOcrEngine;

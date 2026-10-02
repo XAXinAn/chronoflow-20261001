@@ -18,6 +18,7 @@ import {
 import { createRuntime } from './runtime';
 import { buildConsentRecord, hasAcceptedPolicy } from './domain/consent';
 import { registerBundledOcrEngine } from './vision/register';
+import { warmUpOcrEngine } from './vision/onDevice';
 import { AppUpdateProvider } from './updater/AppUpdater';
 import { createSecureConsentStore, type ConsentStore } from './auth/consentStore';
 import { migrateLegacyStorage } from './auth/storageMigration';
@@ -41,6 +42,7 @@ import { PrivacyConsentScreen } from './screens/PrivacyConsentScreen';
 import { RecurrencePickerScreen } from './screens/RecurrencePickerScreen';
 import { ReminderPickerScreen } from './screens/ReminderPickerScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import Constants from 'expo-constants';
 import { AccountSecurityScreen } from './screens/AccountSecurityScreen';
 import { TaskEditorScreen } from './screens/TaskEditorScreen';
 import { TasksScreen } from './screens/TasksScreen';
@@ -332,6 +334,21 @@ function MainStack() {
    */
   useEffect(() => {
     registerBundledOcrEngine();
+    /*
+     * 端侧 OCR 自检开关（**默认关**，出包时用环境变量打开）：
+     *
+     *   EXPO_PUBLIC_OCR_SELF_TEST=1 bash scripts/build_apk.sh --release ...
+     *
+     * 打开后启动就把引擎（下载模型 + 建 ONNX session）跑一遍并打日志——OCR 那条链路在
+     * 「登录后的日历页」，而真机上的问题（例如点上传图片闪退）恰恰只在这条链路上出现，
+     * 模拟器上又没法登录，所以需要一个不依赖登录的复现入口。
+     */
+    if (process.env.EXPO_PUBLIC_OCR_SELF_TEST === '1' || Constants.expoConfig?.extra?.ocrSelfTest === true) {
+      void warmUpOcrEngine().then(
+        () => console.log('[vision] OCR 自检：引擎加载流程结束'),
+        (cause) => console.log(`[vision] OCR 自检异常：${String(cause)}`),
+      );
+    }
   }, []);
 
   /**
