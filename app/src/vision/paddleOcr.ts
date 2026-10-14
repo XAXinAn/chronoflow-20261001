@@ -24,9 +24,16 @@ import recModelAsset from '../../assets/models/ppocr/ch_PP-OCRv4_rec_infer.onnx'
 import keyAsset from '../../assets/models/ppocr/ppocr_keys_v1.txt';
 import type { OcrEngine } from './onDevice';
 import { buildCharacterList } from './ppocr/charset';
-import { readCroppedRgba, readImageSize, readScaledRgba } from './ppocr/imageIo';
+import { readCroppedRgba, readImageSize, readScaledRgba, rotateImage } from './ppocr/imageIo';
 import { createOcrSession, type TimedOcrSession } from './ppocr/ortRunner';
 import { recognizeLines, type OcrImageSource, type OcrLine } from './ppocr/pipeline';
+import {
+  isReadable,
+  pickBestReading,
+  ROTATION_ATTEMPTS,
+  type OrientationReading,
+  type RotationDegrees,
+} from './ppocr/orientation';
 
 /** 取像素的三个动作包成流水线要的形状；原生调用全在 `imageIo.ts` 里。 */
 const imageSource: OcrImageSource = {
@@ -124,6 +131,14 @@ function formatLines(lines: OcrLine[]): string {
     .trim();
 }
 
+/** 各行置信度的平均；一行都没有时是 0（用于「这次朝向认得好不好」的比较）。 */
+function meanConfidence(lines: OcrLine[]): number {
+  if (lines.length === 0) {
+    return 0;
+  }
+  return lines.reduce((sum, line) => sum + line.confidence, 0) / lines.length;
+}
+
 export const paddleOcrEngine: OcrEngine = {
   name: () => 'PaddleOCR PP-OCRv4',
 
@@ -143,15 +158,44 @@ export const paddleOcrEngine: OcrEngine = {
     const { session, characters } = await ensureReady();
     const before = { ...session.timings };
     try {
-      const lines = await recognizeLines(uri, { image: imageSource, session, characters });
+      /**
+       * 先按原朝向跑一次；**几乎认不出字**时把整图转 90 / 270 度再试。
+       *
+       * <p>为什么需要：竖屏手机拍横屏内容、或在相册里把照片转过，整图是横躺的，
+       * 检测出来的框全是竖条，逐框的 180 度方向分类救不回来 —— 用户看到的就是
+       * 「一个字都认不出」。这不是「图里没有字」，是朝向不对。
+       * 正着的图第一次就过，不增加耗时；横躺的图最多多跑一次。
+       * 选取与阈值是纯逻辑，见 `ppocr/orientation.ts`（有单测）。
+       */
+      const readings: OrientationReading[] = [];
+      const texts = new Map<RotationDegrees, string>();
+      for (const degrees of ROTATION_ATTEMPTS) {
+        const targetUri = degrees === 0 ? uri : await rotateImage(uri, degrees);
+        const lines = await recognizeLines(targetUri, { image: imageSource, session, characters });
+        const text = formatLines(lines);
+        texts.set(degrees, text);
+        const reading: OrientationReading = {
+          degrees,
+          chars: text.replace(/\s+/g, '').length,
+          confidence: meanConfidence(lines),
+        };
+        readings.push(reading);
+        if (isReadable(reading)) {
+          break;
+        }
+      }
+      const best = pickBestReading(readings);
+      const chosen = best?.degrees ?? 0;
       const elapsed = Date.now() - started;
       console.log(
-        `[vision] PaddleOCR 端侧：检测 ${session.timings.detectMs - before.detectMs}ms`
-        + `（${lines.length} 行，方向分类 ${session.timings.classifyMs - before.classifyMs}ms）`
+        `[vision] PaddleOCR 端侧：采用朝向 ${chosen}°，认字 ${best?.chars ?? 0} 个`
+        + `（尝试 ${readings.map((item) => `${item.degrees}°:${item.chars}字`).join(' / ')}）；`
+        + `检测 ${session.timings.detectMs - before.detectMs}ms`
+        + `（方向分类 ${session.timings.classifyMs - before.classifyMs}ms）`
         + ` → 识别 ${session.timings.recognizeMs - before.recognizeMs}ms`
         + `（${session.timings.recognizeCalls - before.recognizeCalls} 行）→ 合计 ${elapsed}ms`,
       );
-      return formatLines(lines);
+      return texts.get(chosen as RotationDegrees) ?? '';
     } catch (cause) {
       // 认错字可以忍，「一个字都没读出来还假装成功」不行：这里如实抛给界面
       const detail = cause instanceof Error ? cause.message : String(cause);

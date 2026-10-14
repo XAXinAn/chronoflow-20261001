@@ -53,6 +53,15 @@ export async function readCroppedRgba(
 }
 
 /** 只取原图尺寸（检测输入规划要用）。 */
+export async function rotateImage(uri: string, degrees: 90 | 180 | 270): Promise<string> {
+  // 用原生旋转把整图转正，而不是自己搬像素：整图有几十万像素，纯 JS 搬一遍又慢又多一份内存
+  const result = await manipulateAsync(uri, [{ rotate: degrees }], {
+    compress: 1,
+    format: SaveFormat.JPEG,
+  });
+  return result.uri;
+}
+
 export async function readImageSize(uri: string): Promise<{ width: number; height: number }> {
   // 用一次「缩放到 1 像素」问出尺寸太浪费；manipulateAsync 带 metadata 的能力在
   // expo-image-manipulator 里没有，所以这里用一个极小的 resize 也不合适 ——
