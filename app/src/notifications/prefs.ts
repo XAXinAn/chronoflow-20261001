@@ -1,3 +1,5 @@
+import { DEFAULT_REMINDER_SOUND, parseReminderSound, type ReminderSound } from './sound';
+
 /**
  * 通知总开关（spec §4.5「用户在设置 - 通知中可按类型开关」）。
  *
@@ -14,9 +16,17 @@ const STORAGE_KEY = 'chronoflow.notification-prefs';
 export interface NotificationPrefs {
   /** 到点提醒总开关（本地通知） */
   enabled: boolean;
+  /**
+   * 提醒声音档位（spec §4.5）。默认「系统提示音」：既然是用户主动开的提醒，
+   * 默认就该听得见；想安静的可以自己切「静音」。
+   */
+  sound: ReminderSound;
 }
 
-export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { enabled: false };
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  enabled: false,
+  sound: DEFAULT_REMINDER_SOUND,
+};
 
 export interface NotificationPrefsStore {
   read: () => Promise<NotificationPrefs>;
@@ -29,10 +39,12 @@ export function parseNotificationPrefs(raw: string | null): NotificationPrefs {
     return { ...DEFAULT_NOTIFICATION_PREFS };
   }
   try {
-    const parsed = JSON.parse(raw) as { enabled?: unknown };
+    const parsed = JSON.parse(raw) as { enabled?: unknown; sound?: unknown };
     return {
       enabled:
         typeof parsed.enabled === 'boolean' ? parsed.enabled : DEFAULT_NOTIFICATION_PREFS.enabled,
+      // 老版本只存了 enabled，没有 sound：补默认值而不是丢掉整条记录
+      sound: parseReminderSound(parsed.sound),
     };
   } catch {
     return { ...DEFAULT_NOTIFICATION_PREFS };

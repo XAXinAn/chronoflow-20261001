@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { EditorHeader } from '../components/form';
+import { EditorHeader, SegmentedControl } from '../components/form';
 import { Chevron, ListGroup, ListRow, ListSeparator } from '../components/list';
 import { Screen } from '../components/ui';
 import { useAppScheme, useAppSessionState, useAppTheme, useRuntime } from '../context/AppContext';
+import { useFeatureFlags } from '../context/featureFlags';
 import { useAppUpdate } from '../updater/AppUpdater';
 import { LEGAL_DOCS, OPERATOR_NAME, type LegalDoc } from '../domain/legal';
 import { maskPhone } from '../domain/profile';
+import { refreshLocalReminders } from '../notifications/actions';
+import { describeReminderSound, type ReminderSound } from '../notifications/sound';
 
 /** 「我的」页的五个分类。**每一个都是独立路由**（`SettingsSection`），不是在同一页里换内容。 */
 export type SettingsSectionKey = 'account' | 'preferences' | 'support' | 'legal' | 'about';
@@ -53,7 +56,13 @@ export function SettingsSectionScreen({
   const scheme = useAppScheme();
   const { check: checkUpdate, currentVersionName } = useAppUpdate();
   const { toggleScheme, notificationEnabled, setNotificationEnabled } = useAppSessionState();
-  const { api } = useRuntime();
+  const { reminderSound, setReminderSound } = useAppSessionState();
+  const { api, reminders } = useRuntime();
+  /**
+   * 后台「全局配置」里的功能开关（spec §5.7）：关掉哪个入口，这里就不渲染哪一行。
+   * 读不到按开（见 domain/features），所以断网时行为与以前完全一致。
+   */
+  const features = useFeatureFlags();
   /** 账号与安全那一屏要显示「已实名 / 未绑定」这类状态，进这一屏时拉一次 */
   const [security, setSecurity] = useState<{
     phone: string;
@@ -89,18 +98,22 @@ export function SettingsSectionScreen({
 
       {section === 'account' ? (
         <ListGroup>
-          <ListRow
-            leading={<RowIcon name="shield-checkmark-outline" />}
-            title="实名认证"
-            subtitle={
-              security?.realNameVerified
-                ? `已实名${security.realName ? ` · ${maskName(security.realName)}` : ''}`
-                : '未认证（可选，认证后可用于找回账号）'
-            }
-            onPress={onOpenRealName}
-            trailing={<Chevron />}
-          />
-          <ListSeparator inset={52} />
+          {features.realName ? (
+            <>
+              <ListRow
+                leading={<RowIcon name="shield-checkmark-outline" />}
+                title="实名认证"
+                subtitle={
+                  security?.realNameVerified
+                    ? `已实名${security.realName ? ` · ${maskName(security.realName)}` : ''}`
+                    : '未认证（可选，认证后可用于找回账号）'
+                }
+                onPress={onOpenRealName}
+                trailing={<Chevron />}
+              />
+              <ListSeparator inset={52} />
+            </>
+          ) : null}
           <ListRow
             leading={<RowIcon name="call-outline" />}
             title="手机号"
@@ -108,14 +121,18 @@ export function SettingsSectionScreen({
             onPress={onOpenPhoneChange}
             trailing={<Chevron />}
           />
-          <ListSeparator inset={52} />
-          <ListRow
-            leading={<RowIcon name="mail-outline" />}
-            title="邮箱"
-            subtitle={security?.email ? security.email : '未绑定（用于接收通知与找回账号）'}
-            onPress={onOpenEmail}
-            trailing={<Chevron />}
-          />
+          {features.emailBinding ? (
+            <>
+              <ListSeparator inset={52} />
+              <ListRow
+                leading={<RowIcon name="mail-outline" />}
+                title="邮箱"
+                subtitle={security?.email ? security.email : '未绑定（用于接收通知与找回账号）'}
+                onPress={onOpenEmail}
+                trailing={<Chevron />}
+              />
+            </>
+          ) : null}
           <ListSeparator inset={52} />
           <ListRow
             leading={<RowIcon name="trash-outline" tone="danger" />}
@@ -163,18 +180,56 @@ export function SettingsSectionScreen({
               />
             }
           />
+          <ListSeparator inset={52} />
+          {/*
+            提醒声音（spec §4.5）。Android 的渠道声音建好之后改不了，所以改档位 =
+            之后的提醒换一个渠道；这里顺便**重排一次**本机排期，
+            否则用户改完还要等下次回到前台才生效，看起来就像「改了没用」。
+          */}
+          <ListRow
+            leading={<RowIcon name="musical-notes-outline" />}
+            title="提醒声音"
+            subtitle={
+              notificationEnabled
+                ? describeReminderSound(reminderSound)
+                : '到点提醒已关闭，这里的选择会在打开后生效'
+            }
+            trailing={
+              <SegmentedControl<ReminderSound>
+                label="提醒声音"
+                options={[
+                  { value: 'silent', label: '静音' },
+                  { value: 'default', label: '提示音' },
+                  { value: 'alarm', label: '闹钟' },
+                ]}
+                value={reminderSound}
+                onChange={(next) => {
+                  setReminderSound(next);
+                  void refreshLocalReminders({
+                    api,
+                    scheduler: reminders,
+                    enabled: notificationEnabled,
+                  });
+                }}
+              />
+            }
+          />
         </ListGroup>
       ) : null}
 
       {section === 'support' ? (
         <ListGroup>
-          <ListRow
-            leading={<RowIcon name="chatbubble-ellipses-outline" />}
-            title="意见反馈"
-            onPress={onOpenFeedback}
-            trailing={<Chevron />}
-          />
-          <ListSeparator inset={52} />
+          {features.feedback ? (
+            <>
+              <ListRow
+                leading={<RowIcon name="chatbubble-ellipses-outline" />}
+                title="意见反馈"
+                onPress={onOpenFeedback}
+                trailing={<Chevron />}
+              />
+              <ListSeparator inset={52} />
+            </>
+          ) : null}
           {/*
             手动检查更新（spec §4.1.11）：启动时已静默查过一次，这里是「我就是要现在查」——
             它**一定会给反馈**：有新版本弹更新说明，没有就明确说「已是最新版本」。

@@ -24,6 +24,8 @@ import com.chronoflow.auth.service.EmailCodeService;
 import com.chronoflow.auth.service.RealNameService;
 import com.chronoflow.auth.service.VerificationCodeService;
 import com.chronoflow.common.api.ApiResponse;
+import com.chronoflow.common.api.ErrorCode;
+import com.chronoflow.common.exception.BizException;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -82,7 +84,8 @@ public class MeController {
     /** 给要绑定的邮箱发验证码（阿里云 DirectMail）。 */
     @PostMapping("/email/code")
     public ApiResponse<EmailCodeResponse> sendEmailCode(@Valid @RequestBody SendEmailCodeRequest request) {
-        EmailCodeService.SendResult result = emailCodeService.send(normalizeEmail(request.email()));
+        EmailCodeService.SendResult result =
+                emailCodeService.send(normalizeEmail(request.email()), EmailCodeService.Scene.BIND);
         return ApiResponse.ok(new EmailCodeResponse(result.expiresIn(), result.debugCode()));
     }
 
@@ -99,16 +102,47 @@ public class MeController {
     }
 
     /**
-     * 换绑手机号第二步：**旧号与新号的验证码都校验**，通过才改。
+     * 旧手机号不能用时的替代验证：给**当前账号已绑定的邮箱**发码。
      *
-     * <p>为什么两个都要：只验新号的话，任何拿到 access token 的人都能把手机号换成自己的，
-     * 等于把账号偷走。旧号验证证明是本人，新号验证证明新号码可用。
+     * <p>邮箱只从库里取，不接受客户端传参；没绑定邮箱就如实让用户先去绑定。
+     */
+    @PostMapping("/phone/email-code")
+    public ApiResponse<EmailCodeResponse> sendPhoneChangeEmailCode() {
+        IdentityPrincipal principal = CurrentIdentity.require();
+        AccountSecurityView view = accountSecurity.view(principal.accountId());
+        if (!view.emailVerified() || view.email() == null || view.email().isBlank()) {
+            throw BizException.of(ErrorCode.PARAM_INVALID,
+                    "账号还没有绑定邮箱，请先绑定邮箱后再用这种方式换号");
+        }
+        EmailCodeService.SendResult result =
+                emailCodeService.send(view.email(), EmailCodeService.Scene.PHONE_CHANGE);
+        return ApiResponse.ok(new EmailCodeResponse(result.expiresIn(), result.debugCode()));
+    }
+
+    /**
+     * 换绑手机号第二步：新号验证码必验，「本人验证」用旧号验证码或邮箱验证码（二选一）。
+     *
+     * <p>为什么要证明本人：只验新号的话，任何拿到 access token 的人都能把手机号换成自己的，
+     * 等于把账号偷走。旧号还在用就发旧号；旧号丢了就用已绑定邮箱——两者**恰好给一个**，
+     * 都给或都不给都拒绝，避免出现「验了哪个」含糊不清的中间态。
      */
     @PostMapping("/phone")
     public ApiResponse<AccountSecurityView> changePhone(@Valid @RequestBody ChangePhoneRequest request) {
         IdentityPrincipal principal = CurrentIdentity.require();
-        String oldPhone = accountSecurity.view(principal.accountId()).phone();
-        smsCodeService.verify(oldPhone, request.oldCode());
+        AccountSecurityView view = accountSecurity.view(principal.accountId());
+        boolean hasOldCode = hasText(request.oldCode());
+        boolean hasEmailCode = hasText(request.emailCode());
+        if (hasOldCode == hasEmailCode) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "请提供旧手机号验证码或邮箱验证码（二选一）");
+        }
+        if (hasEmailCode) {
+            if (!view.emailVerified() || view.email() == null || view.email().isBlank()) {
+                throw BizException.of(ErrorCode.PARAM_INVALID, "账号还没有绑定邮箱，无法用邮箱验证");
+            }
+            emailCodeService.verify(view.email(), EmailCodeService.Scene.PHONE_CHANGE, request.emailCode());
+        } else {
+            smsCodeService.verify(view.phone(), request.oldCode());
+        }
         smsCodeService.verify(request.newPhone().trim(), request.newCode());
         return ApiResponse.ok(accountSecurity.changePhone(principal.accountId(), request.newPhone()));
     }
@@ -117,7 +151,7 @@ public class MeController {
     @PostMapping("/email")
     public ApiResponse<AccountSecurityView> bindEmail(@Valid @RequestBody BindEmailRequest request) {
         String email = normalizeEmail(request.email());
-        emailCodeService.verify(email, request.code());
+        emailCodeService.verify(email, EmailCodeService.Scene.BIND, request.code());
         return ApiResponse.ok(accountSecurity.bindEmail(CurrentIdentity.require().accountId(), email));
     }
 
@@ -137,6 +171,10 @@ public class MeController {
     /** 邮箱统一小写去空格：验证码按邮箱存、绑定也按邮箱查，两处不一致就会出现「码对了却绑不上」。 */
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     @GetMapping

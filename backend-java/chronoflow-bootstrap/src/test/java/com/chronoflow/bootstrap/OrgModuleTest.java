@@ -3,6 +3,11 @@ package com.chronoflow.bootstrap;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,8 +24,11 @@ import org.springframework.mock.web.MockMultipartFile;
 import redis.embedded.RedisServer;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -409,6 +417,48 @@ class OrgModuleTest {
         // xlsx 是 zip 容器，文件头魔数为 PK
         assertThat(template[0]).isEqualTo((byte) 'P');
         assertThat(template[1]).isEqualTo((byte) 'K');
+    }
+
+    @Test
+    @DisplayName("模板的示例行与表头逐列对齐，而且能直接导入成功")
+    void importTemplateSampleRowIsAlignedAndImportable() throws Exception {
+        Fixture fixture = seedOrg("TPLSAMPLE", "13700001222");
+
+        byte[] template = mockMvc.perform(get("/api/v1/org-admin/members/import/template")
+                        .header("Authorization", "Bearer " + fixture.ownerToken()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+
+        /*
+         * 模板的示例行曾经塞了 6 个值（姓名/手机号/邮箱/工号/部门/角色）进 4 列表头，
+         * 用户照模板填出来的每一行都是错列的 —— 表现就是「怎么导都不成功」。
+         * 这里把示例行**原样**拿去导入（开自动建部门），必须成功 1 行，
+         * 这样「模板自身可用」这件事被钉在测试里。
+         */
+        List<String> sample = new ArrayList<>();
+        try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(template))) {
+            Sheet sheet = workbook.getSheetAt(0);
+            Row header = sheet.getRow(0);
+            Row row = sheet.getRow(1);
+            assertThat(header.getLastCellNum()).isEqualTo((short) 4);
+            assertThat(row.getLastCellNum())
+                    .as("示例行必须与表头列数一致，否则照模板填必然错列")
+                    .isEqualTo((short) 4);
+
+            DataFormatter formatter = new DataFormatter();
+            for (int i = 0; i < 4; i++) {
+                sample.add(formatter.formatCellValue(row.getCell(i)));
+            }
+        }
+
+        String csv = "姓名,成员唯一识别 ID（学号/工号）,部门路径,角色\n"
+                + String.join(",", sample) + "\n";
+        long batchId = uploadMembers(fixture.ownerToken(), "from-template.csv", csv, true)
+                .path("data").path("batchId").asLong();
+        JsonNode finished = awaitImport(fixture.ownerToken(), batchId);
+        assertThat(finished.path("data").path("successCount").asInt())
+                .as("用模板示例行导入的结果: %s", finished.path("data").toString())
+                .isEqualTo(1);
     }
 
     @Test

@@ -326,6 +326,10 @@ class AdminService:
             ),
             {"phone": phone or None, "status": status or None, "limit": min(max(limit, 1), 200)},
         ).mappings().all()
+        return self._account_views(rows)
+
+    def _account_views(self, rows) -> list[dict]:
+        """把 account 行组装成带 identities 的响应（列表与按 id 取单条共用）。"""
         result = []
         for account in rows:
             identities = self._session.execute(
@@ -380,8 +384,27 @@ class AdminService:
             from ..config import settings
 
             _revocation_store().revoke(account_id, settings.access_token_ttl)
+        else:
+            # 解封必须**清掉**那条作废标记：否则它会活到 TTL 过期，
+            # 期间该账号的每个请求仍被判成 20008「账号已停用」——
+            # 后台显示已解封，用户在 App 里却还是「停用」，只能干等两小时。
+            from ..wiring import _revocation_store
+
+            _revocation_store().unrevoke(account_id)
         self.record_audit(principal, "ACCOUNT_STATUS_CHANGE", "ACCOUNT", account_id, {"status": status})
-        return self.search_accounts(row["phone"], None, 1)[0]
+        # 按 id 精确取回：按手机号反查的话，微信登录（没有手机号）的账号会取到最新一条，
+        # 返回的根本不是这个账号。
+        return self.search_accounts_by_id(account_id)
+
+    def search_accounts_by_id(self, account_id: int) -> dict:
+        """按主键取一个账号的完整视图（复用列表分支的组装逻辑）。"""
+        rows = self._session.execute(
+            text("SELECT * FROM account WHERE id = :id"), {"id": account_id}
+        ).mappings().all()
+        found = self._account_views(rows)
+        if not found:
+            raise ApiError(ErrorCode.PARAM_INVALID, "账号不存在")
+        return found[0]
 
     def change_identity_status(self, principal: AdminPrincipal, identity_id: int, status: str) -> None:
         if status not in ("ACTIVE", "DISABLED"):
@@ -448,6 +471,44 @@ class AdminService:
             "configValue": row["config_value"],
             "description": row["description"],
             "updatedAt": row["updated_at"],
+        }
+
+    def delete_config(self, principal: AdminPrincipal, key: str) -> None:
+        """删除一条配置。删掉之后读取方回到默认值（功能开关默认开），不留需要清理的软删除行。"""
+        row = self._session.execute(
+            text("DELETE FROM system_config WHERE config_key = :key RETURNING id"), {"key": key}
+        ).mappings().first()
+        if row is None:
+            raise ApiError(ErrorCode.PARAM_INVALID, f"配置项不存在: {key}")
+        self._session.commit()
+        self.record_audit(principal, "SYSTEM_CONFIG_DELETE", "SYSTEM_CONFIG", row["id"], {"key": key})
+
+    #: 全局配置里**真正被业务读取**的功能开关：配置键 → 客户端字段名（与 Java 版一一对应）
+    FEATURE_FLAG_KEYS = {
+        "feature.feedback.enabled": "feedback",
+        "feature.realname.enabled": "realName",
+        "feature.email_binding.enabled": "emailBinding",
+        "feature.agent.enabled": "agent",
+    }
+
+    def feature_flags(self) -> dict:
+        """功能开关快照。读不到 / 值不合法一律**按开**：一次数据库抖动不该把功能藏起来。"""
+        flags = {name: True for name in self.FEATURE_FLAG_KEYS.values()}
+        rows = self._session.execute(
+            text("SELECT config_key, config_value FROM system_config WHERE config_key LIKE 'feature.%'")
+        ).mappings()
+        for row in rows:
+            name = self.FEATURE_FLAG_KEYS.get(row["config_key"])
+            if name is None:
+                continue
+            value = row["config_value"]
+            if isinstance(value, bool):
+                flags[name] = value
+        return {
+            "feedback": flags["feedback"],
+            "realName": flags["realName"],
+            "emailBinding": flags["emailBinding"],
+            "agent": flags["agent"],
         }
 
     def dashboard_stats(self) -> dict:

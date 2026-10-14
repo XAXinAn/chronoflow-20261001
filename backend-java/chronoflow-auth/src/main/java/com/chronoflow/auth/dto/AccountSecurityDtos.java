@@ -66,14 +66,21 @@ public final class AccountSecurityDtos {
     }
 
     /**
-     * 换绑手机号第二步：**两个验证码都要给**。
+     * 换绑手机号第二步：新号验证码必给；「本人验证」二选一。
      *
      * <p>只验新号是不够的：拿到 access token 的人就能把手机号换成自己的，等于把账号偷走。
-     * 所以旧号也要验一次（证明是本人），新号验证证明新号码可用。
+     * 所以还要证明是本人，两种方式**恰好给一个**：
+     * <ul>
+     *   <li>{@code oldCode}：旧手机号收到的验证码（旧号还在用时的默认路径）；</li>
+     *   <li>{@code emailCode}：账号已绑定邮箱收到的验证码（旧号丢了 / 停用时的替代路径）。</li>
+     * </ul>
      */
     public record ChangePhoneRequest(
             @NotBlank @Pattern(regexp = "1\\d{10}", message = "手机号格式不正确") String newPhone,
             @NotBlank @Pattern(regexp = "\\d{6}", message = "验证码是 6 位数字") String newCode,
-            @NotBlank @Pattern(regexp = "\\d{6}", message = "验证码是 6 位数字") String oldCode) {
+            /** 旧号验证码，与 {@code emailCode} 二选一 */
+            @Pattern(regexp = "\\d{6}", message = "验证码是 6 位数字") String oldCode,
+            /** 已绑定邮箱的验证码，与 {@code oldCode} 二选一 */
+            @Pattern(regexp = "\\d{6}", message = "验证码是 6 位数字") String emailCode) {
     }
 }

@@ -32,4 +32,15 @@ public class RedisAccountRevocationStore implements AccountRevocationStore {
     public boolean isRevoked(Long accountId) {
         return Boolean.TRUE.equals(redis.hasKey(KEY_PREFIX + accountId));
     }
+
+    /**
+     * 解封：直接删掉标记，而不是写一个「已恢复」的值。
+     *
+     * <p>访问令牌的校验路径每次都要问一次这个标记，删掉之后那一跳就退化成一次普通
+     * 的 key 不存在判断——不需要额外的分支，也不会留下需要清理的数据。
+     */
+    @Override
+    public void unrevoke(Long accountId) {
+        redis.delete(KEY_PREFIX + accountId);
+    }
 }

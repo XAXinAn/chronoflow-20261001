@@ -1,6 +1,7 @@
 import type { AgentApprovalPayload } from './agent';
 import type { ApiClient } from './client';
 import type { AppRelease } from './appRelease';
+import type { FeatureFlags } from '../domain/features';
 import { File } from 'expo-file-system';
 import type {
   EventDetail,
@@ -168,11 +169,25 @@ export function createEndpoints(client: ApiClient) {
     sendPhoneCode: (phone: string) =>
       client.post<{ expiresIn: number; debugCode?: string }>('/api/v1/me/phone/code', { phone }),
     /**
-     * 换绑手机号第二步：**旧号与新号的两个验证码都要给**。
+     * 旧手机号已停用 / 换号时，给**当前账号已绑定的邮箱**发验证码（代替旧号验证码）。
+     *
+     * <p>邮箱地址由服务端从账号里取，不接受客户端传参；未绑定邮箱时如实报错。
+     */
+    sendPhoneChangeEmailCode: () =>
+      client.post<{ expiresIn: number; debugCode?: string }>('/api/v1/me/phone/email-code'),
+    /**
+     * 换绑手机号第二步：新号验证码必给；「本人验证」用旧号验证码或邮箱验证码，**二选一**。
      *
      * <p>只验新号是不够的：拿到令牌的人就能把手机号换成自己的，等于把账号偷走。
      */
-    changePhone: (payload: { newPhone: string; newCode: string; oldCode: string }) =>
+    changePhone: (payload: {
+      newPhone: string;
+      newCode: string;
+      /** 旧号还在用时的验证码；与 emailCode 二选一 */
+      oldCode?: string;
+      /** 旧号丢失 / 停用时，用已绑定邮箱的验证码；与 oldCode 二选一 */
+      emailCode?: string;
+    }) =>
       client.post<{ phone: string }>('/api/v1/me/phone', payload),
     /**
      * 开始实名认证（阿里云 CloudAuth，ID_PRO：姓名 + 身份证 + 活体）。
@@ -324,6 +339,11 @@ export function createEndpoints(client: ApiClient) {
      * 避免界面看起来能用、点了却装死（spec §11 阶段三）。
      */
     systemInfo: () => client.get<SystemInfo>('/api/v1/system/info'),
+    /**
+     * 功能开关（免登录）。后台「全局配置」里那几条 `feature.*`：
+     * App 据此隐藏「意见反馈 / 实名认证 / 邮箱绑定 / 小安」入口（spec §5.7）。
+     */
+    systemFeatures: () => client.get<FeatureFlags>('/api/v1/system/features'),
     /**
      * 应用内更新：拿服务端配置的最新版本信息（spec §4.1.11）。**免登录**——
      * 登录接口改坏时，老客户端还得能查到新版本把自己升级上去。

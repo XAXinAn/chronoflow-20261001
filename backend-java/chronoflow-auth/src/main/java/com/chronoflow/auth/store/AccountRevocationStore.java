@@ -21,4 +21,12 @@ public interface AccountRevocationStore {
     void revoke(Long accountId, Duration ttl);
 
     boolean isRevoked(Long accountId);
+
+    /**
+     * 撤销「作废」标记（平台解封账号时调用）。
+     *
+     * <p>少了这一步就会出现：封禁写下的标记一直活到 TTL 过期，**解封之后**这个账号
+     * 的每一个请求仍然被判成 20008「账号已停用」，用户以为解封没生效。
+     */
+    void unrevoke(Long accountId);
 }

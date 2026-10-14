@@ -90,32 +90,42 @@ class SecurityService:
         }
 
     # ------------------------------------------------------------- 邮箱
-    def send_email_code(self, email: str) -> dict:
+    #: 验证码用途。同一条邮箱验证码不能被两个场景互相顶替：绑定邮箱时发的码如果也能
+    #: 用来换手机号，「换号要证明本人」就退化成了「能收到邮件就行」。存键带上场景前缀。
+    SCENE_BIND = "bind"
+    SCENE_PHONE_CHANGE = "phone-change"
+
+    def _code_key(self, scene: str, email: str) -> str:
+        return f"{scene}:{email}"
+
+    def send_email_code(self, email: str, scene: str = SCENE_BIND) -> dict:
         email = email.strip().lower()
-        if not self._codes.acquire_send_lock(email, SEND_LOCK_TTL):
+        key = self._code_key(scene, email)
+        if not self._codes.acquire_send_lock(key, SEND_LOCK_TTL):
             raise ApiError(ErrorCode.SMS_SEND_TOO_FREQUENT, "验证码发送过于频繁，请稍后再试")
         code = f"{secrets.randbelow(1000000):06d}"
         try:
             self._send_mail(email, code)
         except ApiError:
             # 没发出去就不该把用户锁在 60 秒里（与短信一致）
-            self._codes.delete_code(email)
+            self._codes.delete_code(key)
             raise
-        self._codes.save_code(email, code, CODE_TTL)
+        self._codes.save_code(key, code, CODE_TTL)
         expose = _env("EXPOSE_MAIL_CODE", "false").lower() == "true"
         return {"expiresIn": CODE_TTL, "debugCode": code if expose else None}
 
-    def verify_email_code(self, email: str, code: str) -> None:
-        expected = self._codes.find_code(email)
+    def verify_email_code(self, email: str, code: str, scene: str = SCENE_BIND) -> None:
+        key = self._code_key(scene, email)
+        expected = self._codes.find_code(key)
         if expected is None:
             raise ApiError(ErrorCode.SMS_CODE_INVALID, "验证码已过期，请重新获取")
         if expected != code:
-            if self._codes.increment_verify_failure(email, FAILURE_TTL) >= MAX_VERIFY_FAILURES:
-                self._codes.delete_code(email)
-                self._codes.clear_verify_failure(email)
+            if self._codes.increment_verify_failure(key, FAILURE_TTL) >= MAX_VERIFY_FAILURES:
+                self._codes.delete_code(key)
+                self._codes.clear_verify_failure(key)
             raise ApiError(ErrorCode.SMS_CODE_INVALID, "验证码不正确")
-        self._codes.delete_code(email)
-        self._codes.clear_verify_failure(email)
+        self._codes.delete_code(key)
+        self._codes.clear_verify_failure(key)
 
     def bind_email(self, account_id: int, email: str) -> dict:
         email = email.strip().lower()

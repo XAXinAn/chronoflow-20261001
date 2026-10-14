@@ -104,11 +104,41 @@ public class AdminAccountService {
             // 光吊销刷新令牌只断掉续期：已签发的 access token 还能用到过期为止。
             // 封禁必须「立即生效」，所以再加一条作废标记（spec §3.7.3③）。
             tokenService.revokeAccountAccessTokens(accountId);
+        } else {
+            /*
+             * 解封必须**清掉**那条作废标记。
+             *
+             * 少了这一步：封禁时写下的标记会一直活到 TTL（访问令牌有效期，最长 2 小时）过期，
+             * 期间该账号的每一个请求仍被判成 20008「账号已停用」——
+             * 后台显示已解封，用户在 App 里却还是「停用」，只能干等两小时。
+             */
+            tokenService.clearAccountRevocation(accountId);
         }
         auditLogService.record(principal, "ACCOUNT_STATUS_CHANGE", "ACCOUNT", accountId,
                 Map.of("status", status));
-        return search(account.getPhone(), null, 1).stream().findFirst()
-                .orElseThrow(() -> BizException.of(ErrorCode.INTERNAL_ERROR));
+        return toResponse(account);
+    }
+
+    /** 按账号实体组装响应。**不要**再用 `search(phone, ...)` 反查：微信登录的账号没有手机号，
+     * 那种写法会退化成「不带条件查最新一条」，返回的根本不是这个账号。 */
+    private AccountResponse toResponse(Account account) {
+        Map<Long, Organization> organizations = new HashMap<>();
+        organizationMapper.selectList(new LambdaQueryWrapper<Organization>())
+                .forEach(org -> organizations.put(org.getId(), org));
+        List<Identity> identities = identityMapper.selectList(new LambdaQueryWrapper<Identity>()
+                .eq(Identity::getAccountId, account.getId())
+                .orderByAsc(Identity::getId));
+        List<AccountIdentityResponse> views = identities.stream()
+                .map(identity -> {
+                    Organization org = identity.getOrgId() == null ? null : organizations.get(identity.getOrgId());
+                    return new AccountIdentityResponse(identity.getId(), identity.getIdentityType(),
+                            identity.getOrgId(), org == null ? null : org.getName(),
+                            identity.getNickname(), identity.getStatus());
+                })
+                .toList();
+        return new AccountResponse(account.getId(), account.getPhone(), account.getEmail(),
+                account.getWechatUnionid() == null ? null : "BOUND",
+                account.getStatus(), account.getLastLoginAt(), account.getCreatedAt(), views);
     }
 
     @Transactional

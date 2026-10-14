@@ -24,6 +24,8 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.io.ByteArrayInputStream;
@@ -98,7 +100,21 @@ public class MemberImportService {
         batch.setCreatedByAdminId(actor.getAdminId());
         importBatchMapper.insert(batch);
 
-        processor.process(batch.getId(), actor, rows, autoCreateDepartment);
+        /*
+         * 异步处理必须**等事务提交之后**再派。
+         *
+         * 之前是直接调 `processor.process(...)`：@Async 会立刻把任务丢进线程池，
+         * 而此刻本方法的事务还没提交，异步线程用另一个连接 `selectById(batchId)` 拿到 null，
+         * 直接 `return` —— 批次就永远停在 PROCESSING，用户看到的就是「导入没反应」。
+         * 注册 afterCommit 回调后，批次行一定已经可见，处理器才可能读到它。
+         */
+        Long batchId = batch.getId();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                processor.process(batchId, actor, rows, autoCreateDepartment);
+            }
+        });
         return batch;
     }
 
@@ -157,7 +173,10 @@ public class MemberImportService {
                 sheet.setColumnWidth(i, 18 * 256);
             }
             Row example = sheet.createRow(1);
-            String[] sample = {"张三", "13800000000", "zhangsan@example.com", "E1001", "技术中心/后端组", "MEMBER"};
+            // 示例行必须**与表头逐列对齐**：列值是「姓名 / 唯一识别 ID / 部门路径 / 角色」。
+            // 以前这里塞了手机号、邮箱两列进去，用户照模板填出来的每一行都是错列的，
+            // 结果就是「导入一条都十分费劲甚至还没成果」。
+            String[] sample = {"张三", "2023001", "技术中心/后端组", "MEMBER"};
             for (int i = 0; i < sample.length; i++) {
                 example.createCell(i).setCellValue(sample[i]);
             }

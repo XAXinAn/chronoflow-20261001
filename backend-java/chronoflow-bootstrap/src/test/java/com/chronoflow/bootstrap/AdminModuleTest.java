@@ -22,6 +22,7 @@ import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -175,6 +176,35 @@ class AdminModuleTest {
     }
 
     @Test
+    @DisplayName("解封后立刻恢复访问：不会让用户干等两小时的作废标记")
+    void unbannedAccountAccessIsRestoredImmediately() throws Exception {
+        String token = adminLogin(BOOTSTRAP_USERNAME, BOOTSTRAP_PASSWORD);
+        long orgId = createOrganization(token, "解封测试", "UNBANORG", "unban_admin", "13800003104");
+
+        LoginResult member = loginOrgMemberWithTokens("13800003104", orgId);
+        assertThat(getJson("/api/v1/org/current", member.accessToken()).path("code").asInt()).isZero();
+
+        long accountId = getJson("/api/v1/admin/accounts?phone=13800003104", token)
+                .path("data").get(0).path("accountId").asLong();
+
+        postJson("/api/v1/admin/accounts/" + accountId + "/status", token, "{\"status\":\"DISABLED\"}");
+        // 封禁必须立即生效：同一张 access token（JWT 还没过期）当场被拒
+        mockMvc.perform(get("/api/v1/org/current").header("Authorization", "Bearer " + member.accessToken()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(20008));
+
+        postJson("/api/v1/admin/accounts/" + accountId + "/status", token, "{\"status\":\"ACTIVE\"}");
+        /*
+         * 解封之后必须**立刻**能用，而不是等作废标记的 TTL（访问令牌有效期，最长 2 小时）过期。
+         * 这里用的还是原来那张 token —— 它本来就还有效，只是之前被标记作废了。
+         * 少了 unrevoke，这一步会一直被 20008 挡着（用户报的「后台已恢复但 App 仍显示停用」）。
+         */
+        assertThat(getJson("/api/v1/org/current", member.accessToken()).path("code").asInt())
+                .as("解封后同一张 token 必须立刻可用")
+                .isZero();
+    }
+
+    @Test
     @DisplayName("全局配置按 key upsert，并可查询")
     void systemConfigUpsertAndList() throws Exception {
         String token = adminLogin(BOOTSTRAP_USERNAME, BOOTSTRAP_PASSWORD);
@@ -192,7 +222,44 @@ class AdminModuleTest {
         assertThat(second.path("data").path("configValue").asText()).isEqualTo("false");
 
         JsonNode list = getJson("/api/v1/admin/configs", token);
-        assertThat(list.path("data")).hasSize(1);
+        // 迁移 V21 预置了 4 条功能开关，所以列表 = 4 + 刚写进去的这一条
+        assertThat(list.path("data")).hasSize(5);
+        assertThat(list.path("data").toString()).contains("feature.feedback.enabled");
+
+        // 非法 JSON 要在这里被挡住：进了 jsonb 列之后，数据库报的错没人看得懂
+        JsonNode invalid = putJson("/api/v1/admin/configs/bad.json", token,
+                "{\"configValue\":\"{not json}\"}");
+        assertThat(invalid.path("code").asInt()).isNotZero();
+    }
+
+    @Test
+    @DisplayName("全局配置的四个功能开关真的会被客户端读到，删除后回到默认（开）")
+    void featureFlagsDriveClientCapabilities() throws Exception {
+        String token = adminLogin(BOOTSTRAP_USERNAME, BOOTSTRAP_PASSWORD);
+
+        // 默认全开：升级之后行为与升级前一致，不会因为这条迁移把功能悄悄关掉
+        JsonNode defaults = getJson("/api/v1/system/features", null);
+        assertThat(defaults.path("data").path("feedback").asBoolean()).isTrue();
+        assertThat(defaults.path("data").path("realName").asBoolean()).isTrue();
+
+        putJson("/api/v1/admin/configs/feature.realname.enabled", token,
+                "{\"configValue\":\"false\"}");
+        JsonNode closed = getJson("/api/v1/system/features", null);
+        assertThat(closed.path("data").path("realName").asBoolean())
+                .as("关掉之后客户端必须立刻读到 false：%s", closed).isFalse();
+        assertThat(closed.path("data").path("feedback").asBoolean()).isTrue();
+
+        mockMvc.perform(delete("/api/v1/admin/configs/feature.realname.enabled")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+        assertThat(getJson("/api/v1/system/features", null).path("data").path("realName").asBoolean())
+                .as("删掉配置后要回到默认值（开），而不是继续沿用被删的值")
+                .isTrue();
+
+        // 把这一条写回默认值：整个测试类共用一个库，删掉不放回去会污染后面的用例
+        putJson("/api/v1/admin/configs/feature.realname.enabled", token,
+                "{\"configValue\":\"true\",\"description\":\"App 的「实名认证」入口是否可见\"}");
     }
 
     @Test

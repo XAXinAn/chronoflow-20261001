@@ -1,10 +1,8 @@
 import { Platform } from 'react-native';
 
 import { askPermission } from '../components/permission';
+import { channelIdFor, currentReminderSound, type ReminderSound } from './sound';
 import type { NotificationGateway, ScheduledNotification } from './scheduler';
-
-/** Android 8 起通知必须挂在渠道上；没有渠道 = 系统直接丢掉这条通知。 */
-const CHANNEL_ID = 'reminders';
 
 /**
  * `expo-notifications` 的适配层（spec §4.5：到点提醒走 App 本地通知，不经过服务端推送）。
@@ -26,23 +24,61 @@ export async function createExpoNotificationGateway(): Promise<NotificationGatew
     handleNotification: async () => ({
       shouldShowBanner: true,
       shouldShowList: true,
-      shouldPlaySound: false,
+      // 前台也要响：用户在设置里选的声音档位对前台同样生效，
+      // 否则「选了闹钟式、结果开着 App 就不响」，用户只会以为提醒坏了。
+      shouldPlaySound: currentReminderSound() !== 'silent',
       shouldSetBadge: false,
     }),
   });
 
-  let prepared = false;
-  const prepare = async () => {
-    if (prepared) {
+  /**
+   * Android 8 起通知必须挂在渠道上；没有渠道 = 系统直接丢掉这条通知。
+   *
+   * <p>**渠道的声音改不了**：同一个渠道 id 建好之后再改 `sound` 系统会忽略，
+   * 所以三个声音档位对应三个渠道 id（见 `notifications/sound.ts`），
+   * 用户改设置 = 之后的提醒换一个渠道。三个渠道都建出来，切换时不需要重建。
+   */
+  const prepared = new Set<ReminderSound>();
+  const prepareChannel = async (sound: ReminderSound) => {
+    if (Platform.OS !== 'android' || prepared.has(sound)) {
       return;
     }
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-        name: '日程提醒',
+    const channelId = channelIdFor(sound);
+    if (sound === 'silent') {
+      await Notifications.setNotificationChannelAsync(channelId, {
+        name: '日程提醒（静音）',
         importance: Notifications.AndroidImportance.DEFAULT,
+        sound: null,
+        enableVibrate: false,
+      });
+    } else if (sound === 'alarm') {
+      await Notifications.setNotificationChannelAsync(channelId, {
+        name: '日程提醒（闹钟式）',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: 'default',
+        // 按闹钟音量响，并绕过免打扰：这是系统允许的最高打扰级别（仍可能被厂商省电策略拦）
+        audioAttributes: {
+          usage: Notifications.AndroidAudioUsage.ALARM,
+          contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+        },
+        bypassDnd: true,
+        enableVibrate: true,
+        vibrationPattern: [0, 400, 200, 400],
+      });
+    } else {
+      await Notifications.setNotificationChannelAsync(channelId, {
+        name: '日程提醒',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+        enableVibrate: true,
+        vibrationPattern: [0, 250],
       });
     }
-    prepared = true;
+    prepared.add(sound);
+  };
+
+  const prepare = async () => {
+    await prepareChannel(currentReminderSound());
   };
 
   return {
@@ -64,19 +100,25 @@ export async function createExpoNotificationGateway(): Promise<NotificationGatew
     },
 
     async schedule(notification: ScheduledNotification) {
-      await prepare();
+      const sound = currentReminderSound();
+      await prepareChannel(sound);
       return Notifications.scheduleNotificationAsync({
         content: {
           title: notification.title,
           body: notification.body,
           data: notification.data,
-          // 声音交给渠道设置，这里显式静音（日程提醒不是闹钟）
-          sound: false,
+          /*
+           * 声音交给渠道设置（Android 8+）：这里传 true/false 反而会覆盖渠道的声音。
+           * iOS 没有渠道，必须在这里给 —— 静音档给 null，另外两档用系统默认音。
+           */
+          // iOS 没有渠道，声音必须在这里给：静音档用 false，其余用系统默认音。
+          // Android 交给渠道（见上面 prepareChannel），这里给 true 表示「按渠道来」。
+          sound: Platform.OS === 'ios' ? sound !== 'silent' && 'default' : true,
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
           date: notification.at,
-          channelId: CHANNEL_ID,
+          channelId: channelIdFor(sound),
         },
       });
     },

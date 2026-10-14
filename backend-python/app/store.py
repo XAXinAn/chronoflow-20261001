@@ -180,6 +180,13 @@ class AccountRevocationStore:
     def is_revoked(self, account_id: int) -> bool:
         return self._redis.exists(self.KEY_PREFIX + str(account_id)) > 0
 
+    def unrevoke(self, account_id: int) -> None:
+        """解除作废标记（平台解封账号时调用，与 Java 版 `AccountRevocationStore#unrevoke` 对应）。
+
+        少了这一步：封禁写下的标记会一直活到 TTL 过期，**解封之后**该账号的每个请求
+        仍被判成 20008「账号已停用」——后台显示已解封，用户在 App 里还是「停用」。
+        """
+        self._redis.delete(self.KEY_PREFIX + str(account_id))
 
 def now_seconds() -> float:
     return time.time()

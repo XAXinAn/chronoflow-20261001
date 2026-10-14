@@ -5,6 +5,7 @@ import {
   clampIndex,
   composeDateKey,
   daysInMonth,
+  initialWheelOffset,
   parseDateKey,
 } from '../src/domain/wheelDate';
 
@@ -41,5 +42,15 @@ describe('滚轮日期选择器的计算（spec §4.1.7）', () => {
     expect(clampIndex(-1, 10)).toBe(0);
     expect(clampIndex(99, 10)).toBe(9);
     expect(clampIndex(3, 0)).toBe(0);
+  });
+
+  it('挂载时的初始偏移要落在当前值那一行', () => {
+    // 年份列以 2026 为中心时今天是第 10 项（2016 起算），初始偏移必须对应它；
+    // 以前初始偏移被写死成「已对齐」，于是从不滚动、停在 2016。
+    const years = buildYearRange(2026, 10);
+    const index = years.indexOf(2026);
+    expect(initialWheelOffset(index, 40)).toBe(400);
+    expect(initialWheelOffset(index, 40)).not.toBe(initialWheelOffset(0, 40));
+    expect(initialWheelOffset(-3, 40)).toBe(0);
   });
 });

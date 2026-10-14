@@ -3,6 +3,7 @@ package com.chronoflow.bootstrap.web;
 import com.chronoflow.common.api.ApiResponse;
 import com.chronoflow.common.web.TraceIds;
 import com.chronoflow.agent.service.AgentChatService;
+import com.chronoflow.admin.service.SystemFeatureFlags;
 import com.chronoflow.bootstrap.config.AppReleaseProperties;
 import com.chronoflow.personal.geo.GeoService;
 import com.chronoflow.personal.service.HolidaySyncStatus;
@@ -32,15 +33,18 @@ public class SystemController {
     private final HolidaySyncStatus holidaySyncStatus;
     private final AgentChatService agentChatService;
     private final AppReleaseProperties appRelease;
+    private final SystemFeatureFlags featureFlags;
 
     public SystemController(GeoService geoService,
                             HolidaySyncStatus holidaySyncStatus,
                             AgentChatService agentChatService,
-                            AppReleaseProperties appRelease) {
+                            AppReleaseProperties appRelease,
+                            SystemFeatureFlags featureFlags) {
         this.geoService = geoService;
         this.holidaySyncStatus = holidaySyncStatus;
         this.agentChatService = agentChatService;
         this.appRelease = appRelease;
+        this.featureFlags = featureFlags;
     }
 
     @GetMapping("/info")
@@ -58,6 +62,18 @@ public class SystemController {
     @GetMapping("/ping")
     public ApiResponse<String> ping() {
         return ApiResponse.ok("pong");
+    }
+
+    /**
+     * 功能开关（免登录，spec §5.7）。
+     *
+     * <p>就是后台「全局配置」里那几条 `feature.*`：App 在启动 / 进「我的」时读一次，
+     * 据此决定「意见反馈 / 实名认证 / 邮箱绑定 / 小安」这些入口显不显示。
+     * 免登录是有意的——登录页也要能据此隐藏入口；开关本身不含任何敏感信息。
+     */
+    @GetMapping("/features")
+    public ApiResponse<SystemFeatureFlags.FeatureFlags> features() {
+        return ApiResponse.ok(featureFlags.snapshot());
     }
 
     /**

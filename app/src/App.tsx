@@ -59,6 +59,7 @@ import type { RecognizedDraft } from './domain/vision';
 import { refreshLocalReminders } from './notifications/actions';
 import { subscribeNotificationResponses } from './notifications/listener';
 import type { NotificationRoute } from './notifications/route';
+import { useFeatureFlags } from './context/featureFlags';
 
 type AuthStackParamList = {
   Login: undefined;
@@ -151,6 +152,8 @@ function MainTabs({
 }: MainTabsProps) {
   const theme = useAppTheme();
   const { session } = useAppSessionState();
+  /** 后台「全局配置」里的功能开关（spec §5.7）：关掉小安就不显示这个 tab */
+  const features = useFeatureFlags();
 
   return (
     <Tabs.Navigator
@@ -203,15 +206,21 @@ function MainTabs({
           />
         )}
       </Tabs.Screen>
-      {/* 小安常驻在导航里，位于「组织」之后（spec §11） */}
-      <Tabs.Screen name="Agent" options={{ title: '小安', tabBarIcon: tabIcon('Agent') }}>
-        {() => (
-          <AgentChatScreen
-            // 确认卡片建好日程后「查看日程」跳到编辑页：走的是与日历页同一条路径
-            onOpenEvent={(eventId, dateKey) => onOpenEvent(eventId, dateKey, null)}
-          />
-        )}
-      </Tabs.Screen>
+      {/*
+        小安常驻在导航里，位于「组织」之后（spec §11）。
+        唯一的例外是后台把它关掉（「全局配置 → 小安」）：这时入口整个不渲染，
+        而不是让用户点进一个永远不回话的输入框。
+      */}
+      {features.agent ? (
+        <Tabs.Screen name="Agent" options={{ title: '小安', tabBarIcon: tabIcon('Agent') }}>
+          {() => (
+            <AgentChatScreen
+              // 确认卡片建好日程后「查看日程」跳到编辑页：走的是与日历页同一条路径
+              onOpenEvent={(eventId, dateKey) => onOpenEvent(eventId, dateKey, null)}
+            />
+          )}
+        </Tabs.Screen>
+      ) : null}
       <Tabs.Screen name="Settings" options={{ title: '我的', tabBarIcon: tabIcon('Settings') }}>
         {() => (
           <SettingsScreen

@@ -132,17 +132,25 @@ describe('通知偏好', () => {
    * 存坏了也回到关闭——坏数据不该被解读成「用户同意了」。
    */
   it('没存过 / 存坏了都按「关闭」：没问过就不打扰', () => {
-    expect(parseNotificationPrefs(null)).toEqual({ enabled: false });
-    expect(parseNotificationPrefs('{')).toEqual({ enabled: false });
-    expect(parseNotificationPrefs('{"enabled":"no"}')).toEqual({ enabled: false });
-    expect(parseNotificationPrefs('{"enabled":true}')).toEqual({ enabled: true });
-    expect(parseNotificationPrefs('{"enabled":false}')).toEqual({ enabled: false });
+    expect(parseNotificationPrefs(null)).toEqual({ enabled: false, sound: 'default' });
+    expect(parseNotificationPrefs('{')).toEqual({ enabled: false, sound: 'default' });
+    expect(parseNotificationPrefs('{"enabled":"no"}')).toEqual({ enabled: false, sound: 'default' });
+    expect(parseNotificationPrefs('{"enabled":true}')).toEqual({ enabled: true, sound: 'default' });
+    expect(parseNotificationPrefs('{"enabled":false}')).toEqual({ enabled: false, sound: 'default' });
+  });
+
+  it('声音档位：老数据（只有 enabled）补默认，认不出的值也回默认而不是静音', () => {
+    expect(parseNotificationPrefs('{"enabled":true}').sound).toBe('default');
+    expect(parseNotificationPrefs('{"enabled":true,"sound":"alarm"}').sound).toBe('alarm');
+    expect(parseNotificationPrefs('{"enabled":true,"sound":"silent"}').sound).toBe('silent');
+    expect(parseNotificationPrefs('{"enabled":true,"sound":"nonsense"}').sound).toBe('default');
   });
 
   it('内存实现与生产实现同一套读写语义', async () => {
     const store = createMemoryNotificationPrefsStore();
     expect((await store.read()).enabled).toBe(false);
-    await store.write({ enabled: true });
+    await store.write({ enabled: true, sound: 'alarm' });
     expect((await store.read()).enabled).toBe(true);
+    expect((await store.read()).sound).toBe('alarm');
   });
 });

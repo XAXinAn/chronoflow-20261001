@@ -99,6 +99,8 @@ export const api = {
       configValue,
       description,
     }),
+  deleteConfig: (key: string) =>
+    client.del<void>(`/api/v1/admin/configs/${encodeURIComponent(key)}`),
 
   // ------------------------------------------------------------ 看板与审计
   dashboard: () => client.get<DashboardStats>('/api/v1/admin/dashboard/stats'),

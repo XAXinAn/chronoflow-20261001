@@ -171,6 +171,15 @@ public class TokenService {
         return accountRevocationStore.isRevoked(accountId);
     }
 
+    /**
+     * 解除「该账号的访问令牌全部作废」这条标记（平台解封账号时调用）。
+     *
+     * <p>注销是不可逆的，所以只有封禁 / 解封这条路径需要它。
+     */
+    public void clearAccountRevocation(Long accountId) {
+        accountRevocationStore.unrevoke(accountId);
+    }
+
     public List<RefreshTokenRecord> listSessionRecords(Long identityId) {
         return refreshTokenStore.listForIdentity(identityId);
     }

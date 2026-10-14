@@ -33,6 +33,11 @@ import {
   DEFAULT_NOTIFICATION_PREFS,
   type NotificationPrefsStore,
 } from '../notifications/prefs';
+import {
+  DEFAULT_REMINDER_SOUND,
+  setCurrentReminderSound,
+  type ReminderSound,
+} from '../notifications/sound';
 
 interface AppContextValue {
   theme: AppTheme;
@@ -58,6 +63,10 @@ interface AppContextValue {
   /** 到点提醒的总开关（本机偏好，spec §4.5） */
   notificationEnabled: boolean;
   setNotificationEnabled: (enabled: boolean) => void;
+  /** 提醒声音档位（本机偏好，spec §4.5）：静音 / 系统提示音 / 闹钟式 */
+  reminderSound: ReminderSound;
+  /** 改声音档位：写本机偏好，并让调用方触发一次提醒重排（换渠道才会换声音） */
+  setReminderSound: (sound: ReminderSound) => void;
   toggleScheme: () => void;
   setRuntime: (runtime: AppRuntime | null) => void;
   setSession: (session: StoredSession | null) => void;
@@ -95,7 +104,13 @@ export function AppProvider({
   const [notificationEnabled, setNotificationEnabledState] = useState(
     DEFAULT_NOTIFICATION_PREFS.enabled,
   );
+  /** 提醒声音档位。和总开关一起存本机（spec §4.5）；默认「系统提示音」。 */
+  const [reminderSound, setReminderSoundState] = useState<ReminderSound>(
+    DEFAULT_NOTIFICATION_PREFS.sound,
+  );
   const notificationPrefsRef = useRef<NotificationPrefsStore | null>(null);
+  /** 存储里完整的那份偏好：改一个字段时要把另一个带上，不能互相覆盖 */
+  const notificationPrefsValueRef = useRef({ ...DEFAULT_NOTIFICATION_PREFS });
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -104,10 +119,16 @@ export function AppProvider({
         notificationPrefsRef.current = store;
         const stored = await store.read();
         if (active) {
+          notificationPrefsValueRef.current = stored;
           setNotificationEnabledState(stored.enabled);
+          setReminderSoundState(stored.sound);
+          // 通知网关按这个模块级值挑渠道：启动时先同步一次，否则「上次选了闹钟式」
+          // 在重启后的第一条提醒上会退回默认音
+          setCurrentReminderSound(stored.sound);
         }
       } catch {
         // 存储不可用（Web 预览）：保持默认（关闭），不影响其他功能
+        setCurrentReminderSound(DEFAULT_REMINDER_SOUND);
       }
     })();
     return () => {
@@ -145,7 +166,16 @@ export function AppProvider({
   /** 开关到点提醒：存本机，并立刻反映到界面（本机排期的撤销由调用方触发重排） */
   const setNotificationEnabled = useCallback((enabled: boolean) => {
     setNotificationEnabledState(enabled);
-    void notificationPrefsRef.current?.write({ enabled });
+    notificationPrefsValueRef.current = { ...notificationPrefsValueRef.current, enabled };
+    void notificationPrefsRef.current?.write(notificationPrefsValueRef.current);
+  }, []);
+
+  /** 改提醒声音：写本机偏好 + 同步给通知网关；重排由调用方触发（换渠道才换得了声音） */
+  const setReminderSound = useCallback((sound: ReminderSound) => {
+    setReminderSoundState(sound);
+    setCurrentReminderSound(sound);
+    notificationPrefsValueRef.current = { ...notificationPrefsValueRef.current, sound };
+    void notificationPrefsRef.current?.write(notificationPrefsValueRef.current);
   }, []);
 
   const persist = useCallback(async (next: StoredOrgAccount[]) => {
@@ -268,6 +298,8 @@ export function AppProvider({
       orgApi,
       notificationEnabled,
       setNotificationEnabled,
+      reminderSound,
+      setReminderSound,
       toggleScheme,
       setRuntime,
       setSession,
@@ -296,7 +328,7 @@ export function AppProvider({
     }),
     [theme, scheme, runtime, session, orgAccounts, activeOrgIdentityId, orgFocusDateKey,
      refreshOrgAccounts, claimOrgAccount, unlinkOrgAccount, orgApi, notificationEnabled,
-     setNotificationEnabled, persist, toggleScheme],
+     setNotificationEnabled, reminderSound, setReminderSound, persist, toggleScheme],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
@@ -324,12 +356,14 @@ export function useAppSessionState() {
     orgAccounts, activeOrgIdentityId, setActiveOrgIdentityId, orgFocusDateKey, setOrgFocusDateKey,
     refreshOrgAccounts, claimOrgAccount, unlinkOrgAccount, orgApi,
     notificationEnabled, setNotificationEnabled,
+    reminderSound, setReminderSound,
   } = useAppContext();
   return {
     session, setSession, toggleScheme, applyTokenResponse, signOut,
     orgAccounts, activeOrgIdentityId, setActiveOrgIdentityId, orgFocusDateKey, setOrgFocusDateKey,
     refreshOrgAccounts, claimOrgAccount, unlinkOrgAccount, orgApi,
     notificationEnabled, setNotificationEnabled,
+    reminderSound, setReminderSound,
   };
 }
 

@@ -2,8 +2,10 @@
 
 > 给下一个接手这个仓库的 agent。**开工前先读完这一份**，尤其是「§3 交接清单」和「§5 环境陷阱」两节。
 >
-> 最后更新：2026-10-02（第二十一轮：**部署/发布手册独立成文（见 `docs/DEPLOY.md`）**；
-> 「我的」页头部展示账号信息 + 切换手机号；管理端登录修复；SSH 私钥按「域名-地域」命名；线上 0.0.9）
+> 最后更新：2026-10-14（第二十二轮：**试用反馈驱动的一轮**——后台封禁/导入/全局配置三条真 bug、
+> 转盘起点与华为定位两条真 bug，另加「邮箱验证码换号」与「提醒可选铃声」。
+> ⚠️ **代码全绿但改动未提交；后端已部署；App 0.0.10 的安装包还没出出来**——
+> 接着做的人直接看下面 §0.0 的「本轮结束时的真实状态」三步走）
 >
 > ⚠️ **本文件下方的历史段落里出现的 `xa-*` / `xatodo` / `XATODO_*` 是改名前的旧标识，保留原文不改**
 > （那是当时的现场记录，改了就成假历史）。**当前代码里已经没有这些标识**，新写的东西一律用
@@ -13,6 +15,123 @@
 > ⚠️ **数据模型变了**：`event.start_at` / `event.end_at` 已被 V18 迁移合并成 `event.at`（单时间点），
 > 不再有起止与时长；`event_exception.override_*` 同样合成 `override_at`。
 > 两版后端、Web 组织管理端与 App 都已对齐。改动前先读 §0.0 第九轮摘要。
+
+---
+
+## 0.0 本次交接摘要（2026-10-14，第二十二轮：试用反馈里的 5 个 bug + 2 个体验增强）
+
+**来源**：试用者交回的两份验收清单（桌面微信文件 `测试后台(1).md` / `测试用户(1).md`）。
+这一轮**只做确认过的 bug 加两项增强**，更大的需求（悬浮窗、日程/待办合一、课表 OCR）留给下一轮。
+
+### 修掉的 5 个 bug（都有测试钉住）
+
+| 现象 | 真因 | 修法 |
+| --- | --- | --- |
+| 后台**解封**后用户在 App 里仍是「停用」 | 封禁时写的 Redis 作废标记（TTL = access token 有效期，最长 2 小时）在解封时没清 | `AccountRevocationStore#unrevoke` + `TokenService#clearAccountRevocation`，`AdminAccountService.changeStatus` 改回 `ACTIVE` 时调用；顺带修「按手机号反查返回体」对无手机号账号取错行 |
+| 成员**批量导入**一直 `PROCESSING` / 一直失败 | ① `startImport` 在事务里就把批次交给 `@Async`，异步线程查不到未提交的行 → 直接 return，批次永远停在 PROCESSING；② 下载的模板示例行是 6 个值塞进 4 列表头，照模板填必然错列；③ 前端提交后不轮询，没有进度 | ① 改成**事务提交后**（`TransactionSynchronization#afterCommit`）再派；② 示例行与表头对齐；③ 管理端按 `GET /org-admin/imports/{id}` 轮询，显示进度条 / 已处理 / 预计剩余，完成后才刷新成员列表 |
+| 「全局配置」是空壳（没有可改的东西，改了也没效果） | 表里从来没数据、页面只能改不能增、**而且没有任何业务读它** | 迁移 V21 预置 4 条 **真被消费**的开关（意见反馈 / 实名认证 / 邮箱绑定 / 小安）；新增免登录 `GET /system/features`，App 据此隐藏入口；页面支持新建 / 删除，已知开关渲染成 Switch |
+| 日期转盘从 **2016** 开始，选今天要翻十年 | `WheelColumn` 把「已知偏移」初值设成 `selectedIndex * ITEM_HEIGHT`，挂载时「已对齐 → 不用滚」判断为真，首次 `scrollTo` **从未执行** | 初值改 0 + 挂载后（等 `onLayout`）无动画滚到目标下标；抽 `initialWheelOffset()` 纯函数 + 单测 |
+| 华为 Mate 70 **授权定位后仍失败** | `expo-location` 的 Android 实现只用 GMS 融合定位，没有 Google 服务的机型必然失败（`getLastKnownPositionAsync` 也一样） | 新增自带原生模块**直读 `LocationManager`**（不依赖 GMS / 不依赖 https），经 `app/plugins/withSystemLocation.js` 注入；JS 侧**先判存在再用**，退路顺序：系统定位 → expo-location → 如实报错 |
+
+### 两项体验增强
+
+1. **换手机号可以不用旧号**：`POST /me/phone` 的「本人验证」改为 `oldCode` / `emailCode` **二选一**
+   （都给或都不给都拒），新增 `POST /me/phone/email-code`（给**已绑定**邮箱发码，场景码独立，
+   与绑定邮箱的码不能互相顶替）。旧号还在用就照旧走双验证码。
+2. **提醒可选铃声**：三档——静音 / 系统提示音（默认）/ 闹钟式。Android 渠道声音建好后改不了，
+   所以三档 = 三个渠道 id；闹钟档用 `MAX + bypassDnd + usage=ALARM`。改档位会立刻重排本机排期。
+   **不做逐条提醒单独选铃声**（要动 reminders 契约，留待有真实需求时再说）。
+
+### 这一轮的验收命令（都跑过、都绿）
+
+```bash
+# 后端（Java，157 项）—— 需要内嵌 PG/Redis 绑本地端口，沙箱里要放行
+mvn -o test
+# Python（79 项）
+backend-python/.venv/bin/python -m pytest backend-python/tests -q
+# 管理端（26 项）+ 契约/合规
+npm test -w @chronoflow/web-admin && python3 scripts/check_compliance.py --strict
+# App（296 项）
+npm test -w @chronoflow/app && npm run typecheck -w @chronoflow/app
+```
+
+### ⚠️ 本轮新增的两条坑
+
+1. **`@Async` + `@Transactional` 是顺序陷阱**：同一个事务里插入的行，异步线程**看不到**。
+   凡是「先落库、再派后台任务」的地方，都要用 `TransactionSynchronizationManager#afterCommit`
+   或事件 + `@TransactionalEventListener(AFTER_COMMIT)`，否则任务会静默地什么都不干。
+2. **同一个测试类共用一个库**：新写的用例如果把迁移预置的那几行配置删掉（验证「删除回到默认值」），
+   别的用例会跟着看到少一行。用例要么**用完写回**，要么用自己新建的 key。
+
+### 🚦 本轮结束时的真实状态（下一个人从这里接）
+
+| 项 | 状态 |
+| --- | --- |
+| 代码 | **全部改完、全部未提交**（`git status` 里有 40 个改动文件 + 10 个新文件；`a7fd1d7` 之后没有新提交） |
+| Java 后端 | **已编译 + 已部署到演示服务器**，`/api/v1/system/features` 返回四个开关（V21 迁移已跑） |
+| Python 后端 / 管理端 / App 代码 | 已改完，测试全绿 |
+| **App 0.0.10 安装包** | ❌ **没出出来**（三次出包都被中途打断，Gradle 被杀、每次只能从头再来） |
+
+**所以下一步只有三件事，按顺序做：**
+
+1. **先提交**（工作树里这一轮的所有改动都还没提交，别让它一直裸着）：
+   ```bash
+   cd ~/develop/xa-todo && git add -A && git commit -m "feat: 试用反馈的 5 个 bug + 邮箱换号 + 提醒可选铃声（第二十二轮）"
+   ```
+2. **出包**——**一条命令、别打断**（预计 10–20 分钟没有任何输出是正常的，Gradle 在编原生库；
+   中途 Ctrl-C 或让会话被打断，Gradle 会被杀，只能从头再来）：
+   ```bash
+   cd ~/develop/xa-todo
+   CHRONOFLOW_ARCHS=x86_64,arm64-v8a bash scripts/build_apk.sh --prebuild --release 2>&1 | tail -40
+   ```
+   产物：`app/android/app/build/outputs/apk/release/app-release.apk`，脚本会自动复制到 Windows 桌面
+   （`时纪流-0.0.10(11)-release.apk`）。
+3. **发布**（照 `docs/DEPLOY.md`，**改 `.env` 前先备份**）：
+   ```bash
+   bash scripts/publish_apk.sh app/android/app/build/outputs/apk/release/app-release.apk 0.0.10 11 \
+     "封禁后解封立刻生效|批量导入有进度条、模板示例行可导入|全局配置变成真生效的功能开关|日期转盘停在今天|华为等无 GMS 机型定位修复|换手机号可用邮箱验证码|提醒可选铃声"
+   # 再把打印出来的 9 行 CHRONOFLOW_APP_RELEASE_* 写进 /opt/chronoflow/.env，然后
+   ssh -i ~/.ssh/60.205.142.205-北京.pem root@60.205.142.205 'cd /opt/chronoflow && docker compose up -d backend'
+   ```
+
+### 待真机验证（代码已就绪，等 0.0.10 装上去）
+
+1. **华为 Mate 70 定位**：原生模块是否真的取到位置。日志里出现 `E_LOCATION_PERMISSION /
+   E_LOCATION_DISABLED / E_LOCATION_TIMEOUT` 就说明卡在哪一步（模块名 `ChronoflowLocation`）。
+2. **日期转盘**：新建日程/待办时滚轮应停在**今天**（以前停在 2016）。
+3. **提醒响铃**：三档在真机上听一遍；厂商省电策略可能限制后台提醒，闹钟档也不是「一定响」。
+4. **邮箱换号**：先绑定并验证邮箱 → 「切换手机号」里把本人验证切到邮箱 → 不用旧号换绑成功。
+5. **批量导入**：拿真实表格（含中文部门路径）跑 100+ 行，看进度条与预计时间是否靠谱。
+
+### 本轮产物落到哪里了
+
+- 代码：仓库工作树（未提交），改动清单见上面的表格与本节末尾的文件列表。
+- 契约 / 规格：`contract/api-contract.json`（120 → **123** 条）、`spec.md`（新增 `/system/features`、
+  `/me/phone/email-code`、`DELETE /admin/configs/{key}`，补了提醒声音与导入进度两节）。
+- 产品侧文档：**桌面 `20261014/` 目录**下两份更新过的验收说明（用户版 / 后台版），
+  里面已经写上本轮的修法与新增验收项；老的 `20261003/` 版本留着当历史。
+
+### 本轮改动的文件（便于 review / 提交时分块看）
+
+**后端 Java**：`AccountRevocationStore`(+`unrevoke`) / `RedisAccountRevocationStore` / `TokenService`
+(+`clearAccountRevocation`) / `AdminAccountService`（解封清标记 + 修返回体） /
+`AdminConfigService`（JSON 校验 + 删除） / `AdminOpsController`（DELETE configs） /
+`SystemFeatureFlags`（新） / `SystemController`（+`/features`） / `EmailCodeService`（+场景码） /
+`AccountSecurityDtos` / `MeController`（+`/phone/email-code`，换号二选一） /
+`MemberImportService`（afterCommit + 模板示例行） / `MemberImportProcessor`（进度频率 + 文案） /
+`V21__system_feature_flags.sql`（新）
+
+**后端 Python**（同语义镜像）：`store.py` / `services/admin.py` / `routers/admin.py` /
+`routers/system.py` / `services/security.py` / `routers/me.py` / `services/org.py`
+
+**管理端**：`ConfigsPage`（新建 / 删除 / 开关） / `OrgMembersPage`（轮询进度） /
+`importProgress.ts`（新，纯函数 + 单测） / `api/index.ts`（+`deleteConfig`）
+
+**App**：`plugins/withSystemLocation.js`（新，原生定位模块） / `src/location/*`（新） /
+`LocationPickerScreen` / `components/Wheel.tsx` + `domain/wheelDate.ts`（转盘起点） /
+`notifications/sound.ts`（新）+ `prefs.ts` + `expoGateway.ts` / `context/featureFlags.ts`（新）+
+`domain/features.ts`（新）+ `AppContext` + `App.tsx` + `SettingsSectionScreen` /
+`PhoneChangeScreen`（邮箱验证分支） / `api/endpoints.ts` / `app.json`（插件 + 0.0.10/11）
 
 ---
 

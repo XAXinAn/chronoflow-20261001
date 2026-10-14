@@ -926,7 +926,10 @@ class OrgService:
                 failed += 1
             except Exception:  # noqa: BLE001 - 单行失败不影响整批
                 self._session.rollback()
-                self._record_import_row(batch, row, "FAILED", "数据冲突：该手机号或工号可能已存在")
+                # 导入模板里已经没有手机号列，文案别再提它（用户会去找一个不存在的东西）
+                self._record_import_row(
+                    batch, row, "FAILED", "数据冲突：该成员唯一识别 ID（学号/工号）在本组织内已存在"
+                )
                 failed += 1
             self._session.commit()
 

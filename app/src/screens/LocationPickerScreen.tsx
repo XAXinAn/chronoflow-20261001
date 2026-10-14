@@ -9,6 +9,8 @@ import type { GeoPlace, GeoStatus } from '../api/types';
 import { Card, PrimaryButton, Screen } from '../components/ui';
 import { FormInput } from '../components/form';
 import { askPermission } from '../components/permission';
+import { acquirePosition } from '../location/acquirePosition';
+import { getSystemPosition, systemLocationAvailable } from '../location/systemLocation';
 import {
   MapPicker,
   type MapFocus,
@@ -244,23 +246,35 @@ export function LocationPickerScreen({
         return false;
       }
       // 先争一次实时定位（用 GPS，模拟器与真机都能拿到 fix），
-      // 超时或失败就退到系统缓存的上次位置，避免原地转圈。
-      let position: Location.LocationObject | null = null;
-      try {
-        position = await withTimeout(
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
-          LOCATE_TIMEOUT_MS,
-        );
-      } catch {
-        position = await Location.getLastKnownPositionAsync();
-      }
-      if (!position) {
-        throw new Error('定位超时');
-      }
+      // 超时或失败就退到系统的上次已知位置，避免原地转圈。
+      //
+      // 为什么不再直接用 `Location.getCurrentPositionAsync`：它在 Android 上走 GMS 融合定位，
+      // 华为这类没有 Google 服务的机型上**必然失败**（真机反馈「授权后定位仍失败」）。
+      // 现在优先用自带的系统定位模块（不依赖 GMS），只有它不可用时才退回 expo-location。
+      const position = await acquirePosition(
+        {
+          systemAvailable: systemLocationAvailable,
+          fromSystem: async (timeoutMs) => {
+            const fix = await getSystemPosition(timeoutMs);
+            return { latitude: fix.latitude, longitude: fix.longitude };
+          },
+          fromFallback: async () => {
+            let fix = await withTimeout(
+              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+              LOCATE_TIMEOUT_MS,
+            ).catch(async () => Location.getLastKnownPositionAsync());
+            if (!fix) {
+              throw new Error('定位超时');
+            }
+            return { latitude: fix.coords.latitude, longitude: fix.coords.longitude };
+          },
+        },
+        LOCATE_TIMEOUT_MS,
+      );
       setLocate((current) => ({
         version: (current?.version ?? 0) + 1,
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
+        latitude: position.latitude,
+        longitude: position.longitude,
       }));
       return true;
     } catch (cause) {

@@ -17,6 +17,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -57,6 +58,13 @@ public class AdminOpsController {
     public ApiResponse<SystemConfigResponse> updateConfig(@PathVariable String key,
                                                           @Valid @RequestBody SystemConfigUpdateRequest request) {
         return ApiResponse.ok(configService.update(CurrentAdmin.requireSuperAdmin(), key, request));
+    }
+
+    /** 删除配置项：删掉之后读取方回到默认值（功能开关默认开）。 */
+    @DeleteMapping("/configs/{key}")
+    public ApiResponse<Void> deleteConfig(@PathVariable String key) {
+        configService.delete(CurrentAdmin.requireSuperAdmin(), key);
+        return ApiResponse.ok();
     }
 
     @GetMapping("/dashboard/stats")

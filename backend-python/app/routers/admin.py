@@ -261,6 +261,17 @@ def update_config(
     return envelope(service.update_config(principal, key, payload.configValue, payload.description))
 
 
+@router.delete("/configs/{key}")
+def delete_config(
+    key: str,
+    principal: AdminPrincipal = Depends(current_super_admin),
+    service: AdminService = Depends(_service),
+) -> dict:
+    """删除配置项：删掉之后读取方回到默认值（功能开关默认开）。"""
+    service.delete_config(principal, key)
+    return envelope(None)
+
+
 @router.get("/dashboard/stats")
 def dashboard_stats(
     principal: AdminPrincipal = Depends(current_super_admin),

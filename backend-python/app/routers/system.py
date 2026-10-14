@@ -38,6 +38,23 @@ def ping() -> dict:
     return envelope("pong")
 
 
+@router.get("/features")
+def features() -> dict:
+    """功能开关（免登录，spec §5.7），与 Java 版 `/api/v1/system/features` 同义。
+
+    就是后台「全局配置」里那几条 `feature.*`：App 据此决定「意见反馈 / 实名认证 /
+    邮箱绑定 / 小安」入口显不显示。免登录是有意的——开关不含敏感信息，登录页也要能用。
+    """
+    from ..db import SessionLocal
+    from ..services.admin import AdminService
+
+    session = SessionLocal()
+    try:
+        return envelope(AdminService(session).feature_flags())
+    finally:
+        session.close()
+
+
 def _app_release() -> dict:
     """App 新版本发布信息（spec §4.1.11）。**免登录**：登录接口改坏时老客户端也要能升级。
 

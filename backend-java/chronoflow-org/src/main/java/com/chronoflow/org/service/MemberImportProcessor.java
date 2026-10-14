@@ -119,7 +119,9 @@ public class MemberImportProcessor {
                 record(batchId, row, ImportRowResult.FAILED, friendlyMessage(ex), null);
                 failed++;
             }
-            if ((success + failed) % 50 == 0) {
+            // 每 10 行落一次进度：管理端在轮询这个批次，落库太稀疏会让进度条长时间不动，
+            // 用户还是分不清「在跑」和「卡死」。
+            if ((success + failed) % 10 == 0) {
                 updateProgress(batch, success, failed);
             }
         }
@@ -215,7 +217,8 @@ public class MemberImportProcessor {
             return biz.getMessage();
         }
         if (ex instanceof DataAccessException) {
-            return "数据冲突：该手机号或工号可能已存在";
+            // 导入模板里已经没有手机号列了，文案别再提它——用户会去找一个根本不存在的东西
+            return "数据冲突：该成员唯一识别 ID（学号/工号）在本组织内已存在";
         }
         return ex.getMessage() == null ? "导入失败" : ex.getMessage();
     }

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..db import SessionLocal, get_session
 from ..deps import current_identity
-from ..errors import envelope
+from ..errors import ApiError, ErrorCode, envelope
 from ..security import IdentityPrincipal
 from ..services.accounts import AccountService, identity_view
 from ..services.security import SecurityService
@@ -47,7 +47,10 @@ class SendPhoneCodeRequest(BaseModel):
 class ChangePhoneRequest(BaseModel):
     newPhone: str = Field(min_length=11, max_length=11)
     newCode: str = Field(min_length=6, max_length=6)
-    oldCode: str = Field(min_length=6, max_length=6)
+    # 「本人验证」二选一：旧号验证码（旧号还在用）或已绑定邮箱的验证码（旧号丢了 / 停用）。
+    # 两个都给或都不给都会被拒，避免出现「到底验了哪个」的含糊中间态。
+    oldCode: str | None = Field(default=None, min_length=6, max_length=6)
+    emailCode: str | None = Field(default=None, min_length=6, max_length=6)
 
 
 class RealNameRequest(BaseModel):
@@ -114,11 +117,17 @@ def change_phone(
     codes=Depends(get_code_store),
     security: SecurityService = Depends(_security),
 ) -> dict:
-    """换绑手机号第二步：**旧号与新号的验证码都校验**，通过才改。
+    """换绑手机号第二步：新号验证码必验，「本人验证」用旧号码或邮箱码（二选一）。
 
     只验新号的话，任何拿到 access token 的人都能把手机号换成自己的，等于把账号偷走。
+    旧号还在用就发旧号；旧号丢了就用**当前账号已绑定的邮箱**——邮箱地址只从库里取，
+    不接受客户端传参，否则「用邮箱验证身份」就变成了「往任意邮箱发码」。
     """
-    current = security.view(principal.account_id)["phone"]
+    view = security.view(principal.account_id)
+    has_old_code = bool(payload.oldCode)
+    has_email_code = bool(payload.emailCode)
+    if has_old_code == has_email_code:
+        raise ApiError(ErrorCode.PARAM_INVALID, "请提供旧手机号验证码或邮箱验证码（二选一）")
 
     def verify(phone: str, code: str) -> None:
         expected = codes.find_code(phone)
@@ -126,9 +135,30 @@ def change_phone(
             raise ApiError(ErrorCode.SMS_CODE_INVALID, "验证码不正确或已过期")
         codes.delete_code(phone)
 
-    verify(current, payload.oldCode)
+    if has_email_code:
+        if not view["emailVerified"] or not view["email"]:
+            raise ApiError(ErrorCode.PARAM_INVALID, "账号还没有绑定邮箱，无法用邮箱验证")
+        security.verify_email_code(
+            view["email"], payload.emailCode, SecurityService.SCENE_PHONE_CHANGE
+        )
+    else:
+        verify(view["phone"], payload.oldCode)
     verify(payload.newPhone.strip(), payload.newCode)
     return envelope(security.change_phone(principal.account_id, payload.newPhone))
+
+
+@router.post("/phone/email-code")
+def send_phone_change_email_code(
+    principal: IdentityPrincipal = Depends(current_identity),
+    service: SecurityService = Depends(_security),
+) -> dict:
+    """旧手机号不能用时的替代验证：给**当前账号已绑定的邮箱**发码。"""
+    view = service.view(principal.account_id)
+    if not view["emailVerified"] or not view["email"]:
+        raise ApiError(ErrorCode.PARAM_INVALID, "账号还没有绑定邮箱，请先绑定邮箱后再用这种方式换号")
+    return envelope(
+        service.send_email_code(view["email"], SecurityService.SCENE_PHONE_CHANGE)
+    )
 
 
 @router.post("/realname")

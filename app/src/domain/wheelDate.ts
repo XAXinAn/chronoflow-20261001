@@ -66,3 +66,17 @@ export function clampIndex(index: number, length: number): number {
   }
   return Math.min(Math.max(Math.round(index), 0), length - 1);
 }
+
+/**
+ * 滚轮**挂载时**应该滚到的偏移量（像素）。
+ *
+ * <p>抽成纯函数是因为这里翻过车：`WheelColumn` 把「已知偏移」的初值直接设成了
+ * `selectedIndex * ITEM_HEIGHT`，于是挂载时那句「已经对齐就不滚」的判断为真、
+ * `scrollTo` 从来没执行过 —— 滚轮停在列表第一项，也就是「当前年 − 10 = 2016」，
+ * 想选今天得先往上翻十年。
+ *
+ * <p>现在初值固定为 0（ScrollView 的真实起始位置），挂载后主动滚到目标下标。
+ */
+export function initialWheelOffset(selectedIndex: number, itemHeight: number): number {
+  return Math.max(Math.round(selectedIndex), 0) * itemHeight;
+}

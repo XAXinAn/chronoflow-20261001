@@ -7,6 +7,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Progress,
   Select,
   Space,
   Switch,
@@ -14,11 +15,12 @@ import {
   Tag,
   Upload,
 } from 'antd';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '../api';
 import type { DepartmentNode, ImportBatch, OrgMember } from '../api/types';
 import { useLoad } from '../hooks/useLoad';
+import { describeImportProgress } from './importProgress';
 
 const ROLE_LABEL: Record<string, string> = { OWNER: '拥有者', ADMIN: '组织管理员', MEMBER: '成员' };
 const STATUS_LABEL: Record<string, { text: string; color?: string }> = {
@@ -306,6 +308,16 @@ function BatchImportModal({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ImportBatch | null>(null);
   const [history, setHistory] = useState<ImportBatch[]>([]);
+  /** 正在跟踪的批次（PROCESSING 期间非空）；空 = 没有在轮询 */
+  const [watching, setWatching] = useState<number | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  /**
+   * 轮询回调里要用的 `onImported`：父组件每次都传一个新函数进来，
+   * 直接进依赖数组会让轮询每渲染一次就被清掉重建。用 ref 固定住。
+   */
+  const onImportedRef = useRef(onImported);
+  onImportedRef.current = onImported;
 
   const loadHistory = async () => {
     try {
@@ -326,11 +338,82 @@ function BatchImportModal({
       setResult(created);
       message.success(`已提交导入，共 ${created.totalCount} 行`);
       await loadHistory();
-      onImported();
+      // **不在这里刷新成员列表**：此刻批次多半还没跑完，刷新出来的是空名单。
+      // 改为跟踪批次，跑完再刷新（下面那个轮询 effect）。
+      setStartedAt(Date.now());
+      setWatching(created.status === 'PROCESSING' ? created.batchId : null);
+      if (created.status !== 'PROCESSING') {
+        onImportedRef.current();
+      }
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : '导入失败');
     } finally {
       setBusy(false);
+    }
+  };
+
+  /**
+   * 轮询批次进度。
+   *
+   * 之前提交完就再也不看了：批次还在 PROCESSING 时界面停在「已提交」，
+   * 用户既看不到进度也等不到结果，只能反复重传——反馈里的「一直没反应」就是这么来的。
+   * 上限 10 分钟，超时停止轮询并如实提示（不能永远转圈）。
+   */
+  useEffect(() => {
+    if (watching === null) {
+      return;
+    }
+    let cancelled = false;
+    const started = Date.now();
+
+    const poll = async () => {
+      try {
+        const detail = await api.orgImportDetail(watching);
+        if (cancelled) {
+          return;
+        }
+        setResult(detail);
+        setNowMs(Date.now());
+        if (detail.status !== 'PROCESSING') {
+          setWatching(null);
+          await loadHistory();
+          onImportedRef.current();
+          return;
+        }
+      } catch {
+        // 一次轮询失败不打断整轮：下一拍再试。真出问题会有超时兜底。
+      }
+      if (!cancelled && Date.now() - started > 10 * 60 * 1000) {
+        setWatching(null);
+        message.warning('批次仍在处理中，已停止自动刷新，可点「刷新进度」查看最新状态');
+      }
+    };
+
+    const timer = setInterval(() => void poll(), 1500);
+    void poll();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [watching, message]);
+
+  const refreshProgress = async () => {
+    if (!result) {
+      return;
+    }
+    try {
+      const detail = await api.orgImportDetail(result.batchId);
+      setResult(detail);
+      setNowMs(Date.now());
+      if (detail.status !== 'PROCESSING') {
+        setWatching(null);
+        await loadHistory();
+        onImportedRef.current();
+      } else {
+        setWatching(detail.batchId);
+      }
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : '进度加载失败');
     }
   };
 
@@ -395,11 +478,40 @@ function BatchImportModal({
 
       {result ? (
         <>
+          {(() => {
+            const view = describeImportProgress(result, nowMs, startedAt);
+            return (
+              <div style={{ marginBottom: 12 }}>
+                <Progress
+                  percent={view.percent}
+                  status={view.running ? 'active' : view.percent >= 100 ? 'success' : 'normal'}
+                  format={() => `${view.processed} / ${view.total}`}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'rgba(0,0,0,0.65)' }}>
+                    {view.statusText}
+                    {view.etaText ? ` · ${view.etaText}` : ''}
+                  </span>
+                  <Space size="small">
+                    <Button size="small" onClick={() => void refreshProgress()}>
+                      刷新进度
+                    </Button>
+                    {view.running ? <Tag bordered={false} color="processing">处理中</Tag> : null}
+                  </Space>
+                </div>
+              </div>
+            );
+          })()}
           <Alert
             type={result.failCount === 0 ? 'success' : 'warning'}
             showIcon
             style={{ marginBottom: 12 }}
-            message={`共 ${result.totalCount} 行：成功 ${result.successCount}，失败 ${result.failCount}（${result.status}）`}
+            message={
+              result.failCount === 0
+                ? `共 ${result.totalCount} 行，全部导入成功`
+                : `共 ${result.totalCount} 行：成功 ${result.successCount}，失败 ${result.failCount}`
+            }
+            description="失败行都写明了原因，可下载明细修正后重传；成功行不会重复创建。"
             action={
               result.failCount > 0 ? (
                 <Button

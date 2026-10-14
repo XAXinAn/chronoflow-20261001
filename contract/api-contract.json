@@ -24,6 +24,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/system/features",
+      "auth": "none"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/system/app-release",
       "auth": "none"
     },
@@ -160,6 +165,11 @@
     {
       "method": "POST",
       "path": "/api/v1/me/phone",
+      "auth": "access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/phone/email-code",
       "auth": "access"
     },
     {
@@ -584,6 +594,11 @@
     },
     {
       "method": "PUT",
+      "path": "/api/v1/admin/configs/{key}",
+      "auth": "access"
+    },
+    {
+      "method": "DELETE",
       "path": "/api/v1/admin/configs/{key}",
       "auth": "access"
     },

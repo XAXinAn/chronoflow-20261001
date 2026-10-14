@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppTheme } from '../context/AppContext';
-import { clampIndex } from '../domain/wheelDate';
+import { clampIndex, initialWheelOffset } from '../domain/wheelDate';
 
 /**
  * 滚轮控件的最小零件：一列可吸附的选项。
@@ -58,15 +58,21 @@ export function WheelColumn({
   const scrollRef = useRef<ScrollView>(null);
   const [settledIndex, setSettledIndex] = useState(selectedIndex);
   /** 最近一次「已知」的目标偏移：用来判断滚轮是不是已经停在该在的位置上 */
-  const offsetRef = useRef(selectedIndex * ITEM_HEIGHT);
+  //
+  // 初值必须是 **0**（ScrollView 的真实起始位置），不能是 selectedIndex * ITEM_HEIGHT：
+  // 后者会让挂载时的「已对齐 → 不用滚」判断为真，首次定位被整个跳过，
+  // 滚轮就停在列表第一项（日期列 = 当前年 − 10 = 2016）。见 initialWheelOffset 的注释。
+  const offsetRef = useRef(0);
   /** 程序化滚动进行中：这期间收到的滚动结束事件一律忽略（见上面第 2 条闸） */
   const busyRef = useRef(false);
   /** 最近一次上报给外部的下标：同一个值不重复回调（第 4 条闸） */
   const reportedRef = useRef(selectedIndex);
   const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 首次定位是否已经做过（挂载时只做一次，之后交给外部值变化的那条 effect） */
+  const initialisedRef = useRef(false);
 
   const scrollTo = useCallback((index: number, animated: boolean) => {
-    const y = index * ITEM_HEIGHT;
+    const y = initialWheelOffset(index, ITEM_HEIGHT);
     offsetRef.current = y;
     if (animated) {
       busyRef.current = true;
@@ -80,6 +86,27 @@ export function WheelColumn({
     scrollRef.current?.scrollTo({ y, animated });
   }, []);
 
+  /**
+   * 挂载后的首次定位：把滚轮**无动画**拨到当前值上。
+   *
+   * <p>必须等 ScrollView 量完高（`onLayout`）再做：挂载那一瞬间调用 `scrollTo`，
+   * Android 上内容还没布局，命令会被丢掉，结果就是「打开还是停在 2016」。
+   * 兜底加一个 60ms 的定时器，覆盖 `onLayout` 因平台差异没触发的极端情况。
+   */
+  const applyInitialPosition = useCallback(() => {
+    if (initialisedRef.current) {
+      return;
+    }
+    initialisedRef.current = true;
+    reportedRef.current = selectedIndex;
+    scrollTo(selectedIndex, false);
+  }, [scrollTo, selectedIndex]);
+
+  useEffect(() => {
+    const timer = setTimeout(applyInitialPosition, 60);
+    return () => clearTimeout(timer);
+  }, [applyInitialPosition]);
+
   useEffect(() => () => {
     if (unlockTimer.current) {
       clearTimeout(unlockTimer.current);
@@ -89,7 +116,11 @@ export function WheelColumn({
   // 外部值变化（例如点「回到今天」、或月份改变导致天数变化）时把滚轮拨到对应位置
   useEffect(() => {
     setSettledIndex(selectedIndex);
-    if (Math.abs(offsetRef.current - selectedIndex * ITEM_HEIGHT) < 1) {
+    if (!initialisedRef.current) {
+      // 首次挂载交给 applyInitialPosition（等布局完成再滚，避免命令被丢掉）
+      return;
+    }
+    if (Math.abs(offsetRef.current - initialWheelOffset(selectedIndex, ITEM_HEIGHT)) < 1) {
       // 已经在那儿了：再滚一次只会给自己制造一次「滚动结束」事件
       return;
     }
@@ -120,6 +151,8 @@ export function WheelColumn({
       testID={testID}
       style={styles.column}
       contentContainerStyle={styles.columnContent}
+      // 首次定位等布局完成后再滚：挂载瞬间 Android 上内容还没量好，scrollTo 会被丢掉
+      onLayout={applyInitialPosition}
       showsVerticalScrollIndicator={false}
       snapToInterval={ITEM_HEIGHT}
       decelerationRate="fast"

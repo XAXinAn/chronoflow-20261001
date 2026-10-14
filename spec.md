@@ -591,8 +591,10 @@ POST /ai/events/parse-text：文字 → 0..N 条日程草稿（`at` 可以为空
 「组织唯一 ID + 唯一识别 ID」在 App 里认领（§3.2）。第一条链路不依赖任何成员先存在。
 
 - **成员管理**：单个新增、编辑、停用、调岗、**解绑组织账号**（成员换账号或被冒领时的恢复路径）、设为部门管理员。
-- **批量导入**：下载 Excel/CSV 模板 → 上传文件 → 同步校验并返回逐行结果。
-  - 模板列：**姓名、成员唯一识别 ID（学号/工号，必填且组织内唯一）**、部门路径（如「技术中心/后端组」）、角色（选填）、手机号（选填）、邮箱（选填）。
+- **批量导入**：下载模板 → 上传文件 → **异步执行 + 前端轮询进度**（进度条、已处理 / 总数、
+  预计剩余时间，完成后自动刷新成员列表）。批次不再停在 `PROCESSING`：批次行**在事务提交之后**
+  才派给异步线程（否则异步线程读不到这条记录，界面看起来就是「导入没反应」）。
+  - 模板列：**姓名、成员唯一识别 ID（学号/工号，必填且组织内唯一）**、部门路径（如「技术中心/后端组」）、角色（选填）。模板里的示例行必须与表头**逐列对齐**并能直接导入成功（曾经多塞了手机号/邮箱两列，照模板填必然错列）。
   - **导入的就是组织账号**：唯一识别 ID 既是成员在组织内的编号，也是他登录组织账号用的凭据
     （成员用「组织唯一 ID + 唯一识别 ID」在 App 里认领并绑定到自己的个人账号，见 §3.2）。
     因此手机号变成选填——组织里的人员不一定有手机号，组织侧的人员管理不该被它卡住。
@@ -613,7 +615,11 @@ POST /ai/events/parse-text：文字 → 0..N 条日程草稿（`at` 可以为空
 - **组织管理**：创建组织（名称、编码、管理员用户名/初始密码、成员上限、有效期）、编辑、停用/启用、删除（软删）。创建时同步创建首位 `ORG_ADMIN` 管理员。
 - **账号管理**：按手机号/组织/状态检索账号，查看账号下全部身份，封禁/解封账号或单个身份，强制登出。
 - **后台管理员管理**：创建/停用超管与组织管理员、重置密码、重置双因素。
-- **全局配置**：短信通道参数、推送开关、节假日数据源、注册开关、导入行数上限、系统公告。
+- **全局配置**：key → JSON 值的平台参数表，支持新建 / 编辑 / 删除（删除后读取方回到默认值）。
+  其中四条是**真的会被消费**的功能开关：`feature.feedback.enabled`、`feature.realname.enabled`、
+  `feature.email_binding.enabled`、`feature.agent.enabled`（App 读 `GET /system/features`，
+  控制「意见反馈 / 实名认证 / 邮箱绑定 / 小安」入口的显隐，改完即时生效、不用发版）。
+  已知开关在页面上渲染成 Switch，其余 key 仍按 JSON 编辑。
 - **数据统计看板**：组织数、活跃账号数、日活/月活、日程创建量、待办完成率、下发量趋势图（按日/周/月）。
 - **审计日志**：全平台操作审计，支持按操作人、动作、时间、组织维度检索与导出。
 
@@ -644,6 +650,11 @@ POST /ai/events/parse-text：文字 → 0..N 条日程草稿（`at` 可以为空
   否则开关就成了摆设。开关只影响**这台设备**（换设备按默认值，即仍是关闭）；
   用户设了提前量而总开关还关着时，提醒页要**当场写明「这样设置不会响」**，
   不能让这变成一个静默失效的功能；
+- **提醒声音（2026-10-14 定稿）**：总开关旁边可选三档 —— **静音 / 系统提示音（默认）/ 闹钟式**。
+  Android 8 起通知声音由**渠道**决定，且同 id 的渠道声音改不了，因此三档 = 三个渠道 id
+  （`reminders-silent` / `reminders-default` / `reminders-alarm`）；闹钟档用
+  `importance=MAX` + 绕过免打扰 + `usage=ALARM`，设置页要如实写明「部分手机会限制后台提醒」。
+  改档位后**立刻重排一次本机排期**，否则旧渠道的通知仍按旧声音响。**不做逐条提醒单独选铃声**。
 - **点击路由**：通知的 data 带 `targetType` / `targetId` / `occurrenceDate`，
   点击后直接打开对应日程（跳到**那一次**）或待办的编辑页；冷启动那次点击由
   `getLastNotificationResponseAsync` 补捞，解析不出的通知一律忽略，不影响启动。
@@ -764,7 +775,7 @@ erDiagram
 | `import_batch` | `id`、`org_id`、`file_name`、`file_url`、`total_count`、`success_count`、`fail_count`、`status`、`created_by_member_id`、`created_by_admin_id`、`created_at`、`finished_at` | 异步执行。组织管理端导入由组织身份发起，记 `created_by_member_id`；`created_by_admin_id` 供平台超管后台使用，二者可空 |
 | `import_row_result` | `id`、`batch_id`、`row_no`、`raw_data`(jsonb)、`status`、`error_message`、`created_member_id`(可空) | 失败明细可导出 |
 | `audit_log` | `id`、`actor_type`(ACCOUNT/ADMIN)、`actor_id`、`actor_name`、`org_id`(可空)、`action`、`target_type`、`target_id`、`detail`(jsonb)、`ip`、`user_agent`、`created_at` | 仅追加，不可修改/删除 |
-| `system_config` | `id`、`config_key`(唯一)、`config_value`(jsonb)、`description`、`updated_by_admin_id`、`updated_at` | 全局配置 |
+| `system_config` | `id`、`config_key`(唯一)、`config_value`(jsonb)、`description`、`updated_by_admin_id`、`updated_at` | 全局配置。**不再是一张只写不读的空表**：`feature.feedback.enabled` / `feature.realname.enabled` / `feature.email_binding.enabled` / `feature.agent.enabled` 四条由 `GET /system/features` 下发给 App，控制对应入口的显隐；V21 预置为 `true`。读取方**读不到一律按开**，删掉配置即回到默认开 |
 
 ### 5.8 索引与数据规范
 
@@ -993,6 +1004,7 @@ erDiagram
 | POST | `/ai/agent/approvals` | 用户对一次授权请求的答复（mewcode 的 `PermissionReply`）：`{actionId, allow, feedback?}`。`allow=true` 由服务端调既有 Service 真正写入并把结果作为工具结果写回模型；`false` 则回一条「用户拒绝了、什么都没改」。两条路都让**同一条对话流继续**跑下去 |
 | POST | `/ai/transcribe` | 语音转文字（`multipart/form-data`，字段 `file`，上限 60 秒 / 5 MB），返回 `{ text, language }`。音频只在服务端内存里转 base64 转发给模型服务商，**不落盘、不进对象存储**；结果由 App 填进输入框，**不自动发送** |
 | GET | `/system/info` | 增加 `aiAgentEnabled`：小安有没有接入模型。App 读到缺失或 `false` 就保持「还没有接入模型」的提示——宁可退回老文案，也不要让界面假装能用 |
+| GET | `/system/features` | **免登录**的功能开关（`feature.feedback.enabled` / `realname` / `email_binding` / `agent`）。App 据此隐藏「意见反馈 / 实名认证 / 邮箱绑定 / 小安」入口；超管在「全局配置」改完即时生效，不用发版。**读不到一律按开**（见 §5.7） |
 
 **上传与反馈**
 
@@ -1013,6 +1025,19 @@ erDiagram
 > `/events` 的创建与编辑请求体包含 §4.1.4 的全部可写字段；地点以 `locationName` / `locationAddress` / `latitude` / `longitude` / `poiId` 的结构化形式提交，`coordinateSystem` 由服务端按服务商统一为 `GCJ-02`，客户端不得自行指定。
 
 **组织账号（个人账号视角，spec §3.1 / §4.2.5）**
+
+**账号与安全（个人身份令牌，spec §6.2）**
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/me/security` | 账号级安全状态：`phone`（脱敏展示由客户端做）、`email` / `emailVerified`、`realNameVerified` / `realName` |
+| POST | `/me/email/code` | 给**待绑定**的邮箱发验证码（DirectMail）。场景码独立，不能拿来换手机号 |
+| POST | `/me/email` | 绑定 / 改绑邮箱：邮箱 + 验证码；邮箱在库里唯一 |
+| POST | `/me/phone/code` | 给指定手机号发验证码（旧号与新号都允许调；频控与登录发码同一套） |
+| POST | `/me/phone/email-code` | 旧号丢失 / 停用时的替代验证：给**当前账号已绑定**的邮箱发验证码。邮箱只从库里取，不接受客户端传参；未绑定邮箱时如实拒绝 |
+| POST | `/me/phone` | 换绑手机号：`newPhone` + `newCode` 必填，「本人验证」用 `oldCode`（旧号验证码）或 `emailCode`（已绑定邮箱的验证码）**二选一**，都给或都不给都拒绝。只验新号会让拿到令牌的人偷走账号 |
+| POST | `/me/realname` | 发起实名认证（CloudAuth）：返回 `certifyId` 与 `certifyUrl`，App 用 WebView 打开做人脸 |
+| GET | `/me/realname/result` | 回查实名结果，通过才落库（身份证号加密保存 + 指纹唯一） |
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -1067,7 +1092,7 @@ erDiagram
 | POST | `/admin/accounts/{id}/force-logout` | 强制登出 |
 | GET / POST | `/admin/admins` | 后台管理员列表 / 创建 |
 | PATCH | `/admin/admins/{id}` | 编辑 / 重置密码 / 重置双因素 |
-| GET / PUT | `/admin/configs` | 全局配置读取 / 更新 |
+| GET / PUT / DELETE | `/admin/configs` | 全局配置读取 / 更新（upsert）/ 删除。删除后读取方回到默认值。值必须是合法 JSON，写入前校验 |
 | GET | `/admin/dashboard/stats` | 数据看板 |
 | GET | `/admin/audit-logs` | 审计日志检索与导出 |
 | GET | `/admin/login-logs` | 登录日志 |
