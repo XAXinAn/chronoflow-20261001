@@ -100,11 +100,18 @@ def recognize(image: bytes, content_type: str, today: str, timezone: str) -> lis
 def _call(
     image: bytes, content_type: str, today: str, timezone: str, previous_reply: str | None
 ) -> str:
+    # 「关思考」只在配置里明确写了 true/false 时才发：本地推理服务不认这个参数
+    thinking = (settings.vision_enable_thinking or "").strip()
+    payload = {
+        "model": settings.vision_model,
+        "stream": False,
+        **_structured_output(),
+    }
+    if thinking:
+        payload["enable_thinking"] = thinking.lower() == "true"
     body = json.dumps(
         {
-            "model": settings.vision_model,
-            "stream": False,
-            **_structured_output(),
+            **payload,
             "messages": [
                 {
                     "role": "user",

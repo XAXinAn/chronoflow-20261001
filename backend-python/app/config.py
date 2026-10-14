@@ -59,6 +59,7 @@ class Settings:
     vision_model: str
     vision_api_key: str
     vision_timeout: float
+    vision_enable_thinking: str
     vision_structured_output: str
     vision_max_attempts: int
     # 智能助手「小安」（spec §11 阶段三）。环境变量名与 Java 版一字不差，
@@ -136,6 +137,8 @@ def load_settings() -> Settings:
         vision_model=os.getenv("CHRONOFLOW_VISION_MODEL", ""),
         vision_api_key=os.getenv("CHRONOFLOW_VISION_API_KEY", ""),
         vision_timeout=float(os.getenv("CHRONOFLOW_VISION_TIMEOUT_SECONDS", "60")),
+        # 关思考流（DashScope 的 enable_thinking）。留空 = 不发这个参数（本地推理服务不认它）
+        vision_enable_thinking=os.getenv("CHRONOFLOW_VISION_ENABLE_THINKING", ""),
         # json_object（支持面最广）/ json_schema（约束最强）/ none（只靠提示词，排查用）
         vision_structured_output=os.getenv("CHRONOFLOW_VISION_STRUCTURED_OUTPUT", "json_object"),
         vision_max_attempts=_int("CHRONOFLOW_VISION_MAX_ATTEMPTS", 2),

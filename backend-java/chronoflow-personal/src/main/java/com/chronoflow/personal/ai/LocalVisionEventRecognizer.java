@@ -145,6 +145,12 @@ public class LocalVisionEventRecognizer implements VisionEventRecognizer {
         root.put("model", properties.getModel());
         // 关掉流式：我们只要一次性结果，流式反而增加解析复杂度
         root.put("stream", false);
+        // 「关思考」只在配置里明确写了 true/false 时才发：本地推理服务不认这个参数，
+        // 无条件发过去会被判成非法参数（留空 = 不发，见 VisionProperties#enableThinking）
+        String thinking = properties.getEnableThinking();
+        if (thinking != null && !thinking.isBlank()) {
+            root.put("enable_thinking", Boolean.parseBoolean(thinking.trim()));
+        }
         applyStructuredOutput(root);
 
         ArrayNode messages = root.putArray("messages");

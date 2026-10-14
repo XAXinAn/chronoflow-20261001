@@ -101,6 +101,8 @@ services:
       CHRONOFLOW_VISION_MODEL: ${CHRONOFLOW_VISION_MODEL:-}
       CHRONOFLOW_VISION_API_KEY: ${CHRONOFLOW_VISION_API_KEY:-}
       CHRONOFLOW_VISION_TIMEOUT_SECONDS: ${CHRONOFLOW_VISION_TIMEOUT_SECONDS:-60}
+      # 关思考流（DashScope 的 enable_thinking）。留空 = 不发（本地推理服务不认这个参数）
+      CHRONOFLOW_VISION_ENABLE_THINKING: ${CHRONOFLOW_VISION_ENABLE_THINKING:-}
       # 应用内更新（spec §4.1.11）：App 通过 /system/app-release 查最新版本。
       # 留空 = 这个部署不提供更新检查（App 不弹任何东西）；发布新版本时改这几项
       # （changelog 用 `|` 分隔多条）。安装包由 nginx 的 /downloads/ 直接发。

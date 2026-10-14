@@ -40,6 +40,15 @@ public class VisionProperties {
     /** 解析失败时最多尝试几次（含首次）。第二次会把上一次的坏输出回灌给模型让它修。 */
     private int maxAttempts = 2;
 
+    /**
+     * 是否关掉「思考流」（DashScope 的 `enable_thinking`）。
+     *
+     * <p>用字符串而不是布尔：**留空 = 不发送这个参数**。本地推理服务（Ollama / vLLM）大多不认它，
+     * 无条件发过去会被判成非法参数；而结构化抽取要的是稳定与快，本来也不需要思考
+     * （实测 qwen3-vl-plus 开思考明显更慢）。
+     */
+    private String enableThinking = "";
+
     public boolean configured() {
         return StringUtils.hasText(baseUrl) && StringUtils.hasText(model);
     }
@@ -90,5 +99,13 @@ public class VisionProperties {
 
     public void setMaxAttempts(int maxAttempts) {
         this.maxAttempts = maxAttempts;
+    }
+
+    public String getEnableThinking() {
+        return enableThinking;
+    }
+
+    public void setEnableThinking(String enableThinking) {
+        this.enableThinking = enableThinking;
     }
 }

@@ -169,6 +169,8 @@ chronoflow:
       model: ${CHRONOFLOW_VISION_MODEL:}
       api-key: ${CHRONOFLOW_VISION_API_KEY:}
       timeout-seconds: ${CHRONOFLOW_VISION_TIMEOUT_SECONDS:60}
+      # 关思考流（DashScope）。留空 = 不发这个参数（本地推理服务大多不认它）
+      enable-thinking: ${CHRONOFLOW_VISION_ENABLE_THINKING:}
       timezone: Asia/Shanghai
     # 智能助手「小安」（spec §11 阶段三）。指向阿里云百炼的 OpenAI 兼容地址，
     # 默认 qwen3.6-flash（实测「中文 + 工具 + 流式」下首字最快、总耗时最短）。
