@@ -21,10 +21,15 @@ public final class ReminderDtos {
 
     /**
      * 批量覆盖某个日程 / 待办的提醒设置。传空列表即清空全部提醒。
+     *
+     * <p>`sound` 是**按目标**（整条日程）配置的：同一条日程的多个提前量共用一个声音档。
+     * 可缺省 —— 老客户端不发这个字段时行为与升级前完全一致（系统提示音）。
      */
     public record SetRemindersRequest(
             @NotBlank(message = "targetType 不能为空") String targetType,
             @NotNull(message = "targetId 不能为空") Long targetId,
+            /** 声音档：SILENT / DEFAULT / ALARM；缺省 DEFAULT。 */
+            String sound,
             // 允许空数组：语义是「清空全部提醒」
             @NotNull(message = "items 不能为空，如需清空请传空数组") @Valid List<ReminderItem> items) {
     }
@@ -35,6 +40,7 @@ public final class ReminderDtos {
                                    Integer minutesBefore,
                                    LocalDate occurrenceDate,
                                    String channel,
+                                   String sound,
                                    Boolean enabled) {
     }
 
@@ -56,6 +62,8 @@ public final class ReminderDtos {
                                         String locationName,
                                         java.time.Instant at,
                                         String timezone,
-                                        java.util.List<Integer> minutesBefore) {
+                                        java.util.List<Integer> minutesBefore,
+                                        /** 声音档：SILENT / DEFAULT / ALARM */
+                                        String sound) {
     }
 }

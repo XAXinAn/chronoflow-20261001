@@ -57,9 +57,11 @@ import type { LegalDoc } from './domain/legal';
 import type { OrgEvent } from './api/types';
 import type { RecognizedDraft } from './domain/vision';
 import { refreshLocalReminders } from './notifications/actions';
+import { DEFAULT_REMINDER_SOUND, type ReminderSound } from './notifications/sound';
 import { subscribeNotificationResponses } from './notifications/listener';
 import type { NotificationRoute } from './notifications/route';
 import { useFeatureFlags } from './context/featureFlags';
+import type { ReminderSelection } from './screens/editorSelection';
 
 type AuthStackParamList = {
   Login: undefined;
@@ -247,7 +249,7 @@ type AppStackParamList = {
   OrgRecipientPicker: undefined;
   LocationPicker: undefined;
   RecurrencePicker: { startDateKey: string; initial: Recurrence };
-  ReminderPicker: { initial: number[] };
+  ReminderPicker: { initial: { minutes: number[]; sound: ReminderSound } };
   EventPicker: undefined;
   Feedback: undefined;
   OrgAccounts: undefined;
@@ -290,9 +292,10 @@ function MainStack() {
     version: number;
     recurrence: Recurrence | null;
   }>({ version: 0, recurrence: null });
-  const [reminderSelection, setReminderSelection] = useState<{ version: number; minutes: number[] }>({
+  const [reminderSelection, setReminderSelection] = useState<ReminderSelection>({
     version: 0,
     minutes: [],
+    sound: DEFAULT_REMINDER_SOUND,
   });
   /** 头像取景页裁好的本地图片；version 表达「又裁了一张」，与其它二级页回传同一套语义 */
   const [avatarCrop, setAvatarCrop] = useState<{ version: number; uri: string | null }>({
@@ -415,7 +418,7 @@ function MainStack() {
       // 与从列表进编辑页一样：先清掉二级页的回传，避免上一条日程的选择串进来
       setPlaceSelection({ version: 0, place: null });
       setRecurrenceSelection({ version: 0, recurrence: null });
-      setReminderSelection({ version: 0, minutes: [] });
+      setReminderSelection({ version: 0, minutes: [], sound: DEFAULT_REMINDER_SOUND });
       navigationRef.navigate('EventEditor', {
         dateKey: pendingRoute.occurrenceDate ?? today,
         eventId: pendingRoute.eventId,
@@ -424,7 +427,7 @@ function MainStack() {
     } else {
       setEventSelection({ version: 0, event: null });
       setRecurrenceSelection({ version: 0, recurrence: null });
-      setReminderSelection({ version: 0, minutes: [] });
+      setReminderSelection({ version: 0, minutes: [], sound: DEFAULT_REMINDER_SOUND });
       navigationRef.navigate('TaskEditor', { taskId: pendingRoute.taskId });
     }
     setPendingRoute(null);
@@ -439,7 +442,7 @@ function MainStack() {
               // 每次从列表进编辑页都重置二级页的回传，避免上一次的选择串到下一次
               setPlaceSelection({ version: 0, place: null });
               setRecurrenceSelection({ version: 0, recurrence: null });
-              setReminderSelection({ version: 0, minutes: [] });
+              setReminderSelection({ version: 0, minutes: [], sound: DEFAULT_REMINDER_SOUND });
               navigation.navigate('EventEditor', { dateKey });
             }}
             onOpenEvent={(eventId, dateKey, occurrenceDate) => {
@@ -447,20 +450,20 @@ function MainStack() {
               setPlaceSelection({ version: 0, place: null });
               // 重复 / 提醒也一样：编辑页自己会把已有值拉回来预填
               setRecurrenceSelection({ version: 0, recurrence: null });
-              setReminderSelection({ version: 0, minutes: [] });
+              setReminderSelection({ version: 0, minutes: [], sound: DEFAULT_REMINDER_SOUND });
               navigation.navigate('EventEditor', { dateKey, eventId, occurrenceDate });
             }}
             onCreateTask={() => {
               setEventSelection({ version: 0, event: null });
               // 待办编辑页也复用「重复 / 提醒」两个二级页，同样要重置回传
               setRecurrenceSelection({ version: 0, recurrence: null });
-              setReminderSelection({ version: 0, minutes: [] });
+              setReminderSelection({ version: 0, minutes: [], sound: DEFAULT_REMINDER_SOUND });
               navigation.navigate('TaskEditor');
             }}
             onOpenTask={(taskId) => {
               setEventSelection({ version: 0, event: null });
               setRecurrenceSelection({ version: 0, recurrence: null });
-              setReminderSelection({ version: 0, minutes: [] });
+              setReminderSelection({ version: 0, minutes: [], sound: DEFAULT_REMINDER_SOUND });
               navigation.navigate('TaskEditor', { taskId });
             }}
             onReviewDrafts={(drafts) => navigation.navigate('EventImport', { drafts })}
@@ -534,7 +537,7 @@ function MainStack() {
               // 进草稿编辑器前清掉二级页的回传，避免上一次选的地点 / 重复 / 提醒串进来
               setPlaceSelection({ version: 0, place: null });
               setRecurrenceSelection({ version: 0, recurrence: null });
-              setReminderSelection({ version: 0, minutes: [] });
+              setReminderSelection({ version: 0, minutes: [], sound: DEFAULT_REMINDER_SOUND });
               setEditingImportKey(key);
               navigation.navigate('EventDraftEditor', { draft, dateKey: dateKey ?? today });
             }}
@@ -669,8 +672,12 @@ function MainStack() {
           <ReminderPickerScreen
             initial={route.params.initial}
             onCancel={() => navigation.goBack()}
-            onConfirm={(minutes) => {
-              setReminderSelection((current) => ({ version: current.version + 1, minutes }));
+            onConfirm={(value) => {
+              setReminderSelection((current) => ({
+                version: current.version + 1,
+                minutes: value.minutes,
+                sound: value.sound,
+              }));
               navigation.goBack();
             }}
           />

@@ -76,6 +76,17 @@ describe('服务端排期清单 → 本机请求', () => {
     ]);
     expect(requests[0]!.minutesBefore).toEqual([15, 60]);
   });
+
+  /** 提醒方式跟着**这条日程**从服务端流到本机排期；缺省（老数据）退回默认档。 */
+  it('把服务端给的提醒方式带进本机请求', () => {
+    const requests = groupScheduleEntries([
+      entry({ sound: 'alarm' }),
+      entry({ targetType: 'TASK', targetId: 7, sound: 'silent' }),
+      entry({ targetType: 'EVENT', targetId: 99, sound: null }),
+    ]);
+
+    expect(requests.map((request) => request.sound)).toEqual(['alarm', 'silent', 'default']);
+  });
 });
 
 describe('重排本机提醒', () => {

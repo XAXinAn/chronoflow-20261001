@@ -12,6 +12,7 @@ import {
   planReminders,
   reminderBase,
   reminderNotificationBody,
+  sameReminderSettings,
   sameReminderSet,
   toggleReminder,
   zonedTimeToUtc,
@@ -196,7 +197,21 @@ describe('提醒的界面值', () => {
       targetType: 'TASK',
       targetId: 7,
       items: [{ minutesBefore: 15 }, { minutesBefore: 60 }],
+      // 提醒方式（按整条日程）：默认档是「消息提醒」
+      sound: 'default',
     });
     expect(payload).not.toHaveProperty('reminders');
+  });
+
+  /**
+   * 「只改了提醒方式、没改提前量」也必须算改过 —— 否则 `PUT /reminders` 不会被调用，
+   * 用户就会看到「选了闹钟、保存后还是原来的声音」。这是本轮最容易漏的一处。
+   */
+  it('只改提醒方式也算改过', () => {
+    expect(sameReminderSettings([15], 'alarm', [15], 'alarm')).toBe(true);
+    expect(sameReminderSettings([15], 'alarm', [15], 'default')).toBe(false);
+    expect(sameReminderSettings([15, 0], 'default', [15], 'default')).toBe(false);
+    // 顺序与重复不影响：放进去的提前量先归一
+    expect(sameReminderSettings([15, 15], 'silent', [15], 'silent')).toBe(true);
   });
 });

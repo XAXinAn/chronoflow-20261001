@@ -32,6 +32,7 @@ describe('提醒声音档位', () => {
 
   it('每个档位都有给用户看的说明', () => {
     expect(describeReminderSound('silent')).toBe('静音');
-    expect(describeReminderSound('alarm')).toBe('闹钟式');
+    expect(describeReminderSound('default')).toBe('消息提醒');
+    expect(describeReminderSound('alarm')).toBe('闹钟');
   });
 });

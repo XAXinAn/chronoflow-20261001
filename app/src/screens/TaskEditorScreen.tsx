@@ -19,6 +19,11 @@ import type { PickedEvent } from './EventPickerScreen';
 import { buildRrule, describeRecurrence, parseRrule, type Recurrence } from '../domain/recurrence';
 import { describeReminders, normalizeReminders } from '../domain/reminderSchedule';
 import { persistReminderSettings, refreshLocalReminders } from '../notifications/actions';
+import {
+  describeReminderSound,
+  parseReminderSound,
+  type ReminderSound,
+} from '../notifications/sound';
 import type { RecurrenceSelection, ReminderSelection } from './editorSelection';
 import {
   TASK_PRIORITY_OPTIONS,
@@ -59,18 +64,22 @@ export function TaskEditorScreen({
   onPickEvent: () => void;
   /** 第二个参数是待办的截止日期，用来算「每周默认勾哪天」 */
   onPickRecurrence: (current: Recurrence, startDateKey: string) => void;
-  onPickReminder: (current: number[]) => void;
+  onPickReminder: (current: { minutes: number[]; sound: ReminderSound }) => void;
   onCancel: () => void;
   onSaved: () => void;
 }) {
   const theme = useAppTheme();
   const { api, reminders } = useRuntime();
-  const { notificationEnabled } = useAppSessionState();
+  const { notificationEnabled, reminderSound: defaultReminderSound } = useAppSessionState();
   const isEdit = typeof taskId === 'number';
 
   const [draft, setDraft] = useState<TaskDraft>(() => emptyTaskDraft(todayKey));
   /** 打开编辑页时服务端上的提醒设置（用于「没改过就不多发一次 PUT」） */
   const [initialReminders, setInitialReminders] = useState<number[]>([]);
+  /** 提醒方式（静音 / 消息提醒 / 闹钟），按这条待办走；新建时用偏好里的默认档 */
+  const [reminderSound, setReminderSound] = useState<ReminderSound>(defaultReminderSound);
+  const [initialReminderSound, setInitialReminderSound] =
+    useState<ReminderSound>(defaultReminderSound);
   /** 正在用滚轮改哪一栏（null = 没开选择层） */
   const [wheelField, setWheelField] = useState<'dueDate' | 'dueTime' | null>(null);
   const [wheelDraft, setWheelDraft] = useState('');
@@ -97,7 +106,10 @@ export function TaskEditorScreen({
           const loaded = await api.reminders('TASK', taskId);
           if (!cancelled) {
             const minutes = normalizeReminders(loaded.map((item) => item.minutesBefore));
+            const sound = parseReminderSound(loaded[0]?.sound);
             setInitialReminders(minutes);
+            setInitialReminderSound(sound);
+            setReminderSound(sound);
             setDraft((current) => ({ ...current, reminders: minutes }));
           }
         } catch {
@@ -165,7 +177,8 @@ export function TaskEditorScreen({
       return;
     }
     setDraft((current) => ({ ...current, reminders: normalizeReminders(reminderSelection.minutes) }));
-  }, [reminderSelection.version, reminderSelection.minutes]);
+    setReminderSound(reminderSelection.sound);
+  }, [reminderSelection.version, reminderSelection.minutes, reminderSelection.sound]);
 
   const recurrence = parseRrule(draft.rrule, draft.dueDate);
 
@@ -193,8 +206,11 @@ export function TaskEditorScreen({
           targetId: savedId,
           minutes: draft.reminders,
           initialMinutes: initialReminders,
+          sound: reminderSound,
+          initialSound: initialReminderSound,
         });
         setInitialReminders(normalizeReminders(draft.reminders));
+        setInitialReminderSound(reminderSound);
       } catch (cause) {
         setError(
           `待办已保存，但提醒没有存上：${userFacingError(cause, '请稍后重试')}`,
@@ -344,10 +360,19 @@ export function TaskEditorScreen({
 
                 <FormRow
                   label="提醒"
-                  onPress={() => onPickReminder(normalizeReminders(draft.reminders))}
+                  onPress={() =>
+                    onPickReminder({
+                      minutes: normalizeReminders(draft.reminders),
+                      sound: reminderSound,
+                    })
+                  }
                 >
                   <FormRowValue
-                    text={draft.reminders.length > 0 ? describeReminders(draft.reminders) : null}
+                    text={
+                      draft.reminders.length > 0
+                        ? `${describeReminders(draft.reminders)} · ${describeReminderSound(reminderSound)}`
+                        : null
+                    }
                     placeholder="不提醒"
                   />
                 </FormRow>

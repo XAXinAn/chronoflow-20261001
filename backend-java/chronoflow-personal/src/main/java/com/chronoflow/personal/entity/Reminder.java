@@ -12,13 +12,24 @@ import java.time.OffsetDateTime;
  *
  * <p>{@code targetId} 是多态引用（EVENT / TASK），因此没有外键，
  * 由应用层保证目标存在且属于当前身份。
+ *
+ * <p>一条日程的多个提醒共用同一个 {@code sound} 与 {@code channel}（按**日程**配置，
+ * 不是逐条提醒配置——见 V22 迁移的说明）。
  */
 @TableName("reminder")
 public class Reminder {
 
     public static final String TARGET_EVENT = "EVENT";
     public static final String TARGET_TASK = "TASK";
+
+    /** 到点由服务端发推送（App 被系统杀掉也能到）。 */
     public static final String CHANNEL_PUSH = "PUSH";
+    /** 由 App 排本机通知（默认；不依赖网络，也不把设备标识交给第三方）。 */
+    public static final String CHANNEL_LOCAL = "LOCAL";
+
+    public static final String SOUND_SILENT = "SILENT";
+    public static final String SOUND_DEFAULT = "DEFAULT";
+    public static final String SOUND_ALARM = "ALARM";
 
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -34,6 +45,8 @@ public class Reminder {
     private Integer minutesBefore;
 
     private String channel;
+
+    private String sound;
 
     private Boolean enabled;
 
@@ -95,6 +108,14 @@ public class Reminder {
 
     public void setChannel(String channel) {
         this.channel = channel;
+    }
+
+    public String getSound() {
+        return sound;
+    }
+
+    public void setSound(String sound) {
+        this.sound = sound;
     }
 
     public Boolean getEnabled() {

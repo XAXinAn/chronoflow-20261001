@@ -194,6 +194,8 @@ export interface ReminderScheduleEntry {
   at: string;
   timezone: string;
   minutesBefore: number[];
+  /** 这条日程的提醒档位：silent / default / alarm（按日程配置，见 V22 迁移） */
+  sound?: string | null;
 }
 
 /**

@@ -124,6 +124,8 @@ class ReminderItem(BaseModel):
 class SetReminders(BaseModel):
     targetType: str
     targetId: int
+    # 声音档：SILENT / DEFAULT / ALARM；缺省 DEFAULT（与 Java 版同口径，见 V22 迁移）
+    sound: str | None = None
     items: list[ReminderItem]
 
 
@@ -331,7 +333,9 @@ def set_reminders(
 ) -> dict:
     items = [item.model_dump() for item in payload.items]
     return envelope(
-        service.set_reminders(principal.identity_id, payload.targetType, payload.targetId, items)
+        service.set_reminders(
+            principal.identity_id, payload.targetType, payload.targetId, items, payload.sound
+        )
     )
 
 

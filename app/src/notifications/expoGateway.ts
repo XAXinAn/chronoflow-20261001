@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 import { askPermission } from '../components/permission';
-import { channelIdFor, currentReminderSound, type ReminderSound } from './sound';
+import { channelIdFor, DEFAULT_REMINDER_SOUND, parseReminderSound, type ReminderSound } from './sound';
 import type { NotificationGateway, ScheduledNotification } from './scheduler';
 
 /**
@@ -21,12 +21,15 @@ export async function createExpoNotificationGateway(): Promise<NotificationGatew
    * 静音、不加角标：日程提醒是「看一眼」，不该按闹钟的标准打扰人。
    */
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
+    handleNotification: async (notification: unknown) => ({
       shouldShowBanner: true,
       shouldShowList: true,
-      // 前台也要响：用户在设置里选的声音档位对前台同样生效，
-      // 否则「选了闹钟式、结果开着 App 就不响」，用户只会以为提醒坏了。
-      shouldPlaySound: currentReminderSound() !== 'silent',
+      /*
+       * 前台也要响：档位对前台同样生效，否则「选了闹钟、结果开着 App 就不响」，
+       * 用户只会以为提醒坏了。档位跟着**这条通知**走（排期时写进了 data.sound，
+       * 见 scheduler.ts），不再读全局设置——全局那档只是新建日程时的默认值。
+       */
+      shouldPlaySound: soundOfNotification(notification) !== 'silent',
       shouldSetBadge: false,
     }),
   });
@@ -77,13 +80,8 @@ export async function createExpoNotificationGateway(): Promise<NotificationGatew
     prepared.add(sound);
   };
 
-  const prepare = async () => {
-    await prepareChannel(currentReminderSound());
-  };
-
   return {
     async ensurePermission() {
-      await prepare();
       /**
        * 走统一的权限入口，而不是直接 `requestPermissionsAsync()`：
        * 审核规范要求**先用自己的文案说明用途、再弹系统窗**，拒绝后只提示并给「去设置」，
@@ -95,12 +93,11 @@ export async function createExpoNotificationGateway(): Promise<NotificationGatew
     },
 
     async cancelAll(ids) {
-      await prepare();
       await Promise.all(ids.map((id) => Notifications.cancelScheduledNotificationAsync(id)));
     },
 
     async schedule(notification: ScheduledNotification) {
-      const sound = currentReminderSound();
+      const sound = parseReminderSound(notification.sound ?? DEFAULT_REMINDER_SOUND);
       await prepareChannel(sound);
       return Notifications.scheduleNotificationAsync({
         content: {
@@ -123,4 +120,12 @@ export async function createExpoNotificationGateway(): Promise<NotificationGatew
       });
     },
   };
+}
+
+/** 从通知的 `data.sound` 读档位（排期时写进去的）；读不到按默认档。 */
+function soundOfNotification(notification: unknown): ReminderSound {
+  const data = (notification as { request?: { content?: { data?: unknown } } } | null)?.request
+    ?.content?.data;
+  const raw = (data as { sound?: unknown } | undefined)?.sound;
+  return parseReminderSound(raw);
 }

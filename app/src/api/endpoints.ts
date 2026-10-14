@@ -229,10 +229,15 @@ export function createEndpoints(client: ApiClient) {
        * 两版后端的测试都只测了 `items`，谁都没发现 —— 真机第一次点保存才暴露。
        */
       items: { minutesBefore: number }[];
+      /**
+       * 提醒档位（按**整条日程**配，不逐条）：`silent` / `default` / `alarm`。
+       * 不传时服务端按 `default`（消息提醒）——老客户端不发这个字段，行为与升级前一致。
+       */
+      sound?: string;
     }) => client.put<{ minutesBefore: number }[]>('/api/v1/reminders', payload),
 
     reminders: (targetType: 'EVENT' | 'TASK', targetId: number) =>
-      client.get<{ minutesBefore: number }[]>('/api/v1/reminders', {
+      client.get<{ minutesBefore: number; sound?: string | null }[]>('/api/v1/reminders', {
         targetType,
         targetId: String(targetId),
       }),

@@ -5,12 +5,15 @@ import {
   type ReminderOccurrenceInput,
 } from '../domain/reminderSchedule';
 import { reminderTargetKey, type ReminderIdStore, type ReminderTargetType } from './reminderStore';
+import { DEFAULT_REMINDER_SOUND, parseReminderSound, type ReminderSound } from './sound';
 
 /** 交给原生层的一条本地通知。 */
 export interface ScheduledNotification {
   at: Date;
   title: string;
   body: string;
+  /** 这条通知的档位（静音 / 消息提醒 / 闹钟）：按日程配，不再看全局设置 */
+  sound: ReminderSound;
   /** 点击通知时要跳到哪里（统一路由用，spec §4.5） */
   data: Record<string, unknown>;
 }
@@ -39,6 +42,8 @@ export interface ReminderRequest {
   /** 时间范围内的每一次出现（重复日程会有多次） */
   occurrences: ReminderOccurrenceInput[];
   minutesBefore: number[];
+  /** 这条日程的提醒档位（服务端 `reminder.sound`） */
+  sound?: ReminderSound;
 }
 
 export interface ReminderSyncResult {
@@ -95,6 +100,8 @@ export function createReminderScheduler({
         minutesBefore: request.minutesBefore,
         now,
       });
+      // 档位跟着这条日程走；服务端没给（老数据 / 老后端）就退回默认档
+      const sound = parseReminderSound(request.sound ?? DEFAULT_REMINDER_SOUND);
 
       const ids: string[] = [];
       if (planned.length > 0) {
@@ -118,12 +125,15 @@ export function createReminderScheduler({
                     when: formatEventWhen(reminder.atIso, reminder.timezone),
                     location: request.location ?? null,
                   }),
+                  sound,
                   data: {
                     targetType: request.targetType,
                     targetId: request.targetId,
                     minutesBefore: reminder.minutesBefore,
                     // 点击通知后要跳到「那一次」而不是整条序列
                     occurrenceDate: reminder.occurrenceDate,
+                    // 前台弹通知时按它决定要不要出声（见 expoGateway）
+                    sound,
                   },
                 }),
               );

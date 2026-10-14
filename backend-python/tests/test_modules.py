@@ -47,14 +47,24 @@ def create_task(client, tokens, payload: dict) -> dict:
     return response["data"]
 
 
-def set_reminders(client, tokens, target_type: str, target_id: int, minutes: list[int]) -> list[dict]:
+def set_reminders(
+    client,
+    tokens,
+    target_type: str,
+    target_id: int,
+    minutes: list[int],
+    sound: str | None = None,
+) -> list[dict]:
+    payload = {
+        "targetType": target_type,
+        "targetId": target_id,
+        "items": [{"minutesBefore": value} for value in minutes],
+    }
+    if sound is not None:
+        payload["sound"] = sound
     response = client.put(
         "/api/v1/reminders",
-        json={
-            "targetType": target_type,
-            "targetId": target_id,
-            "items": [{"minutesBefore": value} for value in minutes],
-        },
+        json=payload,
         headers=auth(tokens),
     ).json()
     assert response["code"] == 0, response
@@ -161,6 +171,39 @@ def test_reminder_schedule_expands_recurrence_and_includes_tasks(client) -> None
         headers=auth(tokens),
     ).json()
     assert invalid["code"] == ErrorCode.EVENT_TIME_INVALID
+
+
+def test_reminder_sound_is_per_target(client) -> None:
+    """提醒方式按日程存（spec §4.5 + V22）：缺省回默认、指定后回显并进排期、非法取值被拒。"""
+    tokens = register(client, "13900002603")
+    event = create_event(client, tokens, WEEKLY_PAYLOAD)
+
+    # 不传 sound：默认档「消息提醒」，投递方式是本机通知 —— 升级前后行为一致
+    defaulted = set_reminders(client, tokens, "EVENT", event["id"], [15])
+    assert defaulted[0]["sound"] == "DEFAULT"
+    assert defaulted[0]["channel"] == "LOCAL"
+
+    # 指定闹钟档：整条日程的所有提前量共用一个值
+    saved = set_reminders(client, tokens, "EVENT", event["id"], [60, 15], sound="alarm")
+    assert [item["sound"] for item in saved] == ["ALARM", "ALARM"]
+
+    entries = reminder_schedule(
+        client, tokens, "2026-10-05T00:00:00+08:00", "2026-10-12T00:00:00+08:00"
+    )
+    assert entries[0]["sound"] == "ALARM"
+
+    # 非法取值要明确拒绝，不能静默落库成一个用户没选过的档
+    invalid = client.put(
+        "/api/v1/reminders",
+        json={
+            "targetType": "EVENT",
+            "targetId": event["id"],
+            "sound": "loud",
+            "items": [{"minutesBefore": 15}],
+        },
+        headers=auth(tokens),
+    ).json()
+    assert invalid["code"] == ErrorCode.PARAM_INVALID
 
 
 def test_search_spans_events_and_tasks_in_time_desc_order(client) -> None:

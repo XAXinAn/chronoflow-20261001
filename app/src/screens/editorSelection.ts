@@ -1,5 +1,6 @@
 import type { EventPlace } from '../domain/eventDraft';
 import type { Recurrence } from '../domain/recurrence';
+import type { ReminderSound } from '../notifications/sound';
 
 /**
  * 二级页回传给编辑页的参数。
@@ -23,4 +24,6 @@ export interface RecurrenceSelection {
 export interface ReminderSelection {
   version: number;
   minutes: number[];
+  /** 提醒方式（静音 / 消息提醒 / 闹钟）——按整条日程走，与提前量一起回传 */
+  sound: ReminderSound;
 }

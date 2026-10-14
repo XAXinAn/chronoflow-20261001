@@ -29,6 +29,11 @@ import {
 import { buildRrule, describeRecurrence, parseRrule, type Recurrence } from '../domain/recurrence';
 import { describeReminders, normalizeReminders } from '../domain/reminderSchedule';
 import { persistReminderSettings, refreshLocalReminders } from '../notifications/actions';
+import {
+  describeReminderSound,
+  parseReminderSound,
+  type ReminderSound,
+} from '../notifications/sound';
 import type {
   PlaceSelection,
   RecurrenceSelection,
@@ -85,7 +90,7 @@ export function EventEditorScreen({
   onPickLocation: () => void;
   /** 第二个参数是日程自己的日期（编辑时可能与列表页选中的那天不同） */
   onPickRecurrence: (current: Recurrence, startDateKey: string) => void;
-  onPickReminder: (current: number[]) => void;
+  onPickReminder: (current: { minutes: number[]; sound: ReminderSound }) => void;
   /** 草稿模式下的「保存」：把改好的草稿与日期交回调用方（不落库） */
   onDraftSaved?: (draft: EventDraft, dateKey: string) => void;
   onCancel: () => void;
@@ -93,7 +98,7 @@ export function EventEditorScreen({
 }) {
   const theme = useAppTheme();
   const { api, reminders } = useRuntime();
-  const { notificationEnabled } = useAppSessionState();
+  const { notificationEnabled, reminderSound: defaultReminderSound } = useAppSessionState();
   const isEdit = typeof eventId === 'number';
   /** 草稿模式：编辑的是「还没落库的识别结果」，不是服务端上的一条日程 */
   const draftMode = onDraftSaved !== undefined;
@@ -108,6 +113,15 @@ export function EventEditorScreen({
    * 每次保存都发一遍虽然结果一样，但会给服务端多一次无谓的删除 + 插入。
    */
   const [initialReminders, setInitialReminders] = useState<number[]>([]);
+  /**
+   * 提醒方式（静音 / 消息提醒 / 闹钟），**按这条日程走**。
+   *
+   * 新建日程时初值是「我的 → 偏好」里的默认档；编辑已有日程时由服务端给的档位覆盖。
+   * 存两份（当前值 + 初始值）是为了「没改过就不多发一次 PUT」——只改档位没改提前量也算改过。
+   */
+  const [reminderSound, setReminderSound] = useState<ReminderSound>(defaultReminderSound);
+  const [initialReminderSound, setInitialReminderSound] =
+    useState<ReminderSound>(defaultReminderSound);
   /** 正在用滚轮改哪个时间（null = 没开选择层）；`draft` 是滚轮里的临时值 */
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [timeDraft, setTimeDraft] = useState(DEFAULT_EVENT_TIME);
@@ -147,7 +161,10 @@ export function EventEditorScreen({
             return;
           }
           const minutes = normalizeReminders(reminders.map((item) => item.minutesBefore));
+          const sound = parseReminderSound(reminders[0]?.sound);
           setInitialReminders(minutes);
+          setInitialReminderSound(sound);
+          setReminderSound(sound);
           setDraft((current) => ({ ...current, reminders: minutes }));
         } catch {
           // 提醒读不到就当没有，不打断编辑
@@ -192,7 +209,8 @@ export function EventEditorScreen({
       return;
     }
     setDraft((current) => ({ ...current, reminders: normalizeReminders(reminderSelection.minutes) }));
-  }, [reminderSelection.version, reminderSelection.minutes]);
+    setReminderSound(reminderSelection.sound);
+  }, [reminderSelection.version, reminderSelection.minutes, reminderSelection.sound]);
 
   /**
    * 改动草稿时顺手清掉上一次的错误提示。
@@ -261,8 +279,11 @@ export function EventEditorScreen({
           targetId: savedId,
           minutes: draft.reminders,
           initialMinutes: initialReminders,
+          sound: reminderSound,
+          initialSound: initialReminderSound,
         });
         setInitialReminders(normalizeReminders(draft.reminders));
+        setInitialReminderSound(reminderSound);
       } catch (cause) {
         // 日程已经存下了。这里**不能**当作「保存失败」整条回滚口吻提示，
         // 也不能直接返回列表（用户看不到问题、更没法重试）
@@ -414,9 +435,18 @@ export function EventEditorScreen({
               />
             </FormRow>
 
-            <FormRow label="提醒" onPress={() => onPickReminder(normalizeReminders(draft.reminders))}>
+            <FormRow
+              label="提醒"
+              onPress={() =>
+                onPickReminder({ minutes: normalizeReminders(draft.reminders), sound: reminderSound })
+              }
+            >
               <FormRowValue
-                text={draft.reminders.length > 0 ? describeReminders(draft.reminders) : null}
+                text={
+                  draft.reminders.length > 0
+                    ? `${describeReminders(draft.reminders)} · ${describeReminderSound(reminderSound)}`
+                    : null
+                }
                 placeholder="不提醒"
               />
             </FormRow>

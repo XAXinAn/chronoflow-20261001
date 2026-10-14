@@ -38,6 +38,10 @@ public class ReminderService {
     private static final Set<String> TARGET_TYPES =
             Set.of(Reminder.TARGET_EVENT, Reminder.TARGET_TASK);
 
+    /** 允许的声音档（spec §4.5）。 */
+    private static final Set<String> SOUNDS =
+            Set.of(Reminder.SOUND_SILENT, Reminder.SOUND_DEFAULT, Reminder.SOUND_ALARM);
+
     /** 待办自己没有时区列，取所在日历的时区；没有就按第一版的默认时区（spec §7.3）。 */
     private static final String DEFAULT_TIMEZONE = "Asia/Shanghai";
 
@@ -63,6 +67,14 @@ public class ReminderService {
     public List<ReminderResponse> setReminders(Long identityId, SetRemindersRequest request) {
         requireOwnership(identityId, request.targetType(), request.targetId());
 
+        // 声音是**按整条日程**的：所有提前量共用一个值
+        String sound = request.sound() == null
+                ? Reminder.SOUND_DEFAULT
+                : request.sound().trim().toUpperCase(java.util.Locale.ROOT);
+        if (!SOUNDS.contains(sound)) {
+            throw BizException.of(ErrorCode.PARAM_INVALID, "sound 取值非法: " + request.sound());
+        }
+
         reminderMapper.delete(new LambdaQueryWrapper<Reminder>()
                 .eq(Reminder::getTargetType, request.targetType())
                 .eq(Reminder::getTargetId, request.targetId())
@@ -75,7 +87,10 @@ public class ReminderService {
             reminder.setIdentityId(identityId);
             reminder.setOccurrenceDate(item.occurrenceDate());
             reminder.setMinutesBefore(item.minutesBefore());
-            reminder.setChannel(Reminder.CHANNEL_PUSH);
+            // 到点提醒走 App 本机通知（spec §4.5）。旧代码写死 PUSH，但那时并没有推送调度器，
+            // 语义上一直是本机的；这里显式写 LOCAL，与 V22 迁移把历史行改成 LOCAL 保持一致。
+            reminder.setChannel(Reminder.CHANNEL_LOCAL);
+            reminder.setSound(sound);
             reminder.setEnabled(true);
             reminderMapper.insert(reminder);
         }
@@ -93,7 +108,7 @@ public class ReminderService {
                 .map(reminder -> new ReminderResponse(
                         reminder.getId(), reminder.getTargetType(), reminder.getTargetId(),
                         reminder.getMinutesBefore(), reminder.getOccurrenceDate(),
-                        reminder.getChannel(), reminder.getEnabled()))
+                        reminder.getChannel(), reminder.getSound(), reminder.getEnabled()))
                 .toList();
     }
 
@@ -117,19 +132,19 @@ public class ReminderService {
             return List.of();
         }
 
-        Map<String, Map<Long, List<Integer>>> byTarget = reminders.stream()
+        // 按目标分组后取整组的分钟数 + 声音 + 投递方式（后者对同一条日程是统一的，见 V22）
+        Map<String, Map<Long, List<Reminder>>> byTarget = reminders.stream()
                 .collect(Collectors.groupingBy(Reminder::getTargetType,
-                        Collectors.groupingBy(Reminder::getTargetId,
-                                Collectors.mapping(Reminder::getMinutesBefore, Collectors.toList()))));
+                        Collectors.groupingBy(Reminder::getTargetId)));
 
         List<ReminderScheduleEntry> entries = new ArrayList<>();
-        Map<Long, List<Integer>> eventReminders =
+        Map<Long, List<Reminder>> eventReminders =
                 byTarget.getOrDefault(Reminder.TARGET_EVENT, Map.of());
         if (!eventReminders.isEmpty()) {
             for (EventOccurrence occurrence
                     : eventService.rangeQuery(identityId, null, rangeStart, rangeEnd)) {
-                List<Integer> minutes = eventReminders.get(occurrence.eventId());
-                if (minutes == null) {
+                List<Reminder> rows = eventReminders.get(occurrence.eventId());
+                if (rows == null) {
                     continue;
                 }
                 entries.add(new ReminderScheduleEntry(
@@ -140,11 +155,12 @@ public class ReminderService {
                         occurrence.locationName(),
                         occurrence.at(),
                         occurrence.timezone(),
-                        sortedMinutes(minutes)));
+                        minutesOf(rows),
+                        soundOf(rows)));
             }
         }
 
-        Map<Long, List<Integer>> taskReminders = byTarget.getOrDefault(Reminder.TARGET_TASK, Map.of());
+        Map<Long, List<Reminder>> taskReminders = byTarget.getOrDefault(Reminder.TARGET_TASK, Map.of());
         if (!taskReminders.isEmpty()) {
             entries.addAll(taskEntries(identityId, rangeStart, rangeEnd, taskReminders));
         }
@@ -167,7 +183,7 @@ public class ReminderService {
     private List<ReminderScheduleEntry> taskEntries(Long identityId,
                                                     Instant rangeStart,
                                                     Instant rangeEnd,
-                                                    Map<Long, List<Integer>> taskReminders) {
+                                                    Map<Long, List<Reminder>> taskReminders) {
         List<Task> tasks = taskMapper.selectList(new LambdaQueryWrapper<Task>()
                 .eq(Task::getOwnerIdentityId, identityId)
                 .eq(Task::getStatus, Task.STATUS_TODO)
@@ -193,12 +209,26 @@ public class ReminderService {
                         null,
                         task.getDueAt().toInstant(),
                         zones.getOrDefault(task.getCalendarId(), DEFAULT_TIMEZONE),
-                        sortedMinutes(taskReminders.get(task.getId()))))
+                        minutesOf(taskReminders.get(task.getId())),
+                        soundOf(taskReminders.get(task.getId()))))
                 .toList();
     }
 
-    private List<Integer> sortedMinutes(List<Integer> minutes) {
-        return minutes.stream().distinct().sorted().toList();
+    /** 同一个目标的提前量：去重升序。 */
+    private List<Integer> minutesOf(List<Reminder> rows) {
+        return rows.stream()
+                .map(Reminder::getMinutesBefore)
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    /** 声音档：同一目标的各行应当一致，取第一行；空组不会走到这里。 */
+    private String soundOf(List<Reminder> rows) {
+        if (rows.isEmpty() || rows.get(0).getSound() == null) {
+            return Reminder.SOUND_DEFAULT;
+        }
+        return rows.get(0).getSound();
     }
 
     /**

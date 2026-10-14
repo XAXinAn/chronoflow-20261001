@@ -13,6 +13,12 @@
  *      （2026-10-01 起不再有「只说了哪一天」这种输入）。
  */
 
+import {
+  DEFAULT_REMINDER_SOUND,
+  parseReminderSound,
+  type ReminderSound,
+} from '../notifications/sound';
+
 /** 界面上可选的提前量（分钟）。1440 = 提前 1 天。 */
 export const REMINDER_PRESETS = [0, 5, 15, 30, 60, 1440] as const;
 
@@ -275,17 +281,36 @@ export interface SetRemindersPayload {
    * 不可能再悄悄改回去。
    */
   items: { minutesBefore: number }[];
+  /** 提醒档位（按整条日程）：silent / default / alarm。 */
+  sound: ReminderSound;
 }
 
-/** 组装提醒设置的请求体：去重升序后逐条写成 `{ minutesBefore }`。 */
+/** 组装提醒设置的请求体：去重升序后逐条写成 `{ minutesBefore }`，档位跟着整条日程走。 */
 export function buildSetRemindersPayload(
   targetType: 'EVENT' | 'TASK',
   targetId: number,
   minutes: number[],
+  sound: ReminderSound = DEFAULT_REMINDER_SOUND,
 ): SetRemindersPayload {
   return {
     targetType,
     targetId,
     items: normalizeReminders(minutes).map((minutesBefore) => ({ minutesBefore })),
+    sound: parseReminderSound(sound),
   };
+}
+
+/**
+ * 提醒设置（提前量 + 档位）是否与初始值一致。
+ *
+ * `PUT /reminders` 是整体覆盖，没改也发一遍虽然结果一样，但会多做一次删除 + 插入；
+ * 而「只改了档位没改提前量」也必须算改过 —— 这正是最容易漏判的一种。
+ */
+export function sameReminderSettings(
+  minutes: number[],
+  sound: ReminderSound,
+  initialMinutes: number[],
+  initialSound: ReminderSound,
+): boolean {
+  return sameReminderSet(minutes, initialMinutes) && sound === initialSound;
 }

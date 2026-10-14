@@ -335,6 +335,45 @@ class PersonalModuleTest {
     }
 
     @Test
+    @DisplayName("提醒方式按日程存：缺省回默认、指定后回显并进排期、非法取值被拒")
+    void reminderSoundIsPerTarget() throws Exception {
+        String token = registerAccount("13800000228");
+        long eventId = createWeeklyStandup(token);
+
+        // 不传 sound：按默认档（消息提醒），且投递方式是本机通知 —— 升级前后行为一致
+        JsonNode defaulted = putJson("/api/v1/reminders", token,
+                "{\"targetType\":\"EVENT\",\"targetId\":" + eventId
+                        + ",\"items\":[{\"minutesBefore\":15}]}");
+        assertThat(defaulted.path("data").get(0).path("sound").asText()).isEqualTo("DEFAULT");
+        assertThat(defaulted.path("data").get(0).path("channel").asText()).isEqualTo("LOCAL");
+
+        // 指定闹钟档：**整条日程**的所有提前量共用一个值（按日程配，不是逐条配）
+        JsonNode saved = putJson("/api/v1/reminders", token,
+                "{\"targetType\":\"EVENT\",\"targetId\":" + eventId + ",\"sound\":\"alarm\","
+                        + "\"items\":[{\"minutesBefore\":60},{\"minutesBefore\":15}]}");
+        assertThat(saved.path("data")).hasSize(2);
+        assertThat(saved.path("data").get(0).path("sound").asText()).isEqualTo("ALARM");
+        assertThat(saved.path("data").get(1).path("sound").asText()).isEqualTo("ALARM");
+
+        // 排期里也要带上：App 才知道每条通知按什么方式响
+        JsonNode schedule = getJson(get("/api/v1/reminders/schedule")
+                .param("start", "2026-10-05T00:00:00+08:00")
+                .param("end", "2026-10-12T00:00:00+08:00")
+                .header("Authorization", "Bearer " + token)).path("data");
+        assertThat(schedule.get(0).path("sound").asText()).isEqualTo("ALARM");
+
+        // 非法取值要明确拒绝，不能静默落库成一个用户没选过的档
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/reminders")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"targetType\":\"EVENT\",\"targetId\":" + eventId
+                                + ",\"sound\":\"loud\",\"items\":[{\"minutesBefore\":15}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(10002));
+    }
+
+    @Test
     @DisplayName("未来提醒：重复日程按每次实例展开，待办一起排，非法区间被拒")
     void upcomingRemindersExpandEveryOccurrence() throws Exception {
         String token = registerAccount("13800000223");

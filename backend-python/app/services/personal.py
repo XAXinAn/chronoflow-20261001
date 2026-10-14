@@ -750,8 +750,19 @@ class PersonalService:
         ).mappings()
         return [_reminder_view(row) for row in rows]
 
-    def set_reminders(self, identity_id: int, target_type: str, target_id: int, items: list[dict]) -> list[dict]:
+    def set_reminders(
+        self,
+        identity_id: int,
+        target_type: str,
+        target_id: int,
+        items: list[dict],
+        sound: str | None = None,
+    ) -> list[dict]:
         self._require_target(identity_id, target_type, target_id)
+        # 声音是**按整条日程**的：所有提前量共用一个值（与 Java 版 ReminderService 同口径）
+        normalized_sound = (sound or "DEFAULT").strip().upper()
+        if normalized_sound not in ("SILENT", "DEFAULT", "ALARM"):
+            raise ApiError(ErrorCode.PARAM_INVALID, f"sound 取值非法: {sound}")
         self._session.execute(
             text(
                 "DELETE FROM reminder WHERE target_type = :type AND target_id = :target"
@@ -763,8 +774,9 @@ class PersonalService:
             self._session.execute(
                 text(
                     "INSERT INTO reminder (target_type, target_id, identity_id, occurrence_date,"
-                    " minutes_before, channel, enabled)"
-                    " VALUES (:type, :target, :identity, :occurrence_date, :minutes, 'PUSH', true)"
+                    " minutes_before, channel, sound, enabled)"
+                    " VALUES (:type, :target, :identity, :occurrence_date, :minutes, 'LOCAL',"
+                    " :sound, true)"
                 ),
                 {
                     "type": target_type,
@@ -772,6 +784,7 @@ class PersonalService:
                     "identity": identity_id,
                     "occurrence_date": item.get("occurrenceDate"),
                     "minutes": item["minutesBefore"],
+                    "sound": normalized_sound,
                 },
             )
         self._session.commit()
@@ -795,17 +808,18 @@ class PersonalService:
         if not rows:
             return []
 
-        event_minutes: dict[int, list[int]] = {}
-        task_minutes: dict[int, list[int]] = {}
+        # 每个目标的提前量 + 声音档（声音对同一条日程是统一的，取第一行）
+        event_rows: dict[int, list[dict]] = {}
+        task_rows: dict[int, list[dict]] = {}
         for row in rows:
-            bucket = event_minutes if row["target_type"] == "EVENT" else task_minutes
-            bucket.setdefault(row["target_id"], []).append(row["minutes_before"])
+            bucket = event_rows if row["target_type"] == "EVENT" else task_rows
+            bucket.setdefault(row["target_id"], []).append(row)
 
         entries: list[dict] = []
-        if event_minutes:
+        if event_rows:
             for occurrence in self.list_events(identity_id, None, start, end):
-                minutes = event_minutes.get(occurrence["eventId"])
-                if minutes is None:
+                group = event_rows.get(occurrence["eventId"])
+                if group is None:
                     continue
                 entries.append(
                     {
@@ -816,17 +830,18 @@ class PersonalService:
                         "locationName": occurrence.get("locationName"),
                         "at": occurrence["at"],
                         "timezone": occurrence.get("timezone") or DEFAULT_TIMEZONE,
-                        "minutesBefore": sorted(set(minutes)),
+                        "minutesBefore": _sorted_minutes(group),
+                        "sound": _sound_of(group),
                     }
                 )
-        if task_minutes:
-            entries.extend(self._task_reminder_entries(identity_id, start, end, task_minutes))
+        if task_rows:
+            entries.extend(self._task_reminder_entries(identity_id, start, end, task_rows))
 
         entries.sort(key=lambda item: (item["at"], item["targetType"], item["targetId"]))
         return entries
 
     def _task_reminder_entries(
-        self, identity_id: int, start: datetime, end: datetime, task_minutes: dict[int, list[int]]
+        self, identity_id: int, start: datetime, end: datetime, task_rows: dict[int, list[dict]]
     ) -> list[dict]:
         """待办排期。
 
@@ -841,7 +856,7 @@ class PersonalService:
                 " AND deleted_at IS NULL AND id = ANY(:ids)"
                 " AND due_at > :start AND due_at <= :end"
             ),
-            {"identity": identity_id, "ids": list(task_minutes), "start": start, "end": end},
+            {"identity": identity_id, "ids": list(task_rows), "start": start, "end": end},
         ).mappings().all()
         if not rows:
             return []
@@ -858,7 +873,8 @@ class PersonalService:
                 "locationName": None,
                 "at": row["due_at"],
                 "timezone": zones.get(row["calendar_id"], DEFAULT_TIMEZONE),
-                "minutesBefore": sorted(set(task_minutes[row["id"]])),
+                "minutesBefore": _sorted_minutes(task_rows[row["id"]]),
+                "sound": _sound_of(task_rows[row["id"]]),
             }
             for row in rows
         ]
@@ -950,8 +966,21 @@ def _reminder_view(row) -> dict:
         "minutesBefore": row["minutes_before"],
         "occurrenceDate": row["occurrence_date"],
         "channel": row["channel"],
+        "sound": row["sound"],
         "enabled": bool(row["enabled"]),
     }
+
+
+def _sorted_minutes(rows: list[dict]) -> list[int]:
+    """同一目标的提前量：去重升序。"""
+    return sorted({row["minutes_before"] for row in rows})
+
+
+def _sound_of(rows: list[dict]) -> str:
+    """声音档：同一目标各行一致，取第一行；兼容迁移前的空值。"""
+    if not rows or not rows[0].get("sound"):
+        return "DEFAULT"
+    return rows[0]["sound"]
 
 
 def _validate_range(start, end) -> None:

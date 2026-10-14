@@ -234,4 +234,22 @@ describe('本地提醒排期', () => {
     await expect(scheduler.sync(request, NOW)).resolves.toMatchObject({ scheduled: 0 });
     await expect(scheduler.cancel('EVENT', 12)).resolves.toBeUndefined();
   });
+
+  /**
+   * 提醒方式**按日程**走：同一条日程的每条通知都要带上它自己的档位。
+   * 服务端没给（老数据 / 老后端）时退回默认档，而不是没有声音。
+   */
+  it('每条通知带上这条日程的提醒方式；缺省时退回默认档', async () => {
+    const withSound = createFakeGateway();
+    await createReminderScheduler({ gateway: withSound.gateway, store: createMemoryReminderIdStore() })
+      .sync({ ...request, sound: 'alarm' }, NOW);
+    expect(withSound.scheduled.map((item) => item.sound)).toEqual(['alarm', 'alarm']);
+    // 前台弹通知时按它决定要不要出声
+    expect(withSound.scheduled[0]!.data).toMatchObject({ sound: 'alarm' });
+
+    const withoutSound = createFakeGateway();
+    await createReminderScheduler({ gateway: withoutSound.gateway, store: createMemoryReminderIdStore() })
+      .sync(request, NOW);
+    expect(withoutSound.scheduled.map((item) => item.sound)).toEqual(['default', 'default']);
+  });
 });

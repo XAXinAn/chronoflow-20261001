@@ -1,6 +1,7 @@
 import type { ReminderScheduleEntry } from '../api/types';
 import type { ReminderRequest, ReminderScheduler, ReminderSyncResult } from './scheduler';
 import type { ReminderTargetType } from './reminderStore';
+import { parseReminderSound } from './sound';
 
 /** 重排窗口：与 `SCHEDULE_HORIZON_DAYS` 对齐（iOS 待触发通知有限，排太远没意义）。 */
 export const RESYNC_WINDOW_DAYS = 30;
@@ -35,6 +36,7 @@ export function groupScheduleEntries(entries: ReminderScheduleEntry[]): Reminder
         location: entry.locationName ?? null,
         occurrences: [occurrence],
         minutesBefore: [...entry.minutesBefore],
+        sound: parseReminderSound(entry.sound),
       });
       continue;
     }

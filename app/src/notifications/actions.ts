@@ -1,5 +1,6 @@
 import type { Endpoints } from '../api/endpoints';
-import { buildSetRemindersPayload, sameReminderSet } from '../domain/reminderSchedule';
+import { buildSetRemindersPayload, sameReminderSettings } from '../domain/reminderSchedule';
+import { DEFAULT_REMINDER_SOUND, type ReminderSound } from './sound';
 import type { ReminderScheduler, ReminderSyncResult } from './scheduler';
 import { resyncLocalReminders } from './resync';
 
@@ -15,12 +16,19 @@ export async function persistReminderSettings(options: {
   targetId: number;
   minutes: number[];
   initialMinutes: number[];
+  /** 这次的档位（静音 / 消息提醒 / 闹钟），按整条日程走 */
+  sound?: ReminderSound;
+  /** 打开编辑页时服务端给的档位 */
+  initialSound?: ReminderSound;
 }): Promise<void> {
-  if (sameReminderSet(options.minutes, options.initialMinutes)) {
+  const sound = options.sound ?? DEFAULT_REMINDER_SOUND;
+  const initialSound = options.initialSound ?? DEFAULT_REMINDER_SOUND;
+  // 「只改了档位没改提前量」也算改过 —— 整体覆盖的接口，不发就白改
+  if (sameReminderSettings(options.minutes, sound, options.initialMinutes, initialSound)) {
     return;
   }
   await options.api.setReminders(
-    buildSetRemindersPayload(options.targetType, options.targetId, options.minutes),
+    buildSetRemindersPayload(options.targetType, options.targetId, options.minutes, sound),
   );
 }
 

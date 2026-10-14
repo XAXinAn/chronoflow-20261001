@@ -2,9 +2,16 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Card, Screen } from '../components/ui';
-import { CheckRow, EditorHeader, FormInput } from '../components/form';
+import { CheckRow, EditorHeader, FormInput, SegmentedControl } from '../components/form';
 import { useAppSessionState, useAppTheme } from '../context/AppContext';
 import { localNotificationsAvailable } from '../notifications/availability';
+import {
+  DEFAULT_REMINDER_SOUND,
+  describeReminderSound,
+  parseReminderSound,
+  REMINDER_SOUND_OPTIONS,
+  type ReminderSound,
+} from '../notifications/sound';
 import {
   REMINDER_PRESETS,
   describeReminders,
@@ -28,13 +35,22 @@ export function ReminderPickerScreen({
   onCancel,
   onConfirm,
 }: {
-  initial: number[];
+  initial: { minutes: number[]; sound?: ReminderSound };
   onCancel: () => void;
-  onConfirm: (minutes: number[]) => void;
+  onConfirm: (value: { minutes: number[]; sound: ReminderSound }) => void;
 }) {
   const theme = useAppTheme();
   const { notificationEnabled } = useAppSessionState();
-  const [selected, setSelected] = useState<number[]>(normalizeReminders(initial));
+  const [selected, setSelected] = useState<number[]>(normalizeReminders(initial.minutes));
+  /**
+   * 提醒方式：静音 / 消息提醒 / 闹钟。
+   *
+   * **按这条日程配**（用户反馈：原来是全局设置，改一次影响所有日程）。
+   * 默认取 `initial.sound` —— 新建日程时它是「我的 → 偏好」里那份默认档。
+   */
+  const [sound, setSound] = useState<ReminderSound>(
+    parseReminderSound(initial.sound ?? DEFAULT_REMINDER_SOUND),
+  );
   const [customText, setCustomText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -59,7 +75,7 @@ export function ReminderPickerScreen({
         title="提醒"
         saveLabel="完成"
         onCancel={onCancel}
-        onSave={() => onConfirm(selected)}
+        onSave={() => onConfirm({ minutes: selected, sound })}
       />
 
       <ScrollView
@@ -127,8 +143,37 @@ export function ReminderPickerScreen({
           </Card>
         </View>
 
+        {/*
+          提醒方式（spec §4.5）。放在提前量**下面**：先说「什么时候提醒」，再说「怎么提醒」。
+          只有选了提前量才有意义，所以没选时不显示这一块。
+        */}
+        {selected.length > 0 ? (
+          <View style={{ marginTop: theme.spacing.md }}>
+            <Card>
+              <View style={{ paddingVertical: 4 }}>
+                <Text style={{ color: theme.color.textSecondary, fontSize: 14, marginBottom: 8 }}>
+                  提醒方式
+                </Text>
+                <SegmentedControl<ReminderSound>
+                  label="提醒方式"
+                  options={REMINDER_SOUND_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: option.label,
+                  }))}
+                  value={sound}
+                  onChange={setSound}
+                />
+                <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: 8 }}>
+                  {REMINDER_SOUND_OPTIONS.find((option) => option.value === sound)?.hint ?? ''}
+                </Text>
+              </View>
+            </Card>
+          </View>
+        ) : null}
+
         <Text style={{ color: theme.color.textTertiary, fontSize: 12, marginTop: theme.spacing.md }}>
           当前：{describeReminders(selected)}
+          {selected.length > 0 ? ` · ${describeReminderSound(sound)}` : ''}
         </Text>
         {/*
           总开关默认是**关**的（2026-10-01 产品决定）：用户在这里选了提前量却什么都不响，

@@ -192,16 +192,20 @@ export function SettingsSectionScreen({
           />
           <ListSeparator inset={52} />
           {/*
-            提醒声音（spec §4.5）。Android 的渠道声音建好之后改不了，所以改档位 =
-            之后的提醒换一个渠道；这里顺便**重排一次**本机排期，
+            提醒方式（spec §4.5）：静音 / 消息提醒 / 闹钟。
+
+            **这一份只是「新建日程时的默认档」**——真正的档位按每条日程存在服务端
+            （`reminder.sound`，见 V22 迁移），在编辑日程的「提醒」页里改。
+            Android 的渠道声音建好之后改不了，所以改档位 = 之后的提醒换一个渠道；
+            这里顺便**重排一次**本机排期，
             否则用户改完还要等下次回到前台才生效，看起来就像「改了没用」。
           */}
           <ListRow
             leading={<RowIcon name="musical-notes-outline" />}
-            title="提醒声音"
+            title="默认提醒方式"
             subtitle={
               notificationEnabled
-                ? describeReminderSound(reminderSound)
+                ? `${describeReminderSound(reminderSound)}（新建日程 / 待办时用它，可逐条改）`
                 : '到点提醒已关闭，这里的选择会在打开后生效'
             }
             trailing={
@@ -209,7 +213,7 @@ export function SettingsSectionScreen({
                 label="提醒声音"
                 options={[
                   { value: 'silent', label: '静音' },
-                  { value: 'default', label: '提示音' },
+                  { value: 'default', label: '消息' },
                   { value: 'alarm', label: '闹钟' },
                 ]}
                 value={reminderSound}
