@@ -71,7 +71,8 @@ def configured() -> bool:
 
 
 def provider_name() -> str:
-    return "local-vision" if configured() else "unconfigured"
+    # 名字要如实：这条实现按配置指向任意 OpenAI 兼容的多模态服务（本地/内网，或云端 qwen-vl）
+    return "server-vision" if configured() else "unconfigured"
 
 
 def recognize(image: bytes, content_type: str, today: str, timezone: str) -> list[RecognizedEvent]:

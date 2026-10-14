@@ -74,7 +74,9 @@ public class LocalVisionEventRecognizer implements VisionEventRecognizer {
 
     @Override
     public String providerName() {
-        return properties.configured() ? "local-vision" : "unconfigured";
+        // 名字要**如实**：这条实现按配置指向任意 OpenAI 兼容的多模态服务 ——
+        // 默认是本地/内网推理，也可以指向云端（如百炼的 qwen-vl），所以不再自称 local。
+        return properties.configured() ? "server-vision" : "unconfigured";
     }
 
     @Override

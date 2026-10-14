@@ -92,6 +92,15 @@ services:
       CHRONOFLOW_ASR_URL: ${CHRONOFLOW_ASR_URL:-https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation}
       CHRONOFLOW_ASR_API_KEY: ${CHRONOFLOW_ASR_API_KEY:-}
       CHRONOFLOW_ASR_MODEL: ${CHRONOFLOW_ASR_MODEL:-qwen3-asr-flash}
+      # 图片识别日程（spec §4.1.9）的**服务端**多模态识别（`POST /ai/events/recognize`）。
+      # ⚠️ 这条路会把**图片本身**发到模型服务，与「图片不出手机」的产品承诺相反：
+      #    App 目前走的是「端侧 OCR → /ai/events/parse-text」，并不会调这个端点。
+      #    这里把它指向百炼的 qwen-vl 只是**用于试验/比对识别效果**；
+      #    要作为面向用户的路径，必须先改隐私政策与合规文案（docs/legal）。
+      CHRONOFLOW_VISION_BASE_URL: ${CHRONOFLOW_VISION_BASE_URL:-}
+      CHRONOFLOW_VISION_MODEL: ${CHRONOFLOW_VISION_MODEL:-}
+      CHRONOFLOW_VISION_API_KEY: ${CHRONOFLOW_VISION_API_KEY:-}
+      CHRONOFLOW_VISION_TIMEOUT_SECONDS: ${CHRONOFLOW_VISION_TIMEOUT_SECONDS:-60}
       # 应用内更新（spec §4.1.11）：App 通过 /system/app-release 查最新版本。
       # 留空 = 这个部署不提供更新检查（App 不弹任何东西）；发布新版本时改这几项
       # （changelog 用 `|` 分隔多条）。安装包由 nginx 的 /downloads/ 直接发。

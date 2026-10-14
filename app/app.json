@@ -2,7 +2,7 @@
   "expo": {
     "name": "时纪流",
     "slug": "chronoflow",
-    "version": "0.0.10",
+    "version": "0.0.11",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.chronoflow.frontend",
-      "versionCode": 11,
+      "versionCode": 12,
       "edgeToEdgeEnabled": true,
       "permissions": [
         "ACCESS_COARSE_LOCATION",
