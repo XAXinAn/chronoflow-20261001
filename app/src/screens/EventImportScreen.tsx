@@ -1,15 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { userFacingError } from '../domain/errors';
 import { Card, PrimaryButton, Screen } from '../components/ui';
 import { EditorHeader } from '../components/form';
-import { WheelDatePicker } from '../components/WheelDatePicker';
-import { WheelLayer } from '../components/WheelLayer';
 import { useAppTheme, useRuntime } from '../context/AppContext';
 import { APP_TIMEZONE } from '../domain/calendar';
-import { localDateKey } from '../domain/agenda';
 import { buildCreatePayload, type EventDraft } from '../domain/eventDraft';
 import { draftDateKey, draftToEventDraft, type RecognizedDraft } from '../domain/vision';
 
@@ -18,7 +15,9 @@ import { draftDateKey, draftToEventDraft, type RecognizedDraft } from '../domain
  *
  * 模型会看错，直接写进日历比看错更糟——所以识别结果一律先摆在这里：
  * **点任意一条进整页编辑器**（`EventEditorScreen` 的草稿模式：标题 / 日期 / 时间 / 地点 /
- * 详细地址 / 备注 / 重复 / 提醒，和编辑日程一模一样，但不落库），也可以就地改日期、删除。
+ * 详细地址 / 备注 / 重复 / 提醒，和编辑日程一模一样，但不落库），整页里能改的比在这儿就地改的多。
+ * 这里的日期行**只是展示**，不再单独弹日期滚轮——以前点它会弹一个「日期」选择器，
+ * 而它看起来像「时间」，点错了很困惑；现在统一「点整条 → 进详情页改」（用户反馈）。
  * **所有条目都有日期**后底部「添加 N 条」才可点；逐条 `POST /events`，
  * 全部成功回日历，部分失败则只留失败的让用户重试（成功的不会重复创建）。
  */
@@ -37,10 +36,6 @@ export interface DraftEdit {
   key: string;
   draft: EventDraft;
   dateKey: string;
-}
-
-function todayKey(): string {
-  return localDateKey(new Date().toISOString(), APP_TIMEZONE);
 }
 
 function formatDateKey(dateKey: string): string {
@@ -65,7 +60,6 @@ export function EventImportScreen({
 }) {
   const theme = useAppTheme();
   const { api } = useRuntime();
-  const today = useMemo(todayKey, []);
 
   const [rows, setRows] = useState<ImportRow[]>(() =>
     drafts.map((draft, index) => ({
@@ -76,8 +70,6 @@ export function EventImportScreen({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** 正在给哪一条选日期（null = 没开）；连同滚轮里的草稿值一起存 */
-  const [picker, setPicker] = useState<{ key: string; title: string; value: string } | null>(null);
 
   const missingDates = rows.filter((row) => !row.dateKey).length;
   const missingTitles = rows.filter((row) => !row.draft.title.trim()).length;
@@ -97,20 +89,6 @@ export function EventImportScreen({
     );
     setError(null);
   }, [draftEdit]);
-
-  const openPicker = (row: ImportRow) => {
-    setPicker({ key: row.key, title: row.draft.title, value: row.dateKey ?? today });
-  };
-
-  const confirmPicker = () => {
-    if (picker) {
-      setRows((current) =>
-        current.map((row) => (row.key === picker.key ? { ...row, dateKey: picker.value } : row)),
-      );
-      setError(null);
-    }
-    setPicker(null);
-  };
 
   const addAll = useCallback(async () => {
     if (saving) {
@@ -168,7 +146,7 @@ export function EventImportScreen({
         keyboardShouldPersistTaps="handled"
       >
         <Text style={{ color: theme.color.textSecondary, fontSize: 13, marginBottom: theme.spacing.sm }}>
-          核对一下：模型可能看错，点某一条可以像编辑日程一样改它，改好之后再添加。
+          核对一下：模型可能看错。点某一条进详情页，像编辑日程一样改（日期、时间、地点…），改好之后再添加。
         </Text>
 
         {rows.map((row) => {
@@ -201,12 +179,8 @@ export function EventImportScreen({
                     </Pressable>
                   </View>
 
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`日期-${row.draft.title || '未命名'}`}
-                    onPress={() => openPicker(row)}
-                    style={styles.dateRow}
-                  >
+                  {/* 日期行只是展示：整张卡片已经可点，点它进详情页；不再单独弹日期滚轮 */}
+                  <View style={styles.dateRow}>
                     <Text
                       style={{
                         // 没日期的那条标红，提示「请选择日期」——它就差这一步不能提交
@@ -219,7 +193,7 @@ export function EventImportScreen({
                         : `${formatDateKey(row.dateKey as string)} · ${row.draft.time}`}
                     </Text>
                     <Ionicons name="chevron-forward" size={16} color={theme.color.textTertiary} />
-                  </Pressable>
+                  </View>
 
                   {row.draft.description ? (
                     <Text
@@ -268,19 +242,6 @@ export function EventImportScreen({
           loading={saving}
         />
       </View>
-
-      {picker ? (
-        <WheelLayer
-          title={`选择日期 · ${picker.title || '未命名'}`}
-          onCancel={() => setPicker(null)}
-          onConfirm={confirmPicker}
-        >
-          <WheelDatePicker
-            value={picker.value}
-            onChange={(value) => setPicker((current) => (current ? { ...current, value } : current))}
-          />
-        </WheelLayer>
-      ) : null}
 
       {saving ? (
         <View style={styles.savingOverlay} pointerEvents="auto">

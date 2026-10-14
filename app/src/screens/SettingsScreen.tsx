@@ -4,6 +4,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from '@react-navigation/native';
 
 import type { IdentityView } from '../api/types';
 import { ListGroup, ListRow, ListSeparator, SectionHeader } from '../components/list';
@@ -69,18 +70,32 @@ export function SettingsScreen({
     }
   }, [api]);
 
-  useEffect(() => {
-    void api
-      .meSecurity()
-      .then(setSecurity)
-      .catch(() => {
-        // 读不到就先不显示这三行：这只是状态展示，不影响页面其它功能
-      });
-  }, [api, profile]);
-
-  useEffect(() => {
-    void loadProfile();
-  }, [loadProfile]);
+  /**
+   * 每次这一页重新获得焦点都重拉一次账号状态与资料。
+   *
+   * <p>为什么不是普通 `useEffect`：实名认证 / 邮箱绑定 / 切换手机号 / 改资料都是**独立的二级页**，
+   * 做完返回时这一页还挂在导航栈里、组件不会重新挂载——旧的 `[api, profile]` 依赖不会因为「返回」
+   * 而变化，于是认证成功了头部仍显示「未实名」。换成 `useFocusEffect` 后，返回即刷新。
+   */
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      void api
+        .meSecurity()
+        .then((view) => {
+          if (alive) {
+            setSecurity(view);
+          }
+        })
+        .catch(() => {
+          // 读不到就先不显示这三行：这只是状态展示，不影响页面其它功能
+        });
+      void loadProfile();
+      return () => {
+        alive = false;
+      };
+    }, [api, loadProfile]),
+  );
 
   /**
    * 换头像：选图 → **取景页裁成 1:1** → 上传拿到相对 URL → PATCH /me 回填（spec §4.1.8）。

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { EditorHeader, SegmentedControl } from '../components/form';
 import { Chevron, ListGroup, ListRow, ListSeparator } from '../components/list';
@@ -71,25 +72,34 @@ export function SettingsSectionScreen({
     realNameVerified: boolean;
   } | null>(null);
 
-  useEffect(() => {
-    if (section !== 'account') {
-      return;
-    }
-    let alive = true;
-    void api
-      .meSecurity()
-      .then((view) => {
-        if (alive) {
-          setSecurity(view);
-        }
-      })
-      .catch(() => {
-        // 读不到就按「未认证 / 未绑定」显示：这只是状态展示，不拦着用户点进去
-      });
-    return () => {
-      alive = false;
-    };
-  }, [api, section]);
+  /**
+   * 用 `useFocusEffect` 而不是普通 `useEffect`：实名认证、邮箱绑定、换手机号都是**独立的二级页**，
+   * 做完返回时这一屏还挂在栈里、组件不会重新挂载——普通 effect 只在 `[api, section]` 变化时跑，
+   * 于是认证成功了回到这里还写着「未认证」。用户反馈的就是这个。
+   *
+   * 改成「每次重新获得焦点就重拉一次」，返回时自然是最新状态。
+   */
+  useFocusEffect(
+    useCallback(() => {
+      if (section !== 'account') {
+        return undefined;
+      }
+      let alive = true;
+      void api
+        .meSecurity()
+        .then((view) => {
+          if (alive) {
+            setSecurity(view);
+          }
+        })
+        .catch(() => {
+          // 读不到就按「未认证 / 未绑定」显示：这只是状态展示，不拦着用户点进去
+        });
+      return () => {
+        alive = false;
+      };
+    }, [api, section]),
+  );
 
   return (
 <Screen>
